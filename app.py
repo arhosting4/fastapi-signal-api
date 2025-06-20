@@ -8,24 +8,37 @@ from agents.trainerai import get_confidence
 import requests
 
 from fastapi import FastAPI
+from agents.core_controller import fuse_signals
 import requests
 import urllib.parse
 
 app = FastAPI()
 
-# Twelve Data API Key
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 
 @app.get("/")
 def home():
     return {"message": "API is running"}
 
-@app.get("/price/{symbol:path}")  # This is VERY important
-def get_price(symbol: str):
+@app.get("/final-signal/{symbol}")
+def final_signal(symbol: str):
+    """
+    God-level AI fusion route.
+    """
+    # Decode URL (like XAU%2FUSD)
     decoded_symbol = urllib.parse.unquote(symbol)
-    url = f"https://api.twelvedata.com/price?symbol={decoded_symbol}&apikey={TWELVE_DATA_API_KEY}"
+
+    # Call Twelve Data for latest OHLC (5 candles)
+    url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
-    return response.json()
+    data = response.json()
+
+    if "values" not in data:
+        return {"error": "Failed to fetch market data", "details": data}
+
+    candles = data["values"]
+    fused = fuse_signals(candles, decoded_symbol)
+    return fused
 
 
 TELEGRAM_TOKEN = "YOUR_BOT_TOKEN"
