@@ -89,16 +89,21 @@ def generate_signal(pair: str, tf: str):
 @app.get("/final-signal/{symbol}")
 def final_signal(symbol: str):
     result = generate_final_signal(symbol)
-    return result
+    message = f"**{result['signal']}** {symbol.upper()} ⚡️\n\n" \
+              f"Risk: {result['risk']}\n" \
+              f"News: {result['news']}\n" \
+              f"Pattern: {result['pattern']}\n" \
+              f"Reason: {result['reason']}\n" \
+              f"Confidence: {result['confidence']}%\n"
 
-    message = f"**{core['signal']}** {pair.upper()} ({tf})\nConfidence: {confidence}%\nReason: {reason}\nTier: {tier}"
     send_telegram_message(message)
 
     return {
-        "pair": pair,
-        "tf": tf,
-        "signal": core["signal"],
-        "confidence": confidence,
-        "reason": reason,
-        "tier": tier
+        "pair": symbol,
+        "signal": result["signal"],
+        "pattern": result["pattern"],
+        "risk": result["risk"],
+        "news": result["news"],
+        "reason": result["reason"],
+        "confidence": result["confidence"]
     }
