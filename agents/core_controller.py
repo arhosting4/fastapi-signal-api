@@ -8,6 +8,7 @@ from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 from agents.feedback_memory import get_feedback_stats
 from agents.tierbot import determine_tier
+from agents.loggerai import log_signal
 
 def generate_final_signal(symbol: str, candles: list):
     tf = "1min"
@@ -50,8 +51,8 @@ def generate_final_signal(symbol: str, candles: list):
         risk_blocked=risk
     )
 
-    # Final return payload
-    return {
+    # Build final response payload
+    payload = {
         "symbol": symbol,
         "signal": core["signal"],
         "pattern": pattern,
@@ -61,3 +62,8 @@ def generate_final_signal(symbol: str, candles: list):
         "confidence": confidence,
         "tier": tier
     }
+
+    # Log to training memory
+    log_signal(payload)
+
+    return payload
