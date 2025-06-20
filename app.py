@@ -6,7 +6,15 @@ from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 import requests
+import requests
 
+TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
+
+@app.get("/price/{symbol}")
+def get_price(symbol: str):
+    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
+    response = requests.get(url)
+    return response.json()
 app = FastAPI()
 
 TELEGRAM_TOKEN = "YOUR_BOT_TOKEN"
