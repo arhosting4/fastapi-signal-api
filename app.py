@@ -1,8 +1,6 @@
 from fastapi import FastAPI
 import requests
 import urllib.parse
-import json
-from datetime import datetime
 
 from agents.strategybot import generate_core_signal, fetch_fake_ohlc
 from agents.patternai import detect_patterns
@@ -10,13 +8,14 @@ from agents.riskguardian import check_risk
 from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
+from agents.core_controller import generate_final_signal
 
 app = FastAPI()
 
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 
 @app.get("/")
-def home():
+def root():
     return {"message": "API is running"}
 
 @app.get("/ohlc/{pair}/{tf}")
@@ -32,7 +31,7 @@ def generate_signal(pair: str, tf: str):
 
     if not core or not pattern:
         return {"status": "no-signal", "reason": "Core or pattern failed"}
-
+    
     if check_risk(pair, tf):
         return {"status": "blocked", "reason": "High market risk"}
 
@@ -54,8 +53,6 @@ def generate_signal(pair: str, tf: str):
 
 @app.get("/final-signal/{symbol}")
 def final_signal(symbol: str):
-    from agents.core_controller import generate_final_signal
-
     decoded_symbol = urllib.parse.unquote(symbol)
 
     url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
@@ -67,10 +64,4 @@ def final_signal(symbol: str):
 
     candles = data["values"]
     result = generate_final_signal(decoded_symbol, candles)
-
-    # === Step 5: Logger ===
-    result["timestamp"] = datetime.utcnow().isoformat()
-    with open("signal_logs.jsonl", "a") as f:
-        f.write(json.dumps(result) + "\n")
-
     return result
