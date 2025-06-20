@@ -8,7 +8,13 @@ from agents.trainerai import get_confidence
 import requests
 
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
+from fastapi import FastAPI
+
 app = FastAPI()
+
+@app.get("/")
+def home():
+    return {"message": "API is running"}
 @app.get("/price/{symbol}")
 def get_price(symbol: str):
     url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
