@@ -9,12 +9,20 @@ import requests
 
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 from fastapi import FastAPI
+import requests
 
+# Twelve Data API key
+TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
+
+# Create FastAPI app
 app = FastAPI()
 
+# Root endpoint for status check
 @app.get("/")
 def home():
     return {"message": "API is running"}
+
+# Price endpoint to fetch live market data
 @app.get("/price/{symbol}")
 def get_price(symbol: str):
     url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
