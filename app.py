@@ -8,13 +8,13 @@ from agents.trainerai import get_confidence
 import requests
 
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
-
+app = FastAPI()
 @app.get("/price/{symbol}")
 def get_price(symbol: str):
     url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
     return response.json()
-app = FastAPI()
+
 
 TELEGRAM_TOKEN = "YOUR_BOT_TOKEN"
 TELEGRAM_CHAT_ID = "YourChannelOrUserID"
