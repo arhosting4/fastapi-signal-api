@@ -13,24 +13,17 @@ import urllib.parse
 
 app = FastAPI()
 
-# Twelve Data API Key
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 
-# Root endpoint
 @app.get("/")
 def home():
     return {"message": "API is running"}
 
-# Price endpoint
 @app.get("/price/{symbol}")
 def get_price(symbol: str):
-    # Decode URL encoded slash (if any)
     decoded_symbol = urllib.parse.unquote(symbol)
-    
     url = f"https://api.twelvedata.com/price?symbol={decoded_symbol}&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
-
-    # Return full JSON (price or error)
     return response.json()
 
 
