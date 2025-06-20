@@ -6,7 +6,6 @@ from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 import requests
-import requests
 
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 
