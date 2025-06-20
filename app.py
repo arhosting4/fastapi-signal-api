@@ -84,6 +84,13 @@ def generate_signal(pair: str, tf: str):
     confidence = get_confidence(pair, tf, core, pattern)
     tier = "Tier 1" if confidence > 80 else "Tier 2"
 
+    from agents.core_controller import generate_final_signal
+
+@app.get("/final-signal/{symbol}")
+def final_signal(symbol: str):
+    result = generate_final_signal(symbol)
+    return result
+
     message = f"**{core['signal']}** {pair.upper()} ({tf})\nConfidence: {confidence}%\nReason: {reason}\nTier: {tier}"
     send_telegram_message(message)
 
