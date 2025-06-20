@@ -13,13 +13,14 @@ import urllib.parse
 
 app = FastAPI()
 
+# Twelve Data API Key
 TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 
 @app.get("/")
 def home():
     return {"message": "API is running"}
 
-@app.get("/price/{symbol}")
+@app.get("/price/{symbol:path}")  # Use :path to allow slashes like XAU/USD
 def get_price(symbol: str):
     decoded_symbol = urllib.parse.unquote(symbol)
     url = f"https://api.twelvedata.com/price?symbol={decoded_symbol}&apikey={TWELVE_DATA_API_KEY}"
