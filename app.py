@@ -7,26 +7,30 @@ from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 import requests
 
-TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
 from fastapi import FastAPI
 import requests
+import urllib.parse
 
-# Twelve Data API key
-TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
-
-# Create FastAPI app
 app = FastAPI()
 
-# Root endpoint for status check
+# Twelve Data API Key
+TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
+
+# Root endpoint
 @app.get("/")
 def home():
     return {"message": "API is running"}
 
-# Price endpoint to fetch live market data
+# Price endpoint
 @app.get("/price/{symbol}")
 def get_price(symbol: str):
-    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
+    # Decode URL encoded slash (if any)
+    decoded_symbol = urllib.parse.unquote(symbol)
+    
+    url = f"https://api.twelvedata.com/price?symbol={decoded_symbol}&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
+
+    # Return full JSON (price or error)
     return response.json()
 
 
