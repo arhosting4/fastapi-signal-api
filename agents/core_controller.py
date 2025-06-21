@@ -1,5 +1,3 @@
-# src/agents/core_controller.py
-
 from agents.strategybot import generate_core_signal
 from agents.patternai import detect_patterns
 from agents.riskguardian import check_risk
@@ -7,7 +5,6 @@ from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 from agents.tierbot import get_tier
-
 
 def generate_final_signal(symbol: str, candles: list):
     """
@@ -23,34 +20,40 @@ def generate_final_signal(symbol: str, candles: list):
     try:
         tf = "1min"
 
-        # Step 1: Get core AI strategy signal
-        strategy_signal = generate_core_signal(symbol, tf)
-        if not strategy_signal:
-            return {"status": "no-signal", "error": "Strategy failed"}
+        # ✅ Convert candle data to closing prices list
+        closes = [float(candle["close"]) for candle in candles[::-1]]
 
-        # Step 2: Detect chart patterns
-        pattern = detect_patterns(symbol, tf)
+        # ✅ Step 1: Core AI strategy signal
+        strategy_signal = generate_core_signal(symbol, tf, closes)
+        if not strategy_signal or strategy_signal == "wait":
+            return {"status": "no-signal", "error": "Strategy failed or no trend"}
+
+        # ✅ Step 2: Detect chart pattern
+        pattern_data = detect_patterns(symbol, tf)
+        pattern = pattern_data.get("pattern", "Unknown")
+
         if not pattern:
-            return {"status": "no-signal", "error": "Pattern not found"}
+            return {"status": "no-signal", "error": "No pattern detected"}
 
-        # Step 3: Check for high-risk conditions
-        if check_risk(symbol, tf):
+        # ✅ Step 3: Risk check
+        if check_risk(symbol, closes):
             return {"status": "blocked", "error": "High market risk"}
 
-        # Step 4: Check news sentinel for red events
-        if check_news(symbol):
-            return {"status": "blocked", "error": "Red news event detected"}
+        # ✅ Step 4: News filter
+        # (Empty list used for now — can integrate live news later)
+        if check_news(symbol, []):
+            return {"status": "blocked", "error": "Red news event"}
 
-        # Step 5: Reasoning based on combined signal and pattern
+        # ✅ Step 5: Reasoning
         reason = generate_reason(strategy_signal, pattern)
 
-        # Step 6: AI learns confidence level for the signal
+        # ✅ Step 6: Confidence
         confidence = get_confidence(symbol, tf, strategy_signal, pattern)
 
-        # Step 7: Assign AI tier based on confidence
+        # ✅ Step 7: Tier level
         tier = get_tier(confidence)
 
-        # Step 8: Return the fused god-level signal
+        # ✅ Step 8: Final signal result
         return {
             "symbol": symbol,
             "signal": strategy_signal,
