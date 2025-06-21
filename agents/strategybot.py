@@ -1,28 +1,28 @@
-# strategybot.py
-
 def generate_core_signal(symbol: str, tf: str, closes: list):
-    """
-    Basic strategy to determine signal from closing price trends.
-    """
     if len(closes) < 5:
         return None
 
-    recent_closes = closes[-5:]
-    avg = sum(recent_closes) / len(recent_closes)
+    # Sample core logic for strategy signal
+    last = closes[-1]
+    prev = closes[-2]
 
-    if recent_closes[-1] > avg:
+    if float(last['close']) > float(prev['close']):
         return "BUY"
-    elif recent_closes[-1] < avg:
+    elif float(last['close']) < float(prev['close']):
         return "SELL"
     else:
         return "HOLD"
 
-def fetch_ohlc(symbol: str, interval: str = "1min", limit: int = 50):
-    """
-    Simulate fetching OHLC data — Replace with actual API in production.
-    """
-    import random
-    return [{"open": random.uniform(1800, 1900),
-             "high": random.uniform(1900, 1920),
-             "low": random.uniform(1780, 1850),
-             "close": random.uniform(1800, 1900)} for _ in range(limit)]
+
+def fetch_ohlc(closes: list):
+    # Converts raw data to OHLC list for further agents
+    ohlc = []
+    for candle in closes:
+        ohlc.append({
+            'open': float(candle['open']),
+            'high': float(candle['high']),
+            'low': float(candle['low']),
+            'close': float(candle['close']),
+            'datetime': candle['datetime']
+        })
+    return ohlc
