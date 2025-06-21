@@ -1,48 +1,66 @@
-from agents.strategybot import generate_core_signal, fetch_ohlc
+# src/agents/core_controller.py
+
+from agents.strategybot import generate_core_signal
 from agents.patternai import detect_patterns
 from agents.riskguardian import check_risk
 from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
-from agents.tierbot import determine_tier
+from agents.tierbot import get_tier
 
-def generate_final_signal(symbol: str, tf: str) -> dict:
-    # Step 1: Get market data
-    closes = fetch_ohlc(symbol, tf)
-    if not closes or len(closes) < 5:
-        return {"status": "error", "message": "Not enough data"}
 
-    # Step 2: Core strategy signal
-    core_signal = generate_core_signal(symbol, tf, closes)
+def generate_final_signal(symbol: str, candles: list):
+    """
+    Core AI fusion engine combining all agents to generate a god-level trading signal.
 
-    # Step 3: Pattern detection
-    pattern = detect_patterns(closes)
+    Parameters:
+        symbol (str): The trading pair (e.g., XAU/USD).
+        candles (list): List of OHLC candles from the API.
 
-    # Step 4: Risk filter
-    is_safe = check_risk(symbol, closes)
+    Returns:
+        dict: Final AI signal output with full intelligence context.
+    """
+    try:
+        tf = "1min"
 
-    # Step 5: News sentiment
-    news_ok = check_news(symbol)
+        # Step 1: Get core AI strategy signal
+        strategy_signal = generate_core_signal(symbol, tf)
+        if not strategy_signal:
+            return {"status": "no-signal", "error": "Strategy failed"}
 
-    # Step 6: Reason analysis
-    reason = generate_reason(core_signal, pattern)
+        # Step 2: Detect chart patterns
+        pattern = detect_patterns(symbol, tf)
+        if not pattern:
+            return {"status": "no-signal", "error": "Pattern not found"}
 
-    # Step 7: Confidence
-    confidence = get_confidence(symbol, tf)
+        # Step 3: Check for high-risk conditions
+        if check_risk(symbol, tf):
+            return {"status": "blocked", "error": "High market risk"}
 
-    # Step 8: Tier classification
-    tier = determine_tier(confidence, pattern, is_safe)
+        # Step 4: Check news sentinel for red events
+        if check_news(symbol):
+            return {"status": "blocked", "error": "Red news event detected"}
 
-    # Step 9: Compile final response
-    return {
-        "symbol": symbol,
-        "timeframe": tf,
-        "signal": core_signal,
-        "pattern": pattern,
-        "risk_clear": is_safe,
-        "news_sentiment": news_ok,
-        "reason": reason,
-        "confidence": confidence,
-        "tier": tier,
-        "status": "ok"
-    }
+        # Step 5: Reasoning based on combined signal and pattern
+        reason = generate_reason(strategy_signal, pattern)
+
+        # Step 6: AI learns confidence level for the signal
+        confidence = get_confidence(symbol, tf, strategy_signal, pattern)
+
+        # Step 7: Assign AI tier based on confidence
+        tier = get_tier(confidence)
+
+        # Step 8: Return the fused god-level signal
+        return {
+            "symbol": symbol,
+            "signal": strategy_signal,
+            "pattern": pattern,
+            "risk": "Normal",
+            "news": "Clear",
+            "reason": reason,
+            "confidence": round(confidence, 2),
+            "tier": tier
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
