@@ -1,3 +1,5 @@
+# core_controller.py
+
 from agents.strategybot import generate_core_signal, fetch_ohlc
 from agents.patternai import detect_patterns
 from agents.riskguardian import check_risk
@@ -6,43 +8,50 @@ from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 from agents.tierbot import determine_tier
 
-
 def generate_final_signal(symbol: str, candles: list) -> dict:
     """
-    Generates the final AI signal for a given symbol using multi-layer strategy fusion.
+    Main controller to generate the final trading signal.
+    It calls all sub-agents, merges results, and returns a unified signal.
     """
 
-    # Step 1: Get core signal and OHLC structure
-    core_signal, ohlc = generate_core_signal(candles), fetch_ohlc(candles)
+    try:
+        # Step 1: Get OHLC if needed by other agents (for now, we already have it via candles)
+        closes = [float(candle["close"]) for candle in reversed(candles)]
 
-    # Step 2: Detect patterns (if needed)
-    pattern = detect_patterns(ohlc)
+        # Step 2: Core Signal
+        signal = generate_core_signal(symbol, "1min", closes)
 
-    # Step 3: Evaluate risk profile based on market structure
-    risk = check_risk(ohlc)
+        # Step 3: Pattern Detection
+        pattern = detect_patterns(closes)
 
-    # Step 4: Check real-time news or sentiment-based influence
-    news = check_news(symbol)
+        # Step 4: Risk Check
+        risk = check_risk(closes)
 
-    # Step 5: Use AI to generate explanation for decision
-    reason = generate_reason(core_signal, pattern, risk, news)
+        # Step 5: News Check
+        news = check_news(symbol)
 
-    # Step 6: Measure signal confidence using training memory
-    confidence = get_confidence(symbol, core_signal, candles)
+        # Step 6: Reason Generator
+        reason = generate_reason(signal, pattern, risk, news)
 
-    # Step 7: Determine tier (priority level) of the signal
-    tier = determine_tier(core_signal, risk, confidence)
+        # Step 7: Confidence Evaluator
+        confidence = get_confidence(closes, signal)
 
-    # Step 8: Compose final result
-    final_result = {
-        "symbol": symbol,
-        "signal": core_signal,
-        "pattern": pattern,
-        "risk": risk,
-        "news": news,
-        "reason": reason,
-        "confidence": confidence,
-        "tier": tier
-    }
+        # Step 8: Tier Decision
+        tier = determine_tier(confidence)
 
-    return final_result
+        return {
+            "symbol": symbol,
+            "signal": signal,
+            "pattern": pattern,
+            "risk": risk,
+            "news": news,
+            "reason": reason,
+            "confidence": confidence,
+            "tier": tier
+        }
+
+    except Exception as e:
+        return {
+            "error": "Failed to generate signal",
+            "details": str(e)
+        }
