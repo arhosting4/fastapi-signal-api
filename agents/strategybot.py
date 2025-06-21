@@ -1,16 +1,28 @@
-import random
+# strategybot.py
 
-def fetch_ohlc(symbol: str, tf: str): # Simulate 10 random candles (for mock/testing) return [ { "open": round(random.uniform(100, 2000), 2), "high": round(random.uniform(100, 2000), 2), "low": round(random.uniform(100, 2000), 2), "close": round(random.uniform(100, 2000), 2) } for _ in range(10) ]
+def generate_core_signal(symbol: str, tf: str, closes: list):
+    """
+    Basic strategy to determine signal from closing price trends.
+    """
+    if len(closes) < 5:
+        return None
 
-def generate_core_signal(symbol: str, tf: str, closes: list): if len(closes) < 5: return None
+    recent_closes = closes[-5:]
+    avg = sum(recent_closes) / len(recent_closes)
 
-# Simple trend-based strategy (placeholder for advanced AI)
-avg_recent = sum(closes[-3:]) / 3
-avg_past = sum(closes[:3]) / 3
+    if recent_closes[-1] > avg:
+        return "BUY"
+    elif recent_closes[-1] < avg:
+        return "SELL"
+    else:
+        return "HOLD"
 
-if avg_recent > avg_past * 1.01:
-    return "buy"
-elif avg_recent < avg_past * 0.99:
-    return "sell"
-else:
-    return "wait"
+def fetch_ohlc(symbol: str, interval: str = "1min", limit: int = 50):
+    """
+    Simulate fetching OHLC data — Replace with actual API in production.
+    """
+    import random
+    return [{"open": random.uniform(1800, 1900),
+             "high": random.uniform(1900, 1920),
+             "low": random.uniform(1780, 1850),
+             "close": random.uniform(1800, 1900)} for _ in range(limit)]
