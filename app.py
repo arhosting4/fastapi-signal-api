@@ -1,3 +1,4 @@
+from agents.logger import log_signal
 from fastapi import FastAPI
 import requests
 import os
