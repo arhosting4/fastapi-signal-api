@@ -1,6 +1,14 @@
-def check_risk(symbol: str, closes: list) -> bool: if len(closes) < 2: return False
+def check_risk(symbol: str, closes: list) -> bool:
+    if len(closes) < 2:
+        return False
 
-# High volatility risk check (placeholder logic)
-volatility = abs(closes[-1] - closes[-2]) / closes[-2]
-return volatility > 0.03  # >3% change in last candle
+    last_close = float(closes[-1]['close'])
+    prev_close = float(closes[-2]['close'])
 
+    # Basic example risk rule: avoid trades if close difference > 2%
+    change_percent = abs(last_close - prev_close) / prev_close * 100
+
+    if change_percent > 2.0:
+        return False
+
+    return True
