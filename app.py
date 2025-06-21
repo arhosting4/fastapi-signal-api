@@ -1,43 +1,29 @@
 from fastapi import FastAPI
 import requests
+import os
+from dotenv import load_dotenv
 
 from agents.core_controller import generate_final_signal
 
+# Load environment variables from .env (for local dev)
+load_dotenv()
+
 app = FastAPI()
 
-# ✅ Twelve Data API Key
-TWELVE_DATA_API_KEY = "1d3c362a1459423cbc1d24e2a408098b"
+# Secure keys (DO NOT hardcode)
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ✅ Telegram Credentials
-TELEGRAM_TOKEN = "7010222145:AAHsV2XTAK1F1yTaN0k-TMPoL1S9abl7p2k"
-TELEGRAM_CHAT_ID = "@ScalpMasterSignalsAi"
-
-# ✅ Telegram Send Function
-def send_telegram_message(message):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
-        response = requests.post(url, data=data)
-        if not response.ok:
-            print("Telegram send error:", response.text)
-    except Exception as e:
-        print("Telegram exception:", e)
-
-# ✅ Root Route
 @app.get("/")
 def home():
     return {"message": "API is running successfully 🚀"}
 
-# ✅ Final Signal Route
 @app.get("/final-signal/{symbol}")
 def final_signal(symbol: str):
-    decoded_symbol = symbol.replace("-", "/")  # Use "XAU-USD" in browser, converts to "XAU/USD"
+    decoded_symbol = symbol.replace("-", "/")  # e.g., XAU-USD → XAU/USD
 
-    # Get market candles
+    # Fetch last 5 candles
     url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
     data = response.json()
@@ -46,23 +32,30 @@ def final_signal(symbol: str):
         return {"error": "Failed to fetch market data", "details": data}
 
     candles = data["values"]
+    result = generate_final_signal(decoded_symbol, candles)
 
-    try:
-        result = generate_final_signal(decoded_symbol, candles)
-    except Exception as e:
-        return {"error": "Signal generation failed", "details": str(e)}
+    # Prepare Telegram message
+    message = (
+        f"📢 **Signal Alert**: {decoded_symbol}\n\n"
+        f"📍 Signal: **{result['signal']}**\n"
+        f"🎯 Confidence: {result['confidence']}%\n"
+        f"🧠 Pattern: {result['pattern']}\n"
+        f"⚠️ Risk: {result['risk']}\n"
+        f"🗞 News: {result['news']}\n"
+        f"🏆 Tier: {result['tier']}\n"
+        f"📌 Reason: {result['reason']}"
+    )
 
-    # Telegram Signal Send
+    # Send to Telegram
     try:
-        message = f"*{result['signal'].upper()}* signal for `{decoded_symbol}` ⚡️\n\n" \
-                  f"*Risk:* {result['risk']}\n" \
-                  f"*News:* {result['news']}\n" \
-                  f"*Pattern:* {result['pattern']}\n" \
-                  f"*Reason:* {result['reason']}\n" \
-                  f"*Confidence:* {result['confidence']}%\n" \
-                  f"*Tier:* {result['tier']}"
-        send_telegram_message(message)
+        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        requests.post(telegram_url, data=payload)
     except Exception as e:
-        print("Telegram error:", e)
+        print("Telegram send error:", e)
 
     return result
