@@ -1,40 +1,40 @@
-# src/agents/sentinel.py
+# agents/sentinel.py
 
-def sentinel_guard(symbol: str, highs: list, lows: list, closes: list) -> dict:
+import datetime
+import random
+
+def analyze_market_context(symbol: str) -> str:
     """
-    Scans recent market data to detect unusual volatility, wick traps, or anomalies.
-    Flags dangerous market structure for added AI safety.
+    Simulates a macro-level context filter (like news impact or session strength).
+    Can return: "bullish", "bearish", or "neutral"
     """
 
-    if len(highs) < 5 or len(lows) < 5 or len(closes) < 5:
-        return {
-            "safe": False,
-            "alert": "Insufficient data"
-        }
+    # Use time-based dummy logic for different market sessions
+    now = datetime.datetime.utcnow()
+    hour = now.hour
 
-    recent_range = max(highs[-5:]) - min(lows[-5:])
-    last_close = closes[-1]
-    avg_range = sum([h - l for h, l in zip(highs[-5:], lows[-5:])]) / 5
+    if 0 <= hour < 6:
+        session = "Asia"
+    elif 6 <= hour < 13:
+        session = "Europe"
+    elif 13 <= hour < 20:
+        session = "US"
+    else:
+        session = "Late-US"
 
-    # Volatility spike detection
-    if recent_range > avg_range * 2.5:
-        return {
-            "safe": False,
-            "alert": "🧨 High volatility spike detected"
-        }
+    # Simulated market mood per session
+    session_bias = {
+        "Asia": "neutral",
+        "Europe": "bullish",
+        "US": "bearish",
+        "Late-US": "neutral"
+    }.get(session, "neutral")
 
-    # Wick trap detection
-    last_candle_body = abs(closes[-1] - closes[-2])
-    wick_top = highs[-1] - max(closes[-1], closes[-2])
-    wick_bottom = min(closes[-1], closes[-2]) - lows[-1]
-
-    if wick_top > last_candle_body * 2.5 or wick_bottom > last_candle_body * 2.5:
-        return {
-            "safe": False,
-            "alert": "⚠️ Wick trap structure detected"
-        }
-
-    return {
-        "safe": True,
-        "alert": "✅ Market structure normal"
-    }
+    # Add simulated news noise
+    news_randomizer = random.random()
+    if news_randomizer > 0.85:
+        return "bullish"
+    elif news_randomizer < 0.15:
+        return "bearish"
+    else:
+        return session_bias
