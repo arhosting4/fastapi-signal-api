@@ -4,16 +4,16 @@ import os
 import requests
 from agents.core_controller import generate_final_signal
 
-# Load environment variables
+# Load environment variables from .env file or Render secrets
 load_dotenv()
-
-# Get API credentials from env
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Environment variables
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 @app.get("/")
 def home():
@@ -21,9 +21,9 @@ def home():
 
 @app.get("/final-signal/{symbol}")
 def final_signal(symbol: str):
-    decoded_symbol = symbol.replace("-", "/")  # Convert XAU-USD to XAU/USD
+    decoded_symbol = symbol.replace("-", "/")  # e.g., XAU-USD -> XAU/USD
 
-    # Fetch market data
+    # Fetch OHLC data from Twelve Data
     url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
     data = response.json()
@@ -32,11 +32,9 @@ def final_signal(symbol: str):
         return {"error": "❌ Failed to fetch market data", "details": data}
 
     candles = data["values"]
-
-    # Run AI logic
     result = generate_final_signal(decoded_symbol, candles)
 
-    # Send to Telegram
+    # Prepare and send Telegram message
     try:
         message = f"📡 *{result['signal']}* Signal for *{decoded_symbol}* ⚡️\n\n" \
                   f"🧠 *Pattern:* {result['pattern']}\n" \
@@ -47,7 +45,7 @@ def final_signal(symbol: str):
                   f"🏅 *Tier:* {result['tier']}"
         send_telegram_message(message)
     except Exception as e:
-        print("⚠️ Telegram send error:", str(e))
+        print("⚠️ Telegram Error:", str(e))
 
     return result
 
@@ -61,4 +59,4 @@ def send_telegram_message(message: str):
         }
         requests.post(url, data=payload)
     except Exception as e:
-        print("⚠️ Telegram API Error:", str(e))
+        print("⚠️ Telegram Send Failed:", str(e))
