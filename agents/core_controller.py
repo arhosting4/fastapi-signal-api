@@ -1,70 +1,93 @@
 # src/agents/core_controller.py
 
 from agents.strategybot import generate_core_signal, fetch_ohlc
-from agents.patternai import detect_pattern
-from agents.riskguardian import evaluate_risk
-from agents.reasonbot import generate_reason
+from agents.patternai import detect_candle_pattern
 from agents.tierbot import assign_tier
-from agents.trainerai import calculate_confidence
-from agents.feedback_memory import save_signal_to_memory
 from agents.logger import log_signal
-from agents.sentinel import check_news_event
-
+from agents.loggerai import analyze_past_signals
+from agents.trainerai import train_ai_memory
+from agents.sentinel import sentinel_guard
+from agents.riskguardian import assess_risk
+from agents.reasonbot import generate_reason
 
 def generate_final_signal(symbol: str, candles: list) -> dict:
     """
-    Central AI Signal Controller – combines all logic layers
+    Main god-level fusion controller.
+    Takes raw OHLC data, routes through all agents, and returns final signal decision.
     """
-    try:
-        closes = [float(c['close']) for c in candles[::-1]]  # Most recent last
-        tf = "1m"
 
-        # Step 1: Extract OHLC
-        ohlc = fetch_ohlc(symbol, tf, closes)
+    closes = [float(c["close"]) for c in candles]
+    highs = [float(c["high"]) for c in candles]
+    lows = [float(c["low"]) for c in candles]
 
-        # Step 2: Base Signal
-        signal = generate_core_signal(symbol, tf, closes)
-
-        # Step 3: Pattern Detection
-        pattern = detect_pattern(candles)
-
-        # Step 4: Risk Evaluation
-        risk = evaluate_risk(candles)
-
-        # Step 5: News Event Filter
-        news_flag = check_news_event(symbol)
-
-        # Step 6: Signal Reason
-        reason = generate_reason(signal, pattern, risk)
-
-        # Step 7: Confidence Score
-        confidence = calculate_confidence(signal, pattern, risk)
-
-        # Step 8: Tier Label
-        tier = assign_tier(confidence)
-
-        # Final Logic Adjustments
-        if risk == "high" or news_flag:
-            signal = "wait"
-            reason = "High risk or sensitive event – pausing"
-
-        # Build result
-        result = {
-            "symbol": symbol,
-            "signal": signal,
-            "pattern": pattern,
-            "risk": risk,
-            "news": "⚠️ Event" if news_flag else "Clear",
-            "reason": reason,
-            "confidence": confidence,
-            "tier": tier
+    # Sentinel guard check
+    sentinel = sentinel_guard(symbol, highs, lows, closes)
+    if not sentinel["safe"]:
+        return {
+            "signal": "wait",
+            "pattern": "None",
+            "risk": "High Risk",
+            "news": "None",
+            "reason": sentinel["alert"],
+            "confidence": 0,
+            "tier": "Blocked",
         }
 
-        # Step 9: Save to memory & log
-        save_signal_to_memory(result)
-        log_signal(result)
+    # Core signal
+    core_signal = generate_core_signal(symbol, "1min", closes)
 
-        return result
+    # Pattern detection
+    pattern = detect_candle_pattern(candles)
 
-    except Exception as e:
-        return {"error": "⚠️ Signal generation failed", "details": str(e)}
+    # Risk analysis
+    risk = assess_risk(symbol, highs, lows, pattern)
+
+    # Tier assignment
+    tier = assign_tier(core_signal, pattern, risk)
+
+    # Reasoning
+    reason = generate_reason(core_signal, pattern, risk, tier, news="None")
+
+    # LoggerAI memory reference
+    memory = analyze_past_signals(symbol)
+
+    # AI training simulation
+    trainer = train_ai_memory(symbol)
+
+    # Final confidence
+    confidence = 70  # base
+    if tier.startswith("Tier 1"):
+        confidence += 15
+    elif tier.startswith("Tier 2"):
+        confidence += 8
+    elif tier.startswith("Tier 3"):
+        confidence += 3
+    if risk == "Low Risk":
+        confidence += 5
+    elif risk == "High Risk":
+        confidence -= 10
+
+    confidence = min(100, max(0, confidence))
+
+    # Log this decision
+    log_signal({
+        "symbol": symbol,
+        "signal": core_signal,
+        "pattern": pattern,
+        "tier": tier,
+        "risk": risk,
+        "confidence": confidence,
+        "reason": reason,
+    })
+
+    return {
+        "signal": core_signal,
+        "pattern": pattern,
+        "risk": risk,
+        "news": "None",
+        "reason": reason,
+        "confidence": confidence,
+        "tier": tier,
+        "memory_insight": memory,
+        "ai_training": trainer
+    }
