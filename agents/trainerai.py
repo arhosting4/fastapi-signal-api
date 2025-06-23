@@ -1,64 +1,56 @@
-# src/agents/trainerai.py
+# agents/trainerai.py
 
 import json
 import os
-import random
+from datetime import datetime
 
-LOG_FILE = "logs/signals_log.json"
+MEMORY_FILE = "signal_memory.json"
 
-def train_ai_memory(symbol: str) -> dict:
+def load_memory():
+    if not os.path.exists(MEMORY_FILE):
+        return []
+
+    with open(MEMORY_FILE, "r") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
+
+def save_memory(memory: list):
+    with open(MEMORY_FILE, "w") as f:
+        json.dump(memory[-200:], f, indent=2)  # Keep last 200 only
+
+def learn_from_history(symbol: str, signal: str, price: float, tf: str) -> str:
     """
-    Simulates memory training by reviewing past logs.
-    Rewards high-confidence signals with good tiers, penalizes noisy ones.
+    Simulates adaptive learning based on previous signals' outcome.
+    Returns 'support', 'reject', or 'uncertain' to guide final signal.
     """
-    if not os.path.exists(LOG_FILE):
-        return {
-            "training_status": "No logs found",
-            "memory_score": 0,
-            "notes": "Need signal logs to begin memory training"
-        }
+    memory = load_memory()
+    now = datetime.utcnow().isoformat()
 
-    try:
-        with open(LOG_FILE, "r") as f:
-            logs = json.load(f)
+    # Log new decision
+    memory.append({
+        "timestamp": now,
+        "symbol": symbol,
+        "signal": signal,
+        "price": price,
+        "tf": tf
+    })
 
-        filtered = [log for log in logs if log.get("symbol") == symbol]
-        if not filtered:
-            return {
-                "training_status": "No symbol logs found",
-                "memory_score": 0,
-                "notes": f"No entries found for {symbol}"
-            }
+    save_memory(memory)
 
-        score = 0
-        notes = []
+    # Simple memory-based adaptive decision: count recent wins/fails (simulated)
+    last_signals = [m for m in memory if m["symbol"] == symbol and m["tf"] == tf]
+    recent = last_signals[-10:]
 
-        for log in filtered:
-            conf = log.get("confidence", 0)
-            tier = log.get("tier", "")
-            signal = log.get("signal", "")
+    buy_count = sum(1 for s in recent if s["signal"] == "buy")
+    sell_count = sum(1 for s in recent if s["signal"] == "sell")
 
-            # Reward logic
-            if conf > 80 and tier.startswith("Tier 1"):
-                score += 3
-                notes.append(f"✅ High confidence Tier 1: {signal}")
-            elif conf > 70 and "Tier 2" in tier:
-                score += 2
-            elif "Tier 4" in tier:
-                score -= 2
-                notes.append(f"⚠️ Weak signal flagged in Tier 4")
-
-        memory_score = max(0, min(100, int((score / len(filtered)) * 10 + random.uniform(0, 5))))
-
-        return {
-            "training_status": "Memory trained",
-            "memory_score": memory_score,
-            "notes": notes[-5:]
-        }
-
-    except Exception as e:
-        return {
-            "training_status": "Error",
-            "memory_score": 0,
-            "notes": [str(e)]
-        }
+    if signal == "buy" and buy_count >= 6:
+        return "support"
+    elif signal == "sell" and sell_count >= 6:
+        return "support"
+    elif buy_count + sell_count < 3:
+        return "uncertain"
+    else:
+        return "reject"
