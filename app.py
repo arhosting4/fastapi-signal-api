@@ -1,22 +1,13 @@
-# app.py
-
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import requests
+from fastapi import FastAPI
+from agents.strategybot import generate_core_signal, fetch_ohlc
 import os
-
-from src.agents.strategybot import generate_core_signal
+import requests
 
 app = FastAPI()
 
-# ✅ Telegram details from env or fallback
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "your-real-token-here")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "your-real-chat-id")
-
-class CandleData(BaseModel):
-    symbol: str
-    tf: str
-    closes: list
+# Telegram credentials from environment
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_telegram_message(message: str):
     try:
@@ -31,20 +22,24 @@ def send_telegram_message(message: str):
     except Exception as e:
         print("⚠️ Telegram Send Failed:", str(e))
 
-@app.post("/final-signal/{symbol}")
-async def get_final_signal(symbol: str, data: CandleData):
-    try:
-        result = generate_core_signal(symbol, data.tf, data.closes)
 
-        if result == "wait":
-            return {"status": "no-signal", "error": "Strategy failed or not enough data."}
+@app.get("/")
+def root():
+    return {"message": "ScalpMasterAi API is running"}
 
-        message = (
-            f"📡 *{result.upper()}* signal for *{symbol.upper()}* on timeframe *{data.tf}*.\n"
-            f"🔍 Data: {data.closes[-3:]}"
-        )
+
+@app.get("/final-signal/{symbol}")
+def get_signal(symbol: str):
+    # Simulated dummy data
+    tf = "1m"
+    data = [2001, 2003, 2005, 2007, 2009, 2011]
+
+    signal = generate_core_signal(symbol, tf, data)
+    ohlc = fetch_ohlc(symbol, tf, data)
+
+    if signal in ["buy", "sell"]:
+        message = f"*{symbol}* ({tf}) Signal: *{signal.upper()}*\nPrice: `{ohlc['close']}`"
         send_telegram_message(message)
-
-        return {"status": "signal", "signal": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "ok", "signal": signal, "price": ohlc["close"]}
+    else:
+        return {"status": "no-signal", "error": "Strategy failed or not triggered"}
