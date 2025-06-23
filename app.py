@@ -1,13 +1,62 @@
+# app.py
+
 from fastapi import FastAPI
-from agents.strategybot import generate_core_signal, fetch_ohlc
+from dotenv import load_dotenv
 import os
 import requests
+from agents.core_controller import generate_final_signal
 
+# Load environment variables
+load_dotenv()
+
+# FastAPI instance
 app = FastAPI()
 
-# Telegram credentials from environment
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+# Environment variables
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+@app.get("/")
+def home():
+    return {"message": "🚀 Pro Killer AI - God-Level API is Live"}
+
+@app.get("/final-signal/{symbol}")
+def final_signal(symbol: str):
+    """
+    Main signal API endpoint. Fetches candles, processes AI logic, sends Telegram message.
+    """
+    decoded_symbol = symbol.replace("-", "/")  # XAU-USD => XAU/USD
+    url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
+
+    try:
+        response = requests.get(url)
+        data = response.json()
+
+        if "values" not in data:
+            return {"error": "❌ Market data fetch failed", "details": data}
+
+        candles = data["values"]
+        result = generate_final_signal(decoded_symbol, candles)
+
+        # Format Telegram message
+        message = f"""
+📡 *{result['signal'].upper()}* signal for *{decoded_symbol}*
+
+🧠 *Pattern:* {result['pattern']}
+⚠️ *Risk:* {result['risk']}
+📰 *News:* {result['news']}
+🧠 *Reason:* {result['reason']}
+🎯 *Confidence:* {result['confidence']}%
+🏅 *Tier:* {result['tier']}
+"""
+
+        send_telegram_message(message)
+
+        return result
+
+    except Exception as e:
+        return {"error": "⚠️ API error", "details": str(e)}
 
 def send_telegram_message(message: str):
     try:
@@ -18,28 +67,6 @@ def send_telegram_message(message: str):
             "parse_mode": "Markdown"
         }
         response = requests.post(url, data=payload)
-        print("✅ Telegram response:", response.status_code, response.text)
+        print("✅ Telegram:", response.status_code, response.text)
     except Exception as e:
-        print("⚠️ Telegram Send Failed:", str(e))
-
-
-@app.get("/")
-def root():
-    return {"message": "ScalpMasterAi API is running"}
-
-
-@app.get("/final-signal/{symbol}")
-def get_signal(symbol: str):
-    # Simulated dummy data
-    tf = "1m"
-    data = [2001, 2003, 2005, 2007, 2009, 2011]
-
-    signal = generate_core_signal(symbol, tf, data)
-    ohlc = fetch_ohlc(symbol, tf, data)
-
-    if signal in ["buy", "sell"]:
-        message = f"*{symbol}* ({tf}) Signal: *{signal.upper()}*\nPrice: `{ohlc['close']}`"
-        send_telegram_message(message)
-        return {"status": "ok", "signal": signal, "price": ohlc["close"]}
-    else:
-        return {"status": "no-signal", "error": "Strategy failed or not triggered"}
+        print("⚠️ Telegram Send Error:", str(e))
