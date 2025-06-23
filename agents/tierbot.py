@@ -1,22 +1,40 @@
 # src/agents/tierbot.py
 
-def get_tier(confidence: float) -> str:
+def assign_tier(symbol: str, confidence: float, risk: str, bias: str) -> str:
     """
-    Determines AI tier level based on confidence score.
-
-    Parameters:
-        confidence (float): Confidence level (0-100%)
-
-    Returns:
-        str: Tier level (Tier 1, Tier 2, Tier 3, etc.)
+    Assigns a signal Tier (1 to 4) based on confidence, risk level, and market bias.
+    Higher tier = more trustworthy signal.
     """
-    if confidence >= 90:
-        return "Tier 1 – Elite"
-    elif confidence >= 80:
-        return "Tier 2 – Strong"
-    elif confidence >= 70:
-        return "Tier 3 – Moderate"
-    elif confidence >= 60:
-        return "Tier 4 – Caution"
+
+    # Base scoring model
+    score = 0
+
+    # Confidence scoring
+    if confidence >= 0.85:
+        score += 2
+    elif confidence >= 0.65:
+        score += 1
+
+    # Risk scoring
+    if risk == "low":
+        score += 2
+    elif risk == "medium":
+        score += 1
+    elif risk == "high":
+        score -= 1
+
+    # Bias influence
+    if bias == "bullish" or bias == "bearish":
+        score += 1
+    elif bias == "neutral":
+        score -= 1
+
+    # Final tier assignment
+    if score >= 5:
+        return "Tier 1 🚀"
+    elif score >= 3:
+        return "Tier 2 ⚡"
+    elif score >= 1:
+        return "Tier 3 ⚠️"
     else:
-        return "Tier 5 – Weak"
+        return "Tier 4 ❄️"
