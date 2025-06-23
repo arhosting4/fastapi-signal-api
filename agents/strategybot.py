@@ -1,9 +1,6 @@
-# src/agents/strategybot.py
-
 def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     if len(closes) < 5:
         return "wait"
-
     if closes[-1] > closes[-2] > closes[-3]:
         return "buy"
     elif closes[-1] < closes[-2] < closes[-3]:
@@ -12,16 +9,12 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
         return "wait"
 
 def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
-    """
-    Simulates fetching OHLCV data. Replace with real API logic if needed.
-    """
     if len(data) < 5:
         return {}
-
     return {
         "open": data[-5],
         "high": max(data[-5:]),
         "low": min(data[-5:]),
         "close": data[-1],
-        "volume": 1000  # Placeholder
+        "volume": 1000
     }
