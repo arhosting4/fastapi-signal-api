@@ -1,25 +1,40 @@
 # src/agents/riskguardian.py
 
-def evaluate_risk(symbol: str, closes: list, highs: list, lows: list, confidence: float, bias: str) -> str:
+def assess_risk(symbol: str, highs: list, lows: list, pattern: str) -> str:
     """
-    Evaluates signal risk level based on price volatility and AI confidence.
+    Evaluates the dynamic market risk based on price spread, pattern strength, and chaos level.
+    Returns: 'Low Risk', 'Moderate Risk', or 'High Risk'
     """
-    if len(closes) < 5 or len(highs) < 5 or len(lows) < 5:
-        return "unknown"
+    if len(highs) < 5 or len(lows) < 5:
+        return "Unknown Risk"
 
-    recent_range = [h - l for h, l in zip(highs[-5:], lows[-5:])]
-    avg_range = sum(recent_range) / len(recent_range)
-    last_range = highs[-1] - lows[-1]
+    spreads = [h - l for h, l in zip(highs[-5:], lows[-5:])]
+    avg_spread = sum(spreads) / len(spreads)
 
-    volatility_ratio = last_range / avg_range if avg_range != 0 else 1
-    bias_multiplier = 1.5 if bias == "neutral" else 1.0
-
-    # Risk score calculation
-    risk_score = (volatility_ratio * bias_multiplier) - confidence
-
-    if risk_score > 1.2:
-        return "high"
-    elif risk_score > 0.5:
-        return "medium"
+    # Determine volatility level
+    if avg_spread > 2.5:
+        volatility = "High"
+    elif avg_spread > 1.2:
+        volatility = "Moderate"
     else:
-        return "low"
+        volatility = "Low"
+
+    # Pattern reliability weighting
+    strong_patterns = ["Bullish Engulfing", "Bearish Engulfing", "Upside Breakout", "Downside Breakout"]
+    medium_patterns = ["Bullish Pin Bar", "Bearish Pin Bar"]
+    weak_patterns = ["No pattern"]
+
+    if pattern in strong_patterns:
+        pattern_score = "Reliable"
+    elif pattern in medium_patterns:
+        pattern_score = "Cautious"
+    else:
+        pattern_score = "Unreliable"
+
+    # Final risk logic
+    if volatility == "High" or pattern_score == "Unreliable":
+        return "High Risk"
+    elif volatility == "Moderate" and pattern_score != "Reliable":
+        return "Moderate Risk"
+    else:
+        return "Low Risk"
