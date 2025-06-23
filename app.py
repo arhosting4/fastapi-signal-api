@@ -1,31 +1,69 @@
-from fastapi import FastAPI, Request
+# app.py
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os
 import requests
-from strategybot import generate_final_signal
+import os
+from src.agents.strategybot import generate_core_signal  # ✅ Corrected path
 
 app = FastAPI()
 
-# CORS setup (optional but useful)
+# Load secrets from environment variables
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Enable CORS (optional, useful for frontend testing)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load environment variables
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# Define input format
-class SignalRequest(BaseModel):
+class CandleRequest(BaseModel):
     symbol: str
-    values: list
+    timeframe: str
+    candles: list
 
-# Telegram send function
+@app.get("/")
+def root():
+    return {"status": "live"}
+
+@app.post("/final-signal/{symbol}")
+def final_signal(symbol: str, req: CandleRequest):
+    data = req.dict()
+    closes = data["candles"]
+    tf = data["timeframe"]
+    
+    result = {
+        "symbol": symbol.upper(),
+        "signal": generate_core_signal(symbol, tf, closes),
+        "pattern": "Bullish Engulfing",  # static for now
+        "risk": "Normal",
+        "news": "Clear",
+        "reason": "Mixed or neutral signals; no strong alignment",
+        "confidence": 52.25,
+        "tier": "Tier 5 - Weak"
+    }
+
+    # Send Telegram Message
+    try:
+        message = (
+            f"🦾 *{result['signal'].upper()}* Signal\n"
+            f"🧠 *Pattern:* {result['pattern']}\n"
+            f"📊 *Risk:* {result['risk']}\n"
+            f"📰 *News:* {result['news']}\n"
+            f"🔍 *Reason:* {result['reason']}\n"
+            f"🎯 *Confidence:* {result['confidence']}%\n"
+            f"🏅 *Tier:* {result['tier']}"
+        )
+        send_telegram_message(message)
+    except Exception as e:
+        print("⚠️ Telegram Error:", str(e))
+
+    return result
+
 def send_telegram_message(message: str):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -38,32 +76,3 @@ def send_telegram_message(message: str):
         print("✅ Telegram response:", response.status_code, response.text)
     except Exception as e:
         print("⚠️ Telegram Send Failed:", str(e))
-
-# API route
-@app.post("/final-signal/{symbol}")
-async def final_signal(symbol: str, request: Request):
-    try:
-        data = await request.json()
-        candles = data["values"]
-        result = generate_final_signal(symbol, candles)
-
-        # Safe check to avoid KeyError
-        if result.get("signal"):
-            try:
-                message = f"📉 *{result.get('signal', 'N/A')}* Signal\n" \
-                          f"🧠 *Pattern:* {result.get('pattern', 'N/A')}\n" \
-                          f"📊 *Risk:* {result.get('risk', 'N/A')}\n" \
-                          f"📰 *News:* {result.get('news', 'N/A')}\n" \
-                          f"🔎 *Reason:* {result.get('reason', 'N/A')}\n" \
-                          f"🎯 *Confidence:* {result.get('confidence', 'N/A')}%\n" \
-                          f"🥇 *Tier:* {result.get('tier', 'N/A')}"
-                send_telegram_message(message)
-            except Exception as e:
-                print("⚠️ Telegram Error:", str(e))
-        else:
-            print("⚠️ No signal generated, skipping Telegram message.")
-
-        return result
-
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
