@@ -4,16 +4,16 @@ import os
 import requests
 from agents.core_controller import generate_final_signal
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-# Initialize FastAPI app
-app = FastAPI()
-
-# Environment variables
+# Get API credentials from env
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Initialize FastAPI app
+app = FastAPI()
 
 @app.get("/")
 def home():
@@ -21,12 +21,9 @@ def home():
 
 @app.get("/final-signal/{symbol}")
 def final_signal(symbol: str):
-    """
-    Main god-level signal endpoint: fetches OHLC, runs AI agents, sends Telegram message.
-    """
-    decoded_symbol = symbol.replace("-", "/")  # e.g., XAU-USD becomes XAU/USD
+    decoded_symbol = symbol.replace("-", "/")  # Convert XAU-USD to XAU/USD
 
-    # Fetch latest 5 candles
+    # Fetch market data
     url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
     data = response.json()
@@ -36,10 +33,10 @@ def final_signal(symbol: str):
 
     candles = data["values"]
 
-    # Generate god-level signal from all AI layers
+    # Run AI logic
     result = generate_final_signal(decoded_symbol, candles)
 
-    # Compose Telegram message
+    # Send to Telegram
     try:
         message = f"📡 *{result['signal']}* Signal for *{decoded_symbol}* ⚡️\n\n" \
                   f"🧠 *Pattern:* {result['pattern']}\n" \
@@ -54,11 +51,7 @@ def final_signal(symbol: str):
 
     return result
 
-
 def send_telegram_message(message: str):
-    """
-    Sends a formatted message to the configured Telegram channel.
-    """
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         payload = {
