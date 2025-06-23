@@ -1,19 +1,15 @@
-# src/agents/riskguardian.py
+# agents/riskguardian.py
 
-def check_risk(symbol: str, closes: list) -> bool:
+def evaluate_risk(symbol: str, volatility: float, sentiment: str) -> str:
     """
-    Basic volatility/risk check:
-    If price changed too sharply in last 2 candles, flag as risky.
+    Simple risk evaluation logic.
     """
-    if len(closes) < 3:
-        return False
-
-    last_change = abs(closes[-1] - closes[-2])
-    prev_change = abs(closes[-2] - closes[-3])
-
-    volatility = last_change + prev_change
-    average_price = sum(closes[-3:]) / 3
-
-    risk_threshold = 0.03 * average_price  # 3% move considered high-risk
-
-    return volatility > risk_threshold
+    try:
+        if volatility > 2.0 and sentiment == "bearish":
+            return "high"
+        elif volatility < 1.0 and sentiment == "bullish":
+            return "low"
+        else:
+            return "medium"
+    except Exception:
+        return "unknown"
