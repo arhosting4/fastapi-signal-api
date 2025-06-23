@@ -1,69 +1,70 @@
-from agents.strategybot import generate_core_signal
-from agents.patternai import detect_patterns
-from agents.riskguardian import check_risk
-from agents.sentinel import check_news
+# src/agents/core_controller.py
+
+from agents.strategybot import generate_core_signal, fetch_ohlc
+from agents.patternai import detect_pattern
+from agents.riskguardian import evaluate_risk
 from agents.reasonbot import generate_reason
-from agents.trainerai import get_confidence
-from agents.tierbot import get_tier
+from agents.tierbot import assign_tier
+from agents.trainerai import calculate_confidence
+from agents.feedback_memory import save_signal_to_memory
+from agents.logger import log_signal
+from agents.sentinel import check_news_event
 
-def generate_final_signal(symbol: str, candles: list):
+
+def generate_final_signal(symbol: str, candles: list) -> dict:
     """
-    Core AI fusion engine combining all agents to generate a god-level trading signal.
-
-    Parameters:
-        symbol (str): The trading pair (e.g., XAU/USD).
-        candles (list): List of OHLC candles from the API.
-
-    Returns:
-        dict: Final AI signal output with full intelligence context.
+    Central AI Signal Controller – combines all logic layers
     """
     try:
-        tf = "1min"
+        closes = [float(c['close']) for c in candles[::-1]]  # Most recent last
+        tf = "1m"
 
-        # ✅ Convert candle data to closing prices list
-        closes = [float(candle["close"]) for candle in candles[::-1]]
+        # Step 1: Extract OHLC
+        ohlc = fetch_ohlc(symbol, tf, closes)
 
-        # ✅ Step 1: Core AI strategy signal
-        strategy_signal = generate_core_signal(symbol, tf, closes)
-        if not strategy_signal or strategy_signal == "wait":
-            return {"status": "no-signal", "error": "Strategy failed or no trend"}
+        # Step 2: Base Signal
+        signal = generate_core_signal(symbol, tf, closes)
 
-        # ✅ Step 2: Detect chart pattern
-        pattern_data = detect_patterns(symbol, tf)
-        pattern = pattern_data.get("pattern", "Unknown")
+        # Step 3: Pattern Detection
+        pattern = detect_pattern(candles)
 
-        if not pattern:
-            return {"status": "no-signal", "error": "No pattern detected"}
+        # Step 4: Risk Evaluation
+        risk = evaluate_risk(candles)
 
-        # ✅ Step 3: Risk check
-        if check_risk(symbol, closes):
-            return {"status": "blocked", "error": "High market risk"}
+        # Step 5: News Event Filter
+        news_flag = check_news_event(symbol)
 
-        # ✅ Step 4: News filter
-        # (Empty list used for now — can integrate live news later)
-        if check_news(symbol, []):
-            return {"status": "blocked", "error": "Red news event"}
+        # Step 6: Signal Reason
+        reason = generate_reason(signal, pattern, risk)
 
-        # ✅ Step 5: Reasoning
-        reason = generate_reason(strategy_signal, pattern)
+        # Step 7: Confidence Score
+        confidence = calculate_confidence(signal, pattern, risk)
 
-        # ✅ Step 6: Confidence
-        confidence = get_confidence(symbol, tf, strategy_signal, pattern)
+        # Step 8: Tier Label
+        tier = assign_tier(confidence)
 
-        # ✅ Step 7: Tier level
-        tier = get_tier(confidence)
+        # Final Logic Adjustments
+        if risk == "high" or news_flag:
+            signal = "wait"
+            reason = "High risk or sensitive event – pausing"
 
-        # ✅ Step 8: Final signal result
-        return {
+        # Build result
+        result = {
             "symbol": symbol,
-            "signal": strategy_signal,
+            "signal": signal,
             "pattern": pattern,
-            "risk": "Normal",
-            "news": "Clear",
+            "risk": risk,
+            "news": "⚠️ Event" if news_flag else "Clear",
             "reason": reason,
-            "confidence": round(confidence, 2),
+            "confidence": confidence,
             "tier": tier
         }
 
+        # Step 9: Save to memory & log
+        save_signal_to_memory(result)
+        log_signal(result)
+
+        return result
+
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"error": "⚠️ Signal generation failed", "details": str(e)}
