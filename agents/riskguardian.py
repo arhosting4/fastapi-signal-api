@@ -1,40 +1,57 @@
-# src/agents/riskguardian.py
+# agents/riskguardian.py
 
-def assess_risk(symbol: str, highs: list, lows: list, pattern: str) -> str:
+def evaluate_risk(closes: list, pattern: str, signal: str) -> str:
     """
-    Evaluates the dynamic market risk based on price spread, pattern strength, and chaos level.
-    Returns: 'Low Risk', 'Moderate Risk', or 'High Risk'
+    Evaluate risk level based on price action and detected patterns.
+    Returns: "low", "medium", or "high"
     """
-    if len(highs) < 5 or len(lows) < 5:
-        return "Unknown Risk"
 
-    spreads = [h - l for h, l in zip(highs[-5:], lows[-5:])]
-    avg_spread = sum(spreads) / len(spreads)
+    if len(closes) < 10:
+        return "high"  # not enough data is always high risk
 
-    # Determine volatility level
-    if avg_spread > 2.5:
-        volatility = "High"
-    elif avg_spread > 1.2:
-        volatility = "Moderate"
+    # Calculate volatility (simple)
+    recent_range = max(closes[-5:]) - min(closes[-5:])
+    avg_change = sum(abs(closes[i] - closes[i - 1]) for i in range(-5, 0)) / 4
+
+    volatility = recent_range / avg_change if avg_change != 0 else 0
+
+    # Risk based on volatility
+    if volatility > 4:
+        vol_risk = "high"
+    elif volatility > 2:
+        vol_risk = "medium"
     else:
-        volatility = "Low"
+        vol_risk = "low"
 
-    # Pattern reliability weighting
-    strong_patterns = ["Bullish Engulfing", "Bearish Engulfing", "Upside Breakout", "Downside Breakout"]
-    medium_patterns = ["Bullish Pin Bar", "Bearish Pin Bar"]
-    weak_patterns = ["No pattern"]
+    # Risk based on pattern strength
+    pattern_risk = {
+        "three_white_soldiers": "low",
+        "three_black_crows": "low",
+        "bullish_engulfing": "medium",
+        "bearish_engulfing": "medium",
+        "doji": "high",
+        "none": "medium",
+        "error": "high"
+    }.get(pattern, "medium")
 
-    if pattern in strong_patterns:
-        pattern_score = "Reliable"
-    elif pattern in medium_patterns:
-        pattern_score = "Cautious"
+    # Risk based on current signal direction
+    signal_risk = {
+        "buy": "medium",
+        "sell": "medium",
+        "wait": "low"
+    }.get(signal, "high")
+
+    # Combine all risk factors
+    risk_score = sum([
+        {"low": 1, "medium": 2, "high": 3}[vol_risk],
+        {"low": 1, "medium": 2, "high": 3}[pattern_risk],
+        {"low": 1, "medium": 2, "high": 3}[signal_risk],
+    ])
+
+    # Final risk classification
+    if risk_score <= 4:
+        return "low"
+    elif risk_score <= 6:
+        return "medium"
     else:
-        pattern_score = "Unreliable"
-
-    # Final risk logic
-    if volatility == "High" or pattern_score == "Unreliable":
-        return "High Risk"
-    elif volatility == "Moderate" and pattern_score != "Reliable":
-        return "Moderate Risk"
-    else:
-        return "Low Risk"
+        return "high"
