@@ -1,31 +1,30 @@
 # src/agents/loggerai.py
 
-import os
-import requests
-from dotenv import load_dotenv
+import datetime
 
-load_dotenv()
+memory = []
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-def send_telegram_message(message: str):
+def log_signal(symbol: str, signal: str, confidence: float, pattern: str, risk: str, reason: str, tier: str):
     """
-    Sends a formatted message to the configured Telegram bot/channel.
+    Logs the final signal with metadata to in-memory store.
     """
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram config missing.")
-        return
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
+    entry = {
+        "time": timestamp,
+        "symbol": symbol,
+        "signal": signal,
+        "confidence": round(confidence * 100, 2),
+        "pattern": pattern,
+        "risk": risk,
+        "reason": reason,
+        "tier": tier
     }
 
-    try:
-        response = requests.post(url, data=payload)
-        print("✅ Telegram sent:", response.status_code)
-    except Exception as e:
-        print("❌ Telegram error:", str(e))
+    memory.append(entry)
+
+def get_latest_logs(n: int = 5):
+    """
+    Returns the last n logs.
+    """
+    return memory[-n:]
