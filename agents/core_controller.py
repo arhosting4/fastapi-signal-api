@@ -1,54 +1,54 @@
-# src/agents/core_controller.py
+# agents/core_controller.py
 
-from .strategybot import generate_core_signal, fetch_ohlc
-from .patternai import detect_pattern
-from .riskguardian import assess_risk
-from .sentinel import fetch_news_impact
-from .reasonbot import generate_reason
-from .trainerai import auto_tune_confidence
-from .tierbot import classify_tier
-from .loggerai import log_signal
+from agents.strategybot import generate_core_signal, fetch_ohlc
+from agents.riskguardian import evaluate_risk
+from agents.sentinel import detect_pattern
+from agents.reasonbot import generate_reason
+from agents.trainerai import estimate_confidence
+from agents.patternai import analyze_market_pattern
+from agents.tierbot import determine_tier
+from agents.loggerai import log_signal
 
 def generate_final_signal(symbol: str, candles: list) -> dict:
-    # Step 1: Extract price closes
-    closes = [float(c["close"]) for c in candles[::-1]]  # oldest to newest
-    ohlc = fetch_ohlc(symbol, "1min", closes)
+    """
+    God-level fusion of all AI layers to generate the final trading signal.
+    """
+    # Extract closing prices
+    closes = [float(candle["close"]) for candle in candles]
 
-    if not ohlc:
-        return {"error": "Insufficient candle data"}
-
-    # Step 2: Run core signal logic
+    # Core signal logic (momentum)
     signal = generate_core_signal(symbol, "1min", closes)
 
-    # Step 3: Pattern recognition
-    pattern = detect_pattern(closes)
+    # Risk layer
+    risk = evaluate_risk(closes)
 
-    # Step 4: Risk evaluation
-    risk = assess_risk(closes)
+    # OHLC structure for downstream agents
+    ohlc = fetch_ohlc(symbol, "1min", closes)
 
-    # Step 5: News/Sentiment
-    news = fetch_news_impact(symbol)
+    # Pattern detection
+    pattern = detect_pattern(ohlc)
 
-    # Step 6: Reason generation
-    reason = generate_reason(signal, pattern, risk, news)
+    # Reason generator
+    reason = generate_reason(signal, pattern, risk)
 
-    # Step 7: Confidence scoring
-    confidence = 0.8 if signal in ["buy", "sell"] else 0.5
-    tuned_confidence = auto_tune_confidence(confidence, symbol, signal)
+    # Market-based pattern (macro layer)
+    macro_pattern = analyze_market_pattern(closes)
 
-    # Step 8: Tier classification
-    tier = classify_tier(tuned_confidence)
+    # Confidence estimator
+    confidence = estimate_confidence(signal, closes)
 
-    # Step 9: Log final signal to memory
-    log_signal(symbol, signal, tuned_confidence, pattern, risk, reason, tier)
+    # Tier classification
+    tier = determine_tier(confidence, risk)
+
+    # Logging (optional but useful for debugging or monitoring)
+    log_signal(symbol, signal, confidence, pattern, reason, tier)
 
     return {
-        "symbol": symbol,
         "signal": signal,
-        "pattern": pattern,
         "risk": risk,
-        "news": news,
+        "pattern": pattern,
         "reason": reason,
-        "confidence": round(tuned_confidence * 100, 2),
+        "macro_pattern": macro_pattern,
+        "confidence": confidence,
         "tier": tier
     }
