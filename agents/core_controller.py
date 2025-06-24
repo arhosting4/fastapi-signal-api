@@ -19,8 +19,17 @@ def generate_final_signal(symbol: str, candles: list) -> dict:
     # Step 1: Generate signal from core logic
     signal = generate_core_signal(symbol, tf, closes)
 
-    # Step 2: Pattern detection
-    pattern = detect_pattern(closes)
+    # agents/core_controller.py (inside generate_final_signal function)
+
+from agents.patternai import detect_pattern
+
+try:
+    pattern = detect_pattern(symbol, candles)
+    if not pattern:
+        pattern = "NoPattern"
+except Exception as e:
+    print(f"[Error] detect_pattern failed: {e}")
+    pattern = "PatternError"
 
     # Step 3: Risk analysis
     risk = evaluate_risk(volatility=2.5, spread=1.8, news_impact=4.0)
