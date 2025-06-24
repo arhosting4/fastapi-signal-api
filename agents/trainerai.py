@@ -1,8 +1,15 @@
 # src/agents/trainerai.py
 
-def log_signal_feedback(symbol: str, signal: str, success: bool):
+from .feedback_memory import get_feedback_accuracy
+
+def auto_tune_confidence(base_confidence: float, symbol: str, signal: str) -> float:
     """
-    Logs the outcome of a signal. In a real system, this could feed an AI trainer.
+    Adjust the confidence score based on past performance.
     """
-    feedback = "✔️ SUCCESS" if success else "❌ FAIL"
-    print(f"[FEEDBACK] Signal for {symbol.upper()} = {signal.upper()} ➜ {feedback}")
+    try:
+        historical_accuracy = get_feedback_accuracy(symbol, signal)
+        # Blend current and historical score
+        tuned_confidence = (0.7 * base_confidence) + (0.3 * historical_accuracy)
+        return round(tuned_confidence, 4)
+    except Exception:
+        return base_confidence
