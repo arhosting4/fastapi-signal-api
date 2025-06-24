@@ -1,36 +1,40 @@
 # src/app.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from agents.core_controller import generate_final_signal
-import os
-import requests
+from agents.telegrambot import send_telegram_signal
 
 app = FastAPI()
 
 @app.get("/")
-def index():
+async def root():
     return {"message": "ScalpMasterAi API is running"}
 
 @app.get("/final-signal/{symbol}")
-def get_final_signal(symbol: str):
-    # Example mock data, replace with real OHLC fetch logic if needed
-    sample_data = [2000, 2005, 2010, 2012, 2011, 2015]
-    tf = "1m"
-    
-    result = generate_final_signal(symbol, tf, sample_data)
+async def get_signal(symbol: str, tf: str = "1m", closes: str = ""):
+    try:
+        # Parse closing prices from comma-separated string
+        if not closes:
+            return {"status": "error", "reason": "Missing 'closes' parameter"}
 
-    # Telegram Notification
-    if result["status"] == "ok":
-        token = os.getenv("TELEGRAM_TOKEN")
-        chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        if token and chat_id:
-            message = f"**{symbol} ({tf}) Signal:** `{result['signal'].upper()}`\nPrice: {result['price']}"
-            url = f"https://api.telegram.org/bot{token}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "Markdown"
-            }
-            requests.post(url, data=payload)
+        close_list = [float(x) for x in closes.split(",") if x.strip()]
+        result = generate_final_signal(symbol.upper(), tf, close_list)
 
-    return result
+        if result["status"] == "ok" and result["signal"] in ["buy", "sell"]:
+            send_telegram_signal(
+                symbol=symbol.upper(),
+                signal=result["signal"],
+                price=close_list[-1],
+                confidence=result.get("confidence", 0.0),
+                tier=result.get("tier", "N/A"),
+                reason=result.get("reason", "N/A")
+            )
+
+        return result
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "reason": str(e)}
+        )
