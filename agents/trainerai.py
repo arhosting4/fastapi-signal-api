@@ -1,56 +1,36 @@
-# agents/trainerai.py
+# src/agents/trainerai.py
 
 import json
-import os
 from datetime import datetime
+import os
 
-MEMORY_FILE = "signal_memory.json"
+LOG_FILE = "learning_memory.json"
 
-def load_memory():
-    if not os.path.exists(MEMORY_FILE):
-        return []
-
-    with open(MEMORY_FILE, "r") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
-
-def save_memory(memory: list):
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(memory[-200:], f, indent=2)  # Keep last 200 only
-
-def learn_from_history(symbol: str, signal: str, price: float, tf: str) -> str:
+def update_learning_memory(symbol: str, signal: str, candle_pattern: str, risk_level: str, context_reason: str):
     """
-    Simulates adaptive learning based on previous signals' outcome.
-    Returns 'support', 'reject', or 'uncertain' to guide final signal.
+    Logs the learning memory for future analysis.
     """
-    memory = load_memory()
-    now = datetime.utcnow().isoformat()
 
-    # Log new decision
-    memory.append({
-        "timestamp": now,
+    memory = {
+        "timestamp": datetime.utcnow().isoformat(),
         "symbol": symbol,
         "signal": signal,
-        "price": price,
-        "tf": tf
-    })
+        "pattern": candle_pattern,
+        "risk": risk_level,
+        "reasoning": context_reason
+    }
 
-    save_memory(memory)
+    try:
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r") as f:
+                data = json.load(f)
+        else:
+            data = []
 
-    # Simple memory-based adaptive decision: count recent wins/fails (simulated)
-    last_signals = [m for m in memory if m["symbol"] == symbol and m["tf"] == tf]
-    recent = last_signals[-10:]
+        data.append(memory)
 
-    buy_count = sum(1 for s in recent if s["signal"] == "buy")
-    sell_count = sum(1 for s in recent if s["signal"] == "sell")
+        with open(LOG_FILE, "w") as f:
+            json.dump(data, f, indent=4)
 
-    if signal == "buy" and buy_count >= 6:
-        return "support"
-    elif signal == "sell" and sell_count >= 6:
-        return "support"
-    elif buy_count + sell_count < 3:
-        return "uncertain"
-    else:
-        return "reject"
+    except Exception as e:
+        print(f"[TrainerAI] Memory update failed: {e}")
