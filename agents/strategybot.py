@@ -1,30 +1,27 @@
 # src/agents/strategybot.py
 
-def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
+def apply_strategy_layers(symbol: str, candles: list) -> dict:
     """
-    Generates basic buy/sell/wait signal based on last 3 close values.
+    Apply technical and AI-based strategies to extract signals.
     """
-    if len(closes) < 3:
-        return "wait"
+    try:
+        last_close = float(candles[-1]['close'])
+        prev_close = float(candles[-2]['close'])
 
-    if closes[-1] > closes[-2] > closes[-3]:
-        return "buy"
-    elif closes[-1] < closes[-2] < closes[-3]:
-        return "sell"
-    else:
-        return "wait"
+        signal = "buy" if last_close > prev_close else "sell"
+        confidence = round(abs(last_close - prev_close) / last_close, 4)
 
-def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
-    """
-    Simulates fetching OHLCV data from close list.
-    """
-    if len(data) < 5:
-        return {}
-
-    return {
-        "open": data[-5],
-        "high": max(data[-5:]),
-        "low": min(data[-5:]),
-        "close": data[-1],
-        "volume": 1000  # Placeholder for volume
-    }
+        return {
+            "symbol": symbol,
+            "signal": signal,
+            "confidence": confidence,
+            "strategy_used": "Simple Momentum"
+        }
+    except Exception as e:
+        return {
+            "symbol": symbol,
+            "signal": "error",
+            "confidence": 0.0,
+            "strategy_used": "error",
+            "error": str(e)
+        }
