@@ -1,20 +1,24 @@
 # src/agents/reasonbot.py
 
-def assess_context(signal: str, candle_pattern: str, risk_level: str, validation_status: bool) -> str:
+def generate_reasoning(signal: str, pattern: str, risk: str) -> str:
     """
-    Generates a reasoning string based on signal components.
+    Generates a logical reason for the signal based on AI evaluations.
     """
 
-    reasons = []
+    if signal == "buy":
+        if pattern == "bullish_engulfing":
+            return "Bullish engulfing pattern confirms buying opportunity with low resistance."
+        elif risk == "low":
+            return "Low risk and upward momentum support a buy setup."
+        else:
+            return "Momentum favors buying despite pattern uncertainty."
 
-    if signal in ["buy", "sell"]:
-        reasons.append(f"Signal strength: {signal.upper()}")
+    elif signal == "sell":
+        if pattern == "bearish_engulfing":
+            return "Bearish engulfing signals strong downward reversal, confirming sell bias."
+        elif risk == "low":
+            return "Low risk environment allows safe shorting opportunity."
+        else:
+            return "Bearish conditions despite weak pattern, caution advised."
 
-    if candle_pattern != "none":
-        reasons.append(f"Pattern: {candle_pattern}")
-
-    reasons.append(f"Risk: {risk_level.upper()}")
-
-    reasons.append("Validation: ✅" if validation_status else "Validation: ❌")
-
-    return " | ".join(reasons)
+    return "Market conditions unclear, signal is uncertain."
