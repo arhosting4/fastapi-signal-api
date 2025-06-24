@@ -1,13 +1,23 @@
 # src/agents/riskguardian.py
 
-def evaluate_risk(volatility: float, spread: float, news_impact: float) -> str:
+def evaluate_risk(symbol: str, candles: list) -> str:
     """
-    Evaluates trading risk level.
-    Returns: 'low', 'medium', or 'high'.
+    Evaluates basic market risk using volatility between recent candles.
     """
-    if news_impact > 7 or volatility > 6:
-        return "high"
-    elif spread > 2 or volatility > 3:
-        return "medium"
-    else:
-        return "low"
+    try:
+        highs = [float(c["high"]) for c in candles]
+        lows = [float(c["low"]) for c in candles]
+
+        if len(highs) < 3 or len(lows) < 3:
+            return "unknown"
+
+        avg_range = sum([h - l for h, l in zip(highs, lows)]) / len(highs)
+
+        if avg_range > 2.0:
+            return "high"
+        elif avg_range > 1.0:
+            return "medium"
+        else:
+            return "low"
+    except Exception:
+        return "error"
