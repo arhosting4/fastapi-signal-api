@@ -1,57 +1,69 @@
 # src/agents/core_controller.py
 
-from agents.strategybot import generate_core_signal
+from agents.strategybot import generate_core_signal, fetch_ohlc
 from agents.patternai import detect_candle_pattern
 from agents.riskguardian import evaluate_risk
-from agents.tierbot import assign_tier
 from agents.sentinel import validate_signal
+from agents.reasonbot import assess_context
 from agents.trainerai import update_learning_memory
 from agents.loggerai import log_ai_decision
-from agents.reasonbot import assess_context
-from agents.feedback_memory import record_feedback
+from agents.tierbot import assign_signal_tier
+from agents.feedback_memory import calculate_confidence_score
 
-def generate_final_signal(symbol: str, tf: str, closes: list) -> dict:
-    if len(closes) < 5:
-        return {"status": "wait", "reason": "insufficient data"}
 
-    # 1. Core strategy signal
-    base_signal = generate_core_signal(symbol, tf, closes)
+def generate_final_signal(symbol: str, candles: list) -> dict:
+    """
+    God-level signal generator: combines all agents into one fusion decision.
+    """
 
-    # 2. Pattern recognition layer
-    pattern = detect_candle_pattern(closes)
+    # 1. Extract closes from candle data
+    closes = [float(candle["close"]) for candle in candles]
 
-    # 3. Risk management layer
-    risk_score = evaluate_risk(closes)
+    # 2. Get OHLC structure
+    ohlc = fetch_ohlc(symbol, "1min", closes)
+    if not ohlc:
+        return {"error": "Not enough data for OHLC extraction"}
 
-    # 4. Tier assignment logic
-    tier = assign_tier(closes)
+    # 3. Core AI strategy signal
+    signal = generate_core_signal(symbol, "1min", closes)
 
-    # 5. Confidence weighting (example: dummy logic)
-    confidence = 0.7 if pattern == base_signal and base_signal != "wait" else 0.4
+    # 4. Detect pattern
+    candle_pattern = detect_candle_pattern([
+        {
+            "open": float(c["open"]),
+            "high": float(c["high"]),
+            "low": float(c["low"]),
+            "close": float(c["close"])
+        } for c in candles[-2:]
+    ])
 
-    # 6. AI Reasoning Engine
-    context_reasoning = assess_context(symbol, closes, base_signal, pattern, risk_score, tier)
+    # 5. Risk Evaluation
+    risk_level, risk_score = evaluate_risk(candles)
 
-    # 7. AI Signal Validation
-    if not validate_signal(base_signal, risk_score, pattern):
-        base_signal = "wait"
-        confidence = 0.0
+    # 6. Validate decision
+    is_valid = validate_signal(signal, risk_score, 0.8)
 
-    # 8. Trainer AI — update feedback memory
-    update_learning_memory(symbol, base_signal, closes)
+    # 7. Explain reasoning
+    reason = assess_context(signal, candle_pattern, risk_level, is_valid)
 
-    # 9. Record for long-term feedback
-    record_feedback(symbol, tf, base_signal, risk_score)
+    # 8. Tier tag
+    tier = assign_signal_tier(signal, risk_level, candle_pattern)
 
-    # 10. Log final decision
-    log_ai_decision(symbol, base_signal, confidence, context_reasoning)
+    # 9. Confidence score
+    confidence = calculate_confidence_score(signal, risk_level, tier)
 
-    # Final signal package
+    # 10. AI Decision Logging
+    log_ai_decision(signal, reason, ohlc["close"])
+
+    # 11. Memory Logging
+    update_learning_memory(symbol, signal, candle_pattern, risk_level, reason)
+
     return {
-        "status": "ok",
-        "signal": base_signal,
-        "confidence": round(confidence, 2),
-        "risk": round(risk_score, 2),
+        "symbol": symbol,
+        "signal": signal,
+        "pattern": candle_pattern,
+        "risk": risk_level,
+        "reason": reason,
         "tier": tier,
-        "reason": context_reasoning
+        "confidence": round(confidence * 100, 2)
     }
