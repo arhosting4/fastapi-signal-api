@@ -1,17 +1,17 @@
 # src/agents/tierbot.py
 
-def assign_signal_tier(pattern: str, risk: str, signal: str) -> str:
+def classify_signal_tier(confidence: float, pattern: str) -> str:
     """
-    Assigns a confidence tier: 'A' (high), 'B' (medium), 'C' (low)
-    based on pattern accuracy and risk context.
+    Classifies signal into tiers based on confidence and pattern.
     """
-
-    if signal == "wait":
-        return "C"
-
-    if pattern in ["bullish_engulfing", "bearish_engulfing"] and risk == "low":
-        return "A"
-    elif risk == "medium":
-        return "B"
-    else:
-        return "C"
+    try:
+        if confidence >= 0.02 and pattern == "bullish":
+            return "Tier 1"
+        elif confidence >= 0.015 and pattern == "bearish":
+            return "Tier 2"
+        elif confidence >= 0.01:
+            return "Tier 3"
+        else:
+            return "Tier 4"
+    except Exception:
+        return "Unknown"
