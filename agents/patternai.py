@@ -1,18 +1,17 @@
-# src/agents/patternai.py
+# agents/patternai.py
 
-def detect_candle_pattern(open_price: float, high: float, low: float, close: float) -> str:
-    """
-    Detects simple candlestick pattern from OHLC values.
-    Returns one of: 'bullish_engulfing', 'bearish_engulfing', 'doji', or 'none'.
-    """
-    body = abs(close - open_price)
-    range_ = high - low
+def detect_pattern(candles: list) -> dict:
+    if not candles or len(candles) < 3:
+        return {"pattern": None, "strength": 0}
 
-    if body < (0.1 * range_):
-        return "doji"
-    elif close > open_price and (open_price - low) < body and (high - close) < body:
-        return "bullish_engulfing"
-    elif open_price > close and (close - low) < body and (high - open_price) < body:
-        return "bearish_engulfing"
+    last = candles[-1]
+    prev = candles[-2]
+    before_prev = candles[-3]
+
+    # Example basic pattern logic (you can expand later)
+    if last["close"] > last["open"] and prev["close"] < prev["open"]:
+        return {"pattern": "bullish_engulfing", "strength": 70}
+    elif last["close"] < last["open"] and prev["close"] > prev["open"]:
+        return {"pattern": "bearish_engulfing", "strength": 70}
     else:
-        return "none"
+        return {"pattern": "no_clear_pattern", "strength": 20}
