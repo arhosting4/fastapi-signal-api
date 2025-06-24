@@ -1,17 +1,25 @@
 # agents/patternai.py
 
-def detect_pattern(candles: list) -> dict:
-    if not candles or len(candles) < 3:
-        return {"pattern": None, "strength": 0}
+def detect_pattern(symbol: str, candles: list) -> str:
+    try:
+        if not candles or len(candles) < 2:
+            print("[Warning] Not enough candle data.")
+            return "NoCandleData"
 
-    last = candles[-1]
-    prev = candles[-2]
-    before_prev = candles[-3]
+        latest = candles[-1]
+        previous = candles[-2]
 
-    # Example basic pattern logic (you can expand later)
-    if last["close"] > last["open"] and prev["close"] < prev["open"]:
-        return {"pattern": "bullish_engulfing", "strength": 70}
-    elif last["close"] < last["open"] and prev["close"] > prev["open"]:
-        return {"pattern": "bearish_engulfing", "strength": 70}
-    else:
-        return {"pattern": "no_clear_pattern", "strength": 20}
+        open_price = float(latest.get("open", 0))
+        close_price = float(latest.get("close", 0))
+        prev_open = float(previous.get("open", 0))
+        prev_close = float(previous.get("close", 0))
+
+        if open_price < close_price and prev_open > prev_close:
+            return "BullishEngulfing"
+        elif open_price > close_price and prev_open < prev_close:
+            return "BearishEngulfing"
+        else:
+            return "NoPattern"
+    except Exception as e:
+        print(f"[Error] In detect_pattern(): {e}")
+        return "PatternError"
