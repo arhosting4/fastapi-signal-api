@@ -1,9 +1,23 @@
 # src/agents/loggerai.py
 
-def log_ai_decision(symbol: str, signal: str, confidence: float, reasoning: str):
+import datetime
+import json
+
+def log_ai_decision(signal: str, reason: str, price: float):
     """
-    Logs the AI's decision, including signal, confidence, and reasoning.
-    This can be expanded to log to a file or database in production.
+    Logs the AI signal decision with reason and price to a local file or stdout.
     """
-    print(f"[AI Decision Log] Symbol: {symbol}, Signal: {signal}, "
-          f"Confidence: {confidence:.2f}, Reasoning: {reasoning}")
+
+    log_entry = {
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "signal": signal,
+        "price": price,
+        "reason": reason
+    }
+
+    # Print log for Render logs
+    print(f"[AI Decision] {json.dumps(log_entry)}")
+
+    # Optionally, write to file (uncomment if local logging is needed)
+    # with open("ai_decisions.log", "a") as log_file:
+    #     log_file.write(json.dumps(log_entry) + "\n")
