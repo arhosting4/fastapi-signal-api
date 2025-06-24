@@ -4,31 +4,31 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 import os
 import requests
-from agents.core_controller import generate_final_signal
+from src.agents.core_controller import generate_final_signal
 
-# Load .env file
+# Load environment variables from .env
 load_dotenv()
 
-# Initialize FastAPI
+# Setup FastAPI app
 app = FastAPI()
 
-# Load secrets from environment
+# Environment configs
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 @app.get("/")
 def home():
-    return {"message": "🚀 Pro Killer AI - God Level Signal API is live!"}
+    return {"message": "✅ Pro Killer AI - ScalpMasterAI API running"}
 
 @app.get("/final-signal/{symbol}")
 def final_signal(symbol: str):
     """
-    Main endpoint: fetch market data, run all AI agents, send Telegram signal.
+    God-level signal API endpoint.
     """
-    decoded_symbol = symbol.replace("-", "/")  # e.g. XAU-USD → XAU/USD
+    decoded_symbol = symbol.replace("-", "/")  # XAU-USD → XAU/USD
 
-    # Fetch market candles
+    # Fetch recent candles
     url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
     response = requests.get(url)
     data = response.json()
@@ -39,19 +39,10 @@ def final_signal(symbol: str):
     candles = data["values"]
     result = generate_final_signal(decoded_symbol, candles)
 
-    if result.get("validated"):
-        send_telegram_message(result)
-
-    return result
-
-
-def send_telegram_message(result: dict):
-    """
-    Sends formatted signal to the Telegram channel.
-    """
+    # Send to Telegram if no errors
     try:
         message = (
-            f"📡 *{result['final_signal']}* Signal for *{result['symbol']}* ⚡️\n\n"
+            f"📡 *{result['signal']}* Signal for *{decoded_symbol}* ⚡️\n\n"
             f"🧠 *Pattern:* {result['pattern']}\n"
             f"📊 *Risk:* {result['risk']}\n"
             f"📰 *News:* {result['news']}\n"
@@ -59,6 +50,17 @@ def send_telegram_message(result: dict):
             f"🎯 *Confidence:* {result['confidence']}%\n"
             f"🏅 *Tier:* {result['tier']}"
         )
+        send_telegram_message(message)
+    except Exception as e:
+        print("⚠️ Telegram send failed:", e)
+
+    return result
+
+def send_telegram_message(message: str):
+    """
+    Send message to configured Telegram channel.
+    """
+    try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
@@ -66,7 +68,6 @@ def send_telegram_message(result: dict):
             "parse_mode": "Markdown"
         }
         response = requests.post(url, data=payload)
-        print("✅ Telegram Response:", response.status_code, response.text)
-
+        print("📤 Telegram status:", response.status_code, response.text)
     except Exception as e:
-        print("⚠️ Telegram Send Error:", str(e))
+        print("⚠️ Telegram API error:", e)
