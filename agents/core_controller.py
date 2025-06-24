@@ -1,84 +1,57 @@
 # src/agents/core_controller.py
 
-from agents.patternai import detect_pattern
-from agents.riskguardian import evaluate_risk
-from agents.sentinel import validate_signal
-from agents.reasonbot import generate_reasoning
-from agents.tierbot import assign_signal_tier
-from agents.trainerai import log_signal_feedback
-from agents.loggerai import send_telegram_message
 from agents.strategybot import generate_core_signal, fetch_ohlc
+from agents.riskguardian import assess_risk
+from agents.sentinel import news_sentiment
+from agents.reasonbot import generate_reason
+from agents.loggerai import record_log
+from agents.trainerai import log_signal_feedback
+from agents.patternai import detect_pattern
+from agents.tierbot import get_tier
 
 def generate_final_signal(symbol: str, candles: list) -> dict:
-    """
-    Master controller: uses all AI agents to process candles and return final god-level signal.
-    """
-    closes = [float(c["close"]) for c in candles]
-    tf = "1min"
+    try:
+        # Validate candle input
+        if not candles or len(candles) < 5:
+            raise ValueError("Insufficient candle data")
 
-    # Step 1: Generate signal from core logic
-    signal = generate_core_signal(symbol, tf, closes)
+        closes = [float(c["close"]) for c in candles if "close" in c]
 
-    # agents/core_controller.py (inside generate_final_signal function)
+        # Core strategy decision
+        tf = "1min"
+        signal = generate_core_signal(symbol, tf, closes)
+        ohlc = fetch_ohlc(symbol, tf, closes)
 
-from agents.patternai import detect_pattern
+        # AI layers
+        pattern = detect_pattern(symbol, candles)
+        risk = assess_risk(ohlc)
+        news = news_sentiment(symbol)
+        reason = generate_reason(symbol, signal, pattern, risk, news)
+        confidence = 95 if signal != "wait" else 50
+        tier = get_tier(signal, confidence)
 
-try:
-    pattern = detect_pattern(symbol, candles)
-    if not pattern:
-        pattern = "NoPattern"
-except Exception as e:
-    print(f"[Error] detect_pattern failed: {e}")
-    pattern = "PatternError"
+        # Log and training memory
+        record_log(symbol, signal, risk, news, reason, tier)
+        log_signal_feedback(symbol, signal, success=(signal != "wait"))
 
-    # Step 3: Risk analysis
-    risk = evaluate_risk(volatility=2.5, spread=1.8, news_impact=4.0)
-
-    # Step 4: Assign tier
-    tier = assign_signal_tier(pattern, risk, signal)
-
-    # Step 5: Reason generation
-    reason = generate_reasoning(signal, pattern, risk)
-
-    # Step 6: Final validation
-    is_valid = validate_signal(signal, risk, tier)
-
-    if not is_valid:
+        # Final structured response
         return {
             "symbol": symbol,
-            "signal": "wait",
-            "pattern": pattern,
+            "final_signal": signal,
             "risk": risk,
-            "news": "neutral",
-            "reason": "Signal conditions not met.",
-            "confidence": 0,
-            "tier": "C"
+            "tier": tier,
+            "pattern": pattern,
+            "news": news,
+            "reason": reason,
+            "confidence": confidence,
+            "validated": True
         }
 
-    # Step 7: Compose message
-    confidence = {"A": 95, "B": 80, "C": 65}[tier]
-    message = (
-        f"📡 *{signal.upper()}* Signal for *{symbol}*\n\n"
-        f"🧠 *Pattern:* {pattern}\n"
-        f"📊 *Risk:* {risk}\n"
-        f"📰 *News:* neutral\n"
-        f"🔍 *Reason:* {reason}\n"
-        f"🎯 *Confidence:* {confidence}%\n"
-        f"🏅 *Tier:* {tier}"
-    )
-
-    # Step 8: Send message & log
-    send_telegram_message(message)
-    log_signal_feedback(symbol, signal, success=True)
-
-    # Step 9: Return final result
-    return {
-        "symbol": symbol,
-        "signal": signal,
-        "pattern": pattern,
-        "risk": risk,
-        "news": "neutral",
-        "reason": reason,
-        "confidence": confidence,
-        "tier": tier
-    }
+    except Exception as e:
+        print(f"[CoreController Error] {e}")
+        return {
+            "symbol": symbol,
+            "error": "❌ Signal generation failed",
+            "details": str(e),
+            "validated": False
+        }
