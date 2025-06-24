@@ -1,23 +1,31 @@
 # src/agents/loggerai.py
 
-import datetime
-import json
+import os
+import requests
+from dotenv import load_dotenv
 
-def log_ai_decision(signal: str, reason: str, price: float):
-    """
-    Logs the AI signal decision with reason and price to a local file or stdout.
-    """
+load_dotenv()
 
-    log_entry = {
-        "timestamp": datetime.datetime.utcnow().isoformat(),
-        "signal": signal,
-        "price": price,
-        "reason": reason
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+def send_telegram_message(message: str):
+    """
+    Sends a formatted message to the configured Telegram bot/channel.
+    """
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram config missing.")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
     }
 
-    # Print log for Render logs
-    print(f"[AI Decision] {json.dumps(log_entry)}")
-
-    # Optionally, write to file (uncomment if local logging is needed)
-    # with open("ai_decisions.log", "a") as log_file:
-    #     log_file.write(json.dumps(log_entry) + "\n")
+    try:
+        response = requests.post(url, data=payload)
+        print("✅ Telegram sent:", response.status_code)
+    except Exception as e:
+        print("❌ Telegram error:", str(e))
