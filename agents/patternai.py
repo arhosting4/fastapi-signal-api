@@ -1,25 +1,20 @@
-# agents/patternai.py
+# src/agents/patternai.py
 
 def detect_pattern(symbol: str, candles: list) -> str:
+    """
+    Detects basic bullish or bearish patterns from recent candles.
+    """
     try:
-        if not candles or len(candles) < 2:
-            print("[Warning] Not enough candle data.")
-            return "NoCandleData"
+        closes = [float(c["close"]) for c in candles]
 
-        latest = candles[-1]
-        previous = candles[-2]
+        if len(closes) < 3:
+            return "insufficient data"
 
-        open_price = float(latest.get("open", 0))
-        close_price = float(latest.get("close", 0))
-        prev_open = float(previous.get("open", 0))
-        prev_close = float(previous.get("close", 0))
-
-        if open_price < close_price and prev_open > prev_close:
-            return "BullishEngulfing"
-        elif open_price > close_price and prev_open < prev_close:
-            return "BearishEngulfing"
+        if closes[-1] > closes[-2] > closes[-3]:
+            return "bullish"
+        elif closes[-1] < closes[-2] < closes[-3]:
+            return "bearish"
         else:
-            return "NoPattern"
-    except Exception as e:
-        print(f"[Error] In detect_pattern(): {e}")
-        return "PatternError"
+            return "sideways"
+    except Exception:
+        return "pattern detection error"
