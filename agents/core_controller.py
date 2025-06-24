@@ -1,69 +1,75 @@
 # src/agents/core_controller.py
 
-from agents.strategybot import generate_core_signal, fetch_ohlc
-from agents.patternai import detect_candle_pattern
+from agents.patternai import detect_pattern
 from agents.riskguardian import evaluate_risk
 from agents.sentinel import validate_signal
-from agents.reasonbot import assess_context
-from agents.trainerai import update_learning_memory
-from agents.loggerai import log_ai_decision
+from agents.reasonbot import generate_reasoning
 from agents.tierbot import assign_signal_tier
-from agents.feedback_memory import calculate_confidence_score
-
+from agents.trainerai import log_signal_feedback
+from agents.loggerai import send_telegram_message
+from agents.strategybot import generate_core_signal, fetch_ohlc
 
 def generate_final_signal(symbol: str, candles: list) -> dict:
     """
-    God-level signal generator: combines all agents into one fusion decision.
+    Master controller: uses all AI agents to process candles and return final god-level signal.
     """
+    closes = [float(c["close"]) for c in candles]
+    tf = "1min"
 
-    # 1. Extract closes from candle data
-    closes = [float(candle["close"]) for candle in candles]
+    # Step 1: Generate signal from core logic
+    signal = generate_core_signal(symbol, tf, closes)
 
-    # 2. Get OHLC structure
-    ohlc = fetch_ohlc(symbol, "1min", closes)
-    if not ohlc:
-        return {"error": "Not enough data for OHLC extraction"}
+    # Step 2: Pattern detection
+    pattern = detect_pattern(closes)
 
-    # 3. Core AI strategy signal
-    signal = generate_core_signal(symbol, "1min", closes)
+    # Step 3: Risk analysis
+    risk = evaluate_risk(volatility=2.5, spread=1.8, news_impact=4.0)
 
-    # 4. Detect pattern
-    candle_pattern = detect_candle_pattern([
-        {
-            "open": float(c["open"]),
-            "high": float(c["high"]),
-            "low": float(c["low"]),
-            "close": float(c["close"])
-        } for c in candles[-2:]
-    ])
+    # Step 4: Assign tier
+    tier = assign_signal_tier(pattern, risk, signal)
 
-    # 5. Risk Evaluation
-    risk_level, risk_score = evaluate_risk(candles)
+    # Step 5: Reason generation
+    reason = generate_reasoning(signal, pattern, risk)
 
-    # 6. Validate decision
-    is_valid = validate_signal(signal, risk_score, 0.8)
+    # Step 6: Final validation
+    is_valid = validate_signal(signal, risk, tier)
 
-    # 7. Explain reasoning
-    reason = assess_context(signal, candle_pattern, risk_level, is_valid)
+    if not is_valid:
+        return {
+            "symbol": symbol,
+            "signal": "wait",
+            "pattern": pattern,
+            "risk": risk,
+            "news": "neutral",
+            "reason": "Signal conditions not met.",
+            "confidence": 0,
+            "tier": "C"
+        }
 
-    # 8. Tier tag
-    tier = assign_signal_tier(signal, risk_level, candle_pattern)
+    # Step 7: Compose message
+    confidence = {"A": 95, "B": 80, "C": 65}[tier]
+    message = (
+        f"📡 *{signal.upper()}* Signal for *{symbol}*\n\n"
+        f"🧠 *Pattern:* {pattern}\n"
+        f"📊 *Risk:* {risk}\n"
+        f"📰 *News:* neutral\n"
+        f"🔍 *Reason:* {reason}\n"
+        f"🎯 *Confidence:* {confidence}%\n"
+        f"🏅 *Tier:* {tier}"
+    )
 
-    # 9. Confidence score
-    confidence = calculate_confidence_score(signal, risk_level, tier)
+    # Step 8: Send message & log
+    send_telegram_message(message)
+    log_signal_feedback(symbol, signal, success=True)
 
-    # 10. AI Decision Logging
-    log_ai_decision(signal, reason, ohlc["close"])
-
-    # 11. Memory Logging
-    update_learning_memory(symbol, signal, candle_pattern, risk_level, reason)
-
+    # Step 9: Return final result
     return {
         "symbol": symbol,
         "signal": signal,
-        "pattern": candle_pattern,
-        "risk": risk_level,
+        "pattern": pattern,
+        "risk": risk,
+        "news": "neutral",
         "reason": reason,
-        "tier": tier,
-        "confidence": round(confidence * 100, 2)
+        "confidence": confidence,
+        "tier": tier
     }
