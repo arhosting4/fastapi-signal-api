@@ -1,40 +1,17 @@
 # src/agents/tierbot.py
 
-def assign_tier(symbol: str, confidence: float, risk: str, bias: str) -> str:
+def assign_signal_tier(pattern: str, risk: str, signal: str) -> str:
     """
-    Assigns a signal Tier (1 to 4) based on confidence, risk level, and market bias.
-    Higher tier = more trustworthy signal.
+    Assigns a confidence tier: 'A' (high), 'B' (medium), 'C' (low)
+    based on pattern accuracy and risk context.
     """
 
-    # Base scoring model
-    score = 0
+    if signal == "wait":
+        return "C"
 
-    # Confidence scoring
-    if confidence >= 0.85:
-        score += 2
-    elif confidence >= 0.65:
-        score += 1
-
-    # Risk scoring
-    if risk == "low":
-        score += 2
+    if pattern in ["bullish_engulfing", "bearish_engulfing"] and risk == "low":
+        return "A"
     elif risk == "medium":
-        score += 1
-    elif risk == "high":
-        score -= 1
-
-    # Bias influence
-    if bias == "bullish" or bias == "bearish":
-        score += 1
-    elif bias == "neutral":
-        score -= 1
-
-    # Final tier assignment
-    if score >= 5:
-        return "Tier 1 🚀"
-    elif score >= 3:
-        return "Tier 2 ⚡"
-    elif score >= 1:
-        return "Tier 3 ⚠️"
+        return "B"
     else:
-        return "Tier 4 ❄️"
+        return "C"
