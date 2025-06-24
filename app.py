@@ -1,55 +1,84 @@
-import sys
 import os
-from fastapi import FastAPI, Request
+import sys
+import requests
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Any
+from dotenv import load_dotenv
 
-# Fix for internal imports during deployment
+# Fix path for agents import
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(BASE_DIR)
-if PARENT_DIR not in sys.path:
-    sys.path.append(PARENT_DIR)
+AGENTS_DIR = os.path.join(BASE_DIR, "agents")
+if AGENTS_DIR not in sys.path:
+    sys.path.append(AGENTS_DIR)
 
-# Load main AI controller
-from agents.core_controller import generate_final_signal
+# Import AI logic
+from core_controller import generate_final_signal
 
-# App initialization
+# Load environment variables
+load_dotenv()
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# FastAPI setup
 app = FastAPI()
-
-# Allow CORS for all origins (adjust in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # For public access. Restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Health check endpoint
 @app.get("/")
-def root():
-    return {"status": "✅ ScalpMasterAi God-Level AI API is live."}
+def home():
+    return {"status": "✅ ScalpMasterAi God-Level AI API is Running!"}
 
-# Signal processing endpoint
-@app.get("/get-signal")
-async def get_signal(request: Request) -> Dict[str, Any]:
+@app.get("/final-signal/{symbol}")
+def final_signal(symbol: str):
     try:
-        params = dict(request.query_params)
-        symbol = params.get("symbol")
-        candles = params.get("candles")
+        decoded_symbol = symbol.replace("-", "/")
 
-        if not symbol or not candles:
-            return {"error": "Missing 'symbol' or 'candles' in query params."}
+        # Fetch last 5 candles
+        url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
+        response = requests.get(url)
+        data = response.json()
 
-        decoded_symbol = symbol.upper()
-        parsed_candles = eval(candles) if isinstance(candles, str) else candles
+        if "values" not in data:
+            return {"error": "❌ Market data fetch failed", "details": data}
 
-        final_signal = generate_final_signal(decoded_symbol, parsed_candles)
+        candles = data["values"]
 
-        return {
-            "symbol": decoded_symbol,
-            "signal": final_signal
-        }
+        # AI signal logic
+        result = generate_final_signal(decoded_symbol, candles)
+
+        # Telegram message
+        message = (
+            f"📡 *{result['signal']}* Signal for *{decoded_symbol}*\n\n"
+            f"🧠 *Pattern:* {result['pattern']}\n"
+            f"📊 *Risk:* {result['risk']}\n"
+            f"📰 *News:* {result['news']}\n"
+            f"🔍 *Reason:* {result['reason']}\n"
+            f"🎯 *Confidence:* {result['confidence']}%\n"
+            f"🏅 *Tier:* {result['tier']}"
+        )
+        send_telegram_message(message)
+
+        return result
 
     except Exception as e:
-        return {"error": f"❌ Exception: {str(e)}"}
+        return {"error": f"⚠️ Exception in signal generation: {str(e)}"}
+
+
+def send_telegram_message(message: str):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        response = requests.post(url, data=payload)
+        print("✅ Telegram sent:", response.status_code)
+    except Exception as e:
+        print("⚠️ Telegram send failed:", str(e))
