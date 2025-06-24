@@ -1,40 +1,75 @@
-# src/app.py
+# app.py
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
+from dotenv import load_dotenv
+import os
+import requests
 from agents.core_controller import generate_final_signal
-from agents.telegrambot import send_telegram_signal
 
+# Load environment variables
+load_dotenv()
+
+# FastAPI app instance
 app = FastAPI()
 
+# Load keys from environment
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+
 @app.get("/")
-async def root():
-    return {"message": "ScalpMasterAi API is running"}
+def home():
+    return {"message": "✅ Pro Killer AI - ScalpMasterAi API is running!"}
+
 
 @app.get("/final-signal/{symbol}")
-async def get_signal(symbol: str, tf: str = "1m", closes: str = ""):
+def final_signal(symbol: str):
+    """
+    Final endpoint to fetch signal, process AI logic, and send Telegram update.
+    """
+    decoded_symbol = symbol.replace("-", "/")  # XAU-USD → XAU/USD
+
+    # Fetch 5 candles
+    url = f"https://api.twelvedata.com/time_series?symbol={decoded_symbol}&interval=1min&outputsize=5&apikey={TWELVE_DATA_API_KEY}"
+    response = requests.get(url)
+    data = response.json()
+
+    if "values" not in data:
+        return {"error": "❌ Failed to fetch market data", "details": data}
+
+    candles = data["values"]
+
+    # Get AI decision
+    result = generate_final_signal(decoded_symbol, candles)
+
+    # Format message
     try:
-        # Parse closing prices from comma-separated string
-        if not closes:
-            return {"status": "error", "reason": "Missing 'closes' parameter"}
-
-        close_list = [float(x) for x in closes.split(",") if x.strip()]
-        result = generate_final_signal(symbol.upper(), tf, close_list)
-
-        if result["status"] == "ok" and result["signal"] in ["buy", "sell"]:
-            send_telegram_signal(
-                symbol=symbol.upper(),
-                signal=result["signal"],
-                price=close_list[-1],
-                confidence=result.get("confidence", 0.0),
-                tier=result.get("tier", "N/A"),
-                reason=result.get("reason", "N/A")
-            )
-
-        return result
-
+        message = f"📡 *{result['signal'].upper()}* Signal for *{decoded_symbol}* ⚡️\n\n" \
+                  f"🧠 *Pattern:* {result['pattern']}\n" \
+                  f"📊 *Risk:* {result['risk']}\n" \
+                  f"📰 *News:* {result['reason']}\n" \
+                  f"🎯 *Confidence:* {result['confidence']}%\n" \
+                  f"🏅 *Tier:* {result['tier']}"
+        send_telegram_message(message)
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "reason": str(e)}
-        )
+        print("⚠️ Telegram Send Error:", str(e))
+
+    return result
+
+
+def send_telegram_message(message: str):
+    """
+    Sends message to Telegram channel.
+    """
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        response = requests.post(url, data=payload)
+        print("✅ Telegram response:", response.status_code, response.text)
+    except Exception as e:
+        print("⚠️ Telegram API error:", str(e))
