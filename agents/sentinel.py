@@ -1,14 +1,14 @@
 # src/agents/sentinel.py
 
-def validate_signal(signal: str, trend: str, tier: str) -> bool:
+def validate_signal(signal: str, risk_score: float, confidence: float) -> bool:
     """
-    Validates signal consistency using tier and trend confirmation.
-    Returns True if all parameters agree, otherwise False.
+    Validates signal based on basic sanity checks and thresholds.
+    Returns True if signal is strong enough to act on.
     """
-    if signal == "buy" and trend == "uptrend" and tier in ["A", "B"]:
-        return True
-    elif signal == "sell" and trend == "downtrend" and tier in ["A", "B"]:
-        return True
-    elif signal == "wait":
-        return True  # always valid
-    return False
+    if signal not in ["buy", "sell"]:
+        return False
+    if risk_score > 0.7:
+        return False
+    if confidence < 0.6:
+        return False
+    return True
