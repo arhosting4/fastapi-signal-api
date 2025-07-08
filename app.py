@@ -1,14 +1,14 @@
-# main.py
+# app.py
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 import os
 import requests
 import json # For logging
-from datetime import datetime # For logging
+from datetime import datetime, timedelta # For logging and dummy data
 
-# Import your AI agents
-from src.agents.fusion_engine import generate_final_signal
-from src.agents.logger import log_signal # Assuming you'll use src/agents/logger.py
+# Import your AI agents - REMOVED 'src.' prefix
+from agents.fusion_engine import generate_final_signal
+from agents.logger import log_signal
 
 # Load environment variables from .env file (for local development)
 load_dotenv()
@@ -20,7 +20,7 @@ app = FastAPI(
 )
 
 # Telegram credentials from environment
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") # Corrected variable name as per render.yaml
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Twelve Data API Key (if you plan to use it for real data)
@@ -53,16 +53,6 @@ def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 
     Fetches OHLC data for a given symbol.
     This is a placeholder. You would integrate with Twelve Data or another provider here.
     """
-    # For now, return dummy data
-    # In a real scenario, you'd make an API call like:
-    # url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
-    # response = requests.get(url)
-    # data = response.json()
-    # if "values" in data:
-    #     return data["values"] # List of dicts: [{"datetime": "...", "open": "...", "high": "...", "low": "...", "close": "...", "volume": "..."}, ...]
-    # return []
-
-    # Dummy data for demonstration
     dummy_candles = []
     for i in range(outputsize):
         close_price = 1000 + i * 2 + (i % 5) * 0.5 # Simulate some price movement
@@ -75,9 +65,6 @@ def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 
             "volume": str(1000 + i * 10)
         })
     return dummy_candles[::-1] # Return in ascending order of time (oldest first)
-
-# Add timedelta import for dummy data
-from datetime import timedelta
 
 
 @app.get("/")
@@ -93,7 +80,6 @@ async def get_signal(symbol: str):
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
     # Fetch real OHLC data (or use dummy for now)
-    # You might want to make this asynchronous if the actual API call is blocking
     candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50)
 
     if not candles:
@@ -157,4 +143,4 @@ def get_signal_logs(symbol: str):
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
     
     return logs
-
+    
