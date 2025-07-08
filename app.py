@@ -128,9 +128,7 @@ def _generate_dummy_candles(outputsize: int) -> list:
 import random
 
 
-@app.get("/")
-def root():
-    return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
+# app.py (only the relevant part for get_signal endpoint)
 
 @app.get("/signal/{symbol}")
 async def get_signal(symbol: str):
@@ -140,17 +138,22 @@ async def get_signal(symbol: str):
     if not symbol:
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
+    # Convert symbol to uppercase for consistency with API requirements
+    processed_symbol = symbol.upper()
+
     # Fetch real OHLC data
-    candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50)
+    # Pass the processed_symbol to the data fetcher
+    candles = fetch_real_ohlc_data(processed_symbol, interval="1min", outputsize=50)
 
     if not candles:
-        raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol or API key.")
+        # Provide more specific detail for 404
+        raise HTTPException(status_code=404, detail=f"No OHLC data found for {processed_symbol}. Check symbol, API key, or market hours.")
 
     # Generate final signal using the fusion engine
-    signal_result = generate_final_signal(symbol, candles)
+    signal_result = generate_final_signal(processed_symbol, candles) # Pass processed_symbol
 
     # Log the signal result
-    log_signal(symbol, signal_result, candles)
+    log_signal(processed_symbol, signal_result, candles) # Pass processed_symbol
 
     # Send Telegram message if a valid signal is generated
     if signal_result.get("status") == "ok" and signal_result.get("signal") in ["buy", "sell"]:
@@ -164,7 +167,7 @@ async def get_signal(symbol: str):
 
         message = (
             f"📈 *ScalpMaster AI Signal Alert* 📉\n\n"
-            f"📊 *Symbol:* `{symbol.upper()}`\n"
+            f"📊 *Symbol:* `{processed_symbol}`\n" # Use processed_symbol here
             f"🚀 *Signal:* `{signal_type}`\n"
             f"💰 *Current Price:* `{latest_close_price}`\n"
             f"⭐ *Confidence:* `{confidence}%`\n"
@@ -176,13 +179,16 @@ async def get_signal(symbol: str):
     elif signal_result.get("status") == "blocked":
         message = (
             f"🚫 *ScalpMaster AI Blocked Signal* 🚫\n\n"
-            f"📊 *Symbol:* `{symbol.upper()}`\n"
+            f"📊 *Symbol:* `{processed_symbol}`\n" # Use processed_symbol here
             f"⚠️ *Reason:* `{signal_result.get('error', 'Market conditions not favorable.')}`\n\n"
             f"Consider reviewing market conditions."
         )
         send_telegram_message(message)
 
     return signal_result
+
+# ... rest of app.py
+
 
 # You can add more endpoints here for admin control, insight center, etc.
 # For example, an endpoint to get signal logs
