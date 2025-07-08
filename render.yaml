@@ -1,22 +1,22 @@
-# render.yaml — ScalpMasterAi god-level API deployment
-
+# render.yaml
+python:
+  version: 3.11.6 # Python version you are using
 services:
   - type: web
-    name: scalp-master-ai-api
-    env: python
-    region: oregon  # Or change to your region
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port 10000
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-      - key: TWELVE_DATA_API_KEY
-        sync: false
-    autoDeploy: true
+    name: signal-api
+    runtime: python
+    repo: https://github.com/arhosting4/fastapi-signal-api # Make sure this is your correct GitHub repo URL
     branch: main
-    repo: https://github.com/your-username/your-repo-name
+    buildCommand: "pip install -r requirements.txt"
+    # Production-ready start command using Gunicorn with Uvicorn workers
+    # $PORT is an environment variable provided by Render
+    startCommand: "gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false # Keep this false, value will be set in Render dashboard
+      - key: TELEGRAM_CHAT_ID
+        sync: false # Keep this false, value will be set in Render dashboard
+      - key: TWELVE_DATA_API_KEY
+        sync: false # Keep this false, value will be set in Render dashboard
+    autoDeploy: true
+    region: oregon # Choose a region closest to your users or data sources
