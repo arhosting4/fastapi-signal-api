@@ -1,13 +1,18 @@
 # src/agents/fusion_engine.py
 
+# src/agents/fusion_engine.py
+
 # Import all necessary agents
-from src.agents.strategybot import generate_core_signal
-from src.agents.patternai import detect_patterns
-from src.agents.riskguardian import check_risk
-from src.agents.sentinel import check_news
-from src.agents.reasonbot import generate_reason
-from src.agents.trainerai import get_confidence
-from src.agents.tierbot import get_tier
+from agents.strategybot import generate_core_signal
+from agents.patternai import detect_patterns
+from agents.riskguardian import check_risk
+from agents.sentinel import check_news
+from agents.reasonbot import generate_reason
+from agents.trainerai import get_confidence
+from agents.tierbot import get_tier
+
+# ... rest of the file (the generate_final_signal function remains the same)
+
 
 def generate_final_signal(symbol: str, candles: list) -> dict:
     """
