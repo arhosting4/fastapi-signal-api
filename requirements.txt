@@ -1,7 +1,7 @@
-# requirements.txt
 fastapi==0.111.0
 uvicorn==0.30.1
 requests==2.32.3
 python-dotenv==1.0.1
-# For production deployment with Gunicorn (recommended)
 gunicorn==22.0.0
+numpy==1.26.4 # Added for numerical operations
+TA-Lib==0.4.29 # Added for technical analysis indicators
