@@ -1,14 +1,11 @@
 # render.yaml
-python:
-  version: 3.11.6 # Ensure this is explicitly set and Render respects it
 services:
   - type: web
     name: signal-api
-    runtime: python
+    # No runtime specified, Render will automatically detect Dockerfile
     repo: https://github.com/arhosting4/fastapi-signal-api
     branch: main
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn -w 4 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT"
+    # No buildCommand or startCommand needed, Dockerfile handles it
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
