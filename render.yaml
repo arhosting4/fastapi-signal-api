@@ -1,13 +1,12 @@
 # render.yaml
 python:
-  version: 3.11.6 # Python version you are using
+  version: 3.11.6 # Ensure this is explicitly set and Render respects it
 services:
   - type: web
     name: signal-api
     runtime: python
     repo: https://github.com/arhosting4/fastapi-signal-api
     branch: main
-    # UPDATED: Simplified buildCommand
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn -w 4 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT"
     envVars:
