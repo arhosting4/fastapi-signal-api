@@ -1,17 +1,22 @@
 # src/agents/tierbot.py
 
-def classify_signal_tier(confidence: float, pattern: str) -> str:
+def get_tier(confidence: float) -> str:
     """
-    Classifies signal into tiers based on confidence and pattern.
+    Determines AI tier level based on confidence score.
+
+    Parameters:
+        confidence (float): Confidence level (0-100%).
+
+    Returns:
+        str: Tier level (e.g., "Tier 1 – Elite", "Tier 5 – Weak").
     """
-    try:
-        if confidence >= 0.02 and pattern == "bullish":
-            return "Tier 1"
-        elif confidence >= 0.015 and pattern == "bearish":
-            return "Tier 2"
-        elif confidence >= 0.01:
-            return "Tier 3"
-        else:
-            return "Tier 4"
-    except Exception:
-        return "Unknown"
+    if confidence >= 90:
+        return "Tier 1 – Elite"
+    elif confidence >= 80:
+        return "Tier 2 – Strong"
+    elif confidence >= 70:
+        return "Tier 3 – Moderate"
+    elif confidence >= 60:
+        return "Tier 4 – Caution"
+    else:
+        return "Tier 5 – Weak"
