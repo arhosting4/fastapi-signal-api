@@ -46,47 +46,21 @@ def send_telegram_message(message: str):
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
-# UPDATED: fetch_real_ohlc_data to use Twelve Data API
+# app.py (inside fetch_real_ohlc_data function)
+
 def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
-    """
-    Fetches OHLC data for a given symbol from Twelve Data API.
-
-    Parameters:
-        symbol (str): The trading pair symbol (e.g., "EUR/USD", "XAU/USD").
-        interval (str): The interval of the candles (e.g., "1min", "5min", "1h").
-        outputsize (int): The number of data points to retrieve.
-
-    Returns:
-        list: A list of OHLC candle dictionaries, ordered from oldest to newest.
-              Returns an empty list if data fetching fails or API key is missing.
-    """
-    if not TWELVE_DATA_API_KEY:
-        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data.")
-        # Fallback to dummy data for local testing if API key is missing
-        # In production, you might want to raise an error or handle differently
-        return _generate_dummy_candles(outputsize)
+    # ... (rest of the function)
 
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
-    
+    print(f"DEBUG: Twelve Data API URL: {url}") # <--- ADD THIS LINE
+
     try:
         response = requests.get(url)
         response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
         data = response.json()
 
         if "values" in data:
-            # Twelve Data returns newest first, so we need to reverse for our logic (oldest first)
-            # Also, ensure numerical values are converted to float/int if needed by agents
-            processed_candles = []
-            for candle in reversed(data["values"]): # Reverse to get oldest first
-                processed_candles.append({
-                    "datetime": candle.get("datetime"),
-                    "open": float(candle.get("open")),
-                    "high": float(candle.get("high")),
-                    "low": float(candle.get("low")),
-                    "close": float(candle.get("close")),
-                    "volume": float(candle.get("volume", 0)) # Volume might be missing for some symbols
-                })
-            return processed_candles
+            # ... (rest of the function)
         elif "message" in data:
             print(f"⚠️ Twelve Data API Error for {symbol}: {data['message']}")
             return []
@@ -102,6 +76,7 @@ def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during data fetch for {symbol}: {e}")
         return []
+
 
 # Helper function for dummy data (for local testing without API key)
 def _generate_dummy_candles(outputsize: int) -> list:
