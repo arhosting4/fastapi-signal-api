@@ -24,8 +24,8 @@ app = FastAPI(
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Twelve Data API Key (from environment variables)
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+# Alpha Vantage API Key (from environment variables)
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 def send_telegram_message(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -68,56 +68,86 @@ def _generate_dummy_candles(outputsize: int) -> list:
         })
     return dummy_candles # Already oldest first
 
-# UPDATED: fetch_real_ohlc_data to use Twelve Data API with improved error handling
-def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
+# UPDATED: fetch_real_ohlc_data to use Alpha Vantage API
+def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 100) -> list:
     """
-    Fetches OHLC data for a given symbol from Twelve Data API.
+    Fetches OHLC data for a given symbol from Alpha Vantage API.
 
     Parameters:
-        symbol (str): The trading pair symbol (e.g., "EUR/USD", "XAU/USD").
-        interval (str): The interval of the candles (e.g., "1min", "5min", "1h").
-        outputsize (int): The number of data points to retrieve.
+        symbol (str): The trading pair symbol (e.g., "IBM", "EUR/USD").
+        interval (str): The interval of the candles (e.g., "1min", "5min", "15min", "60min").
+                        Note: Alpha Vantage free tier only supports 1min, 5min, 15min, 30min, 60min for intraday.
+        outputsize (int): The number of data points to retrieve. Alpha Vantage 'compact' gives 100, 'full' gives all.
 
     Returns:
         list: A list of OHLC candle dictionaries, ordered from oldest to newest.
               Returns an empty list if data fetching fails or API key is missing.
     """
-    if not TWELVE_DATA_API_KEY:
-        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data. Using dummy data.")
+    if not ALPHA_VANTAGE_API_KEY:
+        print("⚠️ ALPHA_VANTAGE_API_KEY is not set. Cannot fetch real data. Using dummy data.")
         return _generate_dummy_candles(outputsize)
 
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
-    print(f"DEBUG: Twelve Data API URL: {url}") # Debug print
+    # Alpha Vantage uses different function for stocks vs. forex
+    # Forex symbols are typically like "EUR/USD" or "USD/JPY"
+    # Stock symbols are like "AAPL", "IBM"
+    function = ""
+    url = ""
+    
+    if '/' in symbol: # Assuming forex if symbol contains a slash (e.g., EUR/USD)
+        function = "FX_INTRADAY"
+        # Alpha Vantage forex symbols are like EUR, USD (base, quote)
+        base_currency = symbol.split('/')[0].upper()
+        quote_currency = symbol.split('/')[1].upper()
+        url = f"https://www.alphavantage.co/query?function={function}&from_symbol={base_currency}&to_symbol={quote_currency}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
+    else: # Assuming stock (e.g., AAPL, IBM)
+        function = "TIME_SERIES_INTRADAY"
+        url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol.upper()}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
+    
+    # For outputsize, Alpha Vantage has 'compact' (last 100 points) and 'full' (all data)
+    # We'll stick to compact for now to manage rate limits
+    url += "&outputsize=compact" # Always request compact for free tier
+
+    print(f"DEBUG: Alpha Vantage API URL: {url}") # Debug print
 
     try:
         response = requests.get(url)
         response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
         data = response.json()
 
-        if "values" in data and isinstance(data["values"], list):
-            # Twelve Data returns newest first, so we need to reverse for our logic (oldest first)
+        time_series_key = None
+        if function == "FX_INTRADAY":
+            time_series_key = f"Time Series FX ({interval})"
+        elif function == "TIME_SERIES_INTRADAY":
+            time_series_key = f"Time Series ({interval})"
+
+        if time_series_key and time_series_key in data and isinstance(data[time_series_key], dict):
+            raw_candles = data[time_series_key]
             processed_candles = []
-            for candle in reversed(data["values"]): # Reverse to get oldest first
+            # Alpha Vantage returns newest first, so we need to reverse for our logic (oldest first)
+            for dt_str, candle_data in reversed(list(raw_candles.items())):
                 processed_candles.append({
-                    "datetime": candle.get("datetime"),
-                    "open": float(candle.get("open")),
-                    "high": float(candle.get("high")),
-                    "low": float(candle.get("low")),
-                    "close": float(candle.get("close")),
-                    "volume": float(candle.get("volume", 0)) # Volume might be missing for some symbols
+                    "datetime": dt_str,
+                    "open": float(candle_data["1. open"]),
+                    "high": float(candle_data["2. high"]),
+                    "low": float(candle_data["3. low"]),
+                    "close": float(candle_data["4. close"]),
+                    "volume": float(candle_data.get("5. volume", 0))
                 })
             return processed_candles
-        elif "message" in data:
-            print(f"⚠️ Twelve Data API Error for {symbol}: {data['message']}")
+        elif "Error Message" in data:
+            print(f"⚠️ Alpha Vantage API Error for {symbol}: {data['Error Message']}")
+            return []
+        elif "Note" in data: # Rate limit message
+            print(f"⚠️ Alpha Vantage Rate Limit Exceeded for {symbol}: {data['Note']}")
             return []
         else:
-            print(f"⚠️ Unexpected response from Twelve Data API for {symbol}: {data}")
+            print(f"⚠️ Unexpected response from Alpha Vantage API for {symbol}: {data}")
             return []
     except requests.exceptions.RequestException as e:
-        print(f"⚠️ Error fetching data from Twelve Data for {symbol}: {e}")
+        print(f"⚠️ Error fetching data from Alpha Vantage for {symbol}: {e}")
         return []
-    except (ValueError, TypeError) as e: # Catch errors during float conversion or data type issues
-        print(f"⚠️ Data conversion error from Twelve Data for {symbol}: {e}. Raw data: {data}")
+    except (ValueError, TypeError, KeyError) as e: # Catch errors during float conversion or missing keys
+        print(f"⚠️ Data parsing error from Alpha Vantage for {symbol}: {e}. Raw data: {data}")
         return []
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during data fetch for {symbol}: {e}")
@@ -136,20 +166,20 @@ async def get_signal(symbol: str):
     if not symbol:
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
-    # Convert symbol to uppercase for consistency with API requirements
-    processed_symbol = symbol.upper()
+    # Symbol is processed inside fetch_real_ohlc_data for Alpha Vantage specific formatting
+    processed_symbol_for_log = symbol.upper() # Keep this for consistent logging
 
     # Fetch real OHLC data
-    candles = fetch_real_ohlc_data(processed_symbol, interval="1min", outputsize=50)
+    candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50) # Pass original symbol
 
     if not candles:
-        raise HTTPException(status_code=404, detail=f"No OHLC data found for {processed_symbol}. Check symbol, API key, or market hours.")
+        raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
 
     # Generate final signal using the fusion engine
-    signal_result = generate_final_signal(processed_symbol, candles)
+    signal_result = generate_final_signal(processed_symbol_for_log, candles)
 
     # Log the signal result
-    log_signal(processed_symbol, signal_result, candles)
+    log_signal(processed_symbol_for_log, signal_result, candles)
 
     # Send Telegram message if a valid signal is generated
     if signal_result.get("status") == "ok" and signal_result.get("signal") in ["buy", "sell"]:
@@ -163,7 +193,7 @@ async def get_signal(symbol: str):
 
         message = (
             f"📈 *ScalpMaster AI Signal Alert* 📉\n\n"
-            f"📊 *Symbol:* `{processed_symbol}`\n"
+            f"📊 *Symbol:* `{processed_symbol_for_log}`\n"
             f"🚀 *Signal:* `{signal_type}`\n"
             f"💰 *Current Price:* `{latest_close_price}`\n"
             f"⭐ *Confidence:* `{confidence}%`\n"
@@ -175,7 +205,7 @@ async def get_signal(symbol: str):
     elif signal_result.get("status") == "blocked":
         message = (
             f"🚫 *ScalpMaster AI Blocked Signal* 🚫\n\n"
-            f"📊 *Symbol:* `{processed_symbol}`\n"
+            f"📊 *Symbol:* `{processed_symbol_for_log}`\n"
             f"⚠️ *Reason:* `{signal_result.get('error', 'Market conditions not favorable.')}`\n\n"
             f"Consider reviewing market conditions."
         )
