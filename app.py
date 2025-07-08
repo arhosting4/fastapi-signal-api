@@ -6,7 +6,7 @@ import requests
 import json # For logging
 from datetime import datetime, timedelta # For logging and dummy data
 
-# Import your AI agents - REMOVED 'src.' prefix
+# Import your AI agents
 from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
 
@@ -23,7 +23,7 @@ app = FastAPI(
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Twelve Data API Key (if you plan to use it for real data)
+# Twelve Data API Key (from environment variables)
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 def send_telegram_message(message: str):
@@ -46,25 +46,86 @@ def send_telegram_message(message: str):
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
-# Dummy OHLC data fetcher for testing
-# In a real scenario, this would fetch data from an external API like Twelve Data
+# UPDATED: fetch_real_ohlc_data to use Twelve Data API
 def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
     """
-    Fetches OHLC data for a given symbol.
-    This is a placeholder. You would integrate with Twelve Data or another provider here.
+    Fetches OHLC data for a given symbol from Twelve Data API.
+
+    Parameters:
+        symbol (str): The trading pair symbol (e.g., "EUR/USD", "XAU/USD").
+        interval (str): The interval of the candles (e.g., "1min", "5min", "1h").
+        outputsize (int): The number of data points to retrieve.
+
+    Returns:
+        list: A list of OHLC candle dictionaries, ordered from oldest to newest.
+              Returns an empty list if data fetching fails or API key is missing.
     """
+    if not TWELVE_DATA_API_KEY:
+        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data.")
+        # Fallback to dummy data for local testing if API key is missing
+        # In production, you might want to raise an error or handle differently
+        return _generate_dummy_candles(outputsize)
+
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+        data = response.json()
+
+        if "values" in data:
+            # Twelve Data returns newest first, so we need to reverse for our logic (oldest first)
+            # Also, ensure numerical values are converted to float/int if needed by agents
+            processed_candles = []
+            for candle in reversed(data["values"]): # Reverse to get oldest first
+                processed_candles.append({
+                    "datetime": candle.get("datetime"),
+                    "open": float(candle.get("open")),
+                    "high": float(candle.get("high")),
+                    "low": float(candle.get("low")),
+                    "close": float(candle.get("close")),
+                    "volume": float(candle.get("volume", 0)) # Volume might be missing for some symbols
+                })
+            return processed_candles
+        elif "message" in data:
+            print(f"⚠️ Twelve Data API Error for {symbol}: {data['message']}")
+            return []
+        else:
+            print(f"⚠️ Unexpected response from Twelve Data API for {symbol}: {data}")
+            return []
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Error fetching data from Twelve Data for {symbol}: {e}")
+        return []
+    except ValueError as e: # Catch errors during float conversion
+        print(f"⚠️ Data conversion error from Twelve Data for {symbol}: {e}")
+        return []
+    except Exception as e:
+        print(f"⚠️ An unexpected error occurred during data fetch for {symbol}: {e}")
+        return []
+
+# Helper function for dummy data (for local testing without API key)
+def _generate_dummy_candles(outputsize: int) -> list:
     dummy_candles = []
+    base_price = 100.0
     for i in range(outputsize):
-        close_price = 1000 + i * 2 + (i % 5) * 0.5 # Simulate some price movement
+        # Simulate some price movement
+        close_price = base_price + (i * 0.1) + (random.uniform(-0.5, 0.5))
+        open_price = close_price + random.uniform(-0.2, 0.2)
+        high_price = max(open_price, close_price) + random.uniform(0, 0.3)
+        low_price = min(open_price, close_price) - random.uniform(0, 0.3)
+
         dummy_candles.append({
             "datetime": (datetime.now() - timedelta(minutes=outputsize - 1 - i)).isoformat(),
-            "open": str(close_price - 1),
-            "high": str(close_price + 1),
-            "low": str(close_price - 0.5),
-            "close": str(close_price),
-            "volume": str(1000 + i * 10)
+            "open": open_price,
+            "high": high_price,
+            "low": low_price,
+            "close": close_price,
+            "volume": 1000 + i * 10
         })
-    return dummy_candles[::-1] # Return in ascending order of time (oldest first)
+    return dummy_candles # Already oldest first
+
+# Add random import for dummy data
+import random
 
 
 @app.get("/")
@@ -79,11 +140,11 @@ async def get_signal(symbol: str):
     if not symbol:
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
-    # Fetch real OHLC data (or use dummy for now)
+    # Fetch real OHLC data
     candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50)
 
     if not candles:
-        raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}")
+        raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol or API key.")
 
     # Generate final signal using the fusion engine
     signal_result = generate_final_signal(symbol, candles)
@@ -143,4 +204,3 @@ def get_signal_logs(symbol: str):
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
     
     return logs
-    
