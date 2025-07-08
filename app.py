@@ -5,6 +5,7 @@ import os
 import requests
 import json # For logging
 from datetime import datetime, timedelta # For logging and dummy data
+import random # <--- MAKE SURE THIS IS HERE AND NOT INDENTED
 
 # Import your AI agents
 from agents.fusion_engine import generate_final_signal
@@ -12,6 +13,9 @@ from agents.logger import log_signal
 
 # Load environment variables from .env file (for local development)
 load_dotenv()
+
+# ... rest of your app.py code
+
 
 app = FastAPI(
     title="ScalpMasterSignalsAi API",
