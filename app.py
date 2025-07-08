@@ -3,9 +3,9 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 import os
 import requests
-import json # For logging
-from datetime import datetime, timedelta # For logging and dummy data
-import random # <--- MAKE SURE THIS IS HERE AND NOT INDENTED
+import json
+from datetime import datetime, timedelta
+import random # Required for _generate_dummy_candles
 
 # Import your AI agents
 from agents.fusion_engine import generate_final_signal
@@ -13,9 +13,6 @@ from agents.logger import log_signal
 
 # Load environment variables from .env file (for local development)
 load_dotenv()
-
-# ... rest of your app.py code
-
 
 app = FastAPI(
     title="ScalpMasterSignalsAi API",
@@ -50,38 +47,6 @@ def send_telegram_message(message: str):
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
-# app.py (inside fetch_real_ohlc_data function)
-
-def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
-    # ... (rest of the function)
-
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
-    print(f"DEBUG: Twelve Data API URL: {url}") # <--- ADD THIS LINE
-
-    try:
-        response = requests.get(url)
-        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-        data = response.json()
-
-        if "values" in data:
-            # ... (rest of the function)
-        elif "message" in data:
-            print(f"⚠️ Twelve Data API Error for {symbol}: {data['message']}")
-            return []
-        else:
-            print(f"⚠️ Unexpected response from Twelve Data API for {symbol}: {data}")
-            return []
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ Error fetching data from Twelve Data for {symbol}: {e}")
-        return []
-    except ValueError as e: # Catch errors during float conversion
-        print(f"⚠️ Data conversion error from Twelve Data for {symbol}: {e}")
-        return []
-    except Exception as e:
-        print(f"⚠️ An unexpected error occurred during data fetch for {symbol}: {e}")
-        return []
-
-
 # Helper function for dummy data (for local testing without API key)
 def _generate_dummy_candles(outputsize: int) -> list:
     dummy_candles = []
@@ -103,11 +68,65 @@ def _generate_dummy_candles(outputsize: int) -> list:
         })
     return dummy_candles # Already oldest first
 
-# Add random import for dummy data
-import random
+# UPDATED: fetch_real_ohlc_data to use Twelve Data API with improved error handling
+def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
+    """
+    Fetches OHLC data for a given symbol from Twelve Data API.
+
+    Parameters:
+        symbol (str): The trading pair symbol (e.g., "EUR/USD", "XAU/USD").
+        interval (str): The interval of the candles (e.g., "1min", "5min", "1h").
+        outputsize (int): The number of data points to retrieve.
+
+    Returns:
+        list: A list of OHLC candle dictionaries, ordered from oldest to newest.
+              Returns an empty list if data fetching fails or API key is missing.
+    """
+    if not TWELVE_DATA_API_KEY:
+        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data. Using dummy data.")
+        return _generate_dummy_candles(outputsize)
+
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
+    print(f"DEBUG: Twelve Data API URL: {url}") # Debug print
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+        data = response.json()
+
+        if "values" in data and isinstance(data["values"], list):
+            # Twelve Data returns newest first, so we need to reverse for our logic (oldest first)
+            processed_candles = []
+            for candle in reversed(data["values"]): # Reverse to get oldest first
+                processed_candles.append({
+                    "datetime": candle.get("datetime"),
+                    "open": float(candle.get("open")),
+                    "high": float(candle.get("high")),
+                    "low": float(candle.get("low")),
+                    "close": float(candle.get("close")),
+                    "volume": float(candle.get("volume", 0)) # Volume might be missing for some symbols
+                })
+            return processed_candles
+        elif "message" in data:
+            print(f"⚠️ Twelve Data API Error for {symbol}: {data['message']}")
+            return []
+        else:
+            print(f"⚠️ Unexpected response from Twelve Data API for {symbol}: {data}")
+            return []
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Error fetching data from Twelve Data for {symbol}: {e}")
+        return []
+    except (ValueError, TypeError) as e: # Catch errors during float conversion or data type issues
+        print(f"⚠️ Data conversion error from Twelve Data for {symbol}: {e}. Raw data: {data}")
+        return []
+    except Exception as e:
+        print(f"⚠️ An unexpected error occurred during data fetch for {symbol}: {e}")
+        return []
 
 
-# app.py (only the relevant part for get_signal endpoint)
+@app.get("/")
+def root():
+    return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
 
 @app.get("/signal/{symbol}")
 async def get_signal(symbol: str):
@@ -121,18 +140,16 @@ async def get_signal(symbol: str):
     processed_symbol = symbol.upper()
 
     # Fetch real OHLC data
-    # Pass the processed_symbol to the data fetcher
     candles = fetch_real_ohlc_data(processed_symbol, interval="1min", outputsize=50)
 
     if not candles:
-        # Provide more specific detail for 404
         raise HTTPException(status_code=404, detail=f"No OHLC data found for {processed_symbol}. Check symbol, API key, or market hours.")
 
     # Generate final signal using the fusion engine
-    signal_result = generate_final_signal(processed_symbol, candles) # Pass processed_symbol
+    signal_result = generate_final_signal(processed_symbol, candles)
 
     # Log the signal result
-    log_signal(processed_symbol, signal_result, candles) # Pass processed_symbol
+    log_signal(processed_symbol, signal_result, candles)
 
     # Send Telegram message if a valid signal is generated
     if signal_result.get("status") == "ok" and signal_result.get("signal") in ["buy", "sell"]:
@@ -146,7 +163,7 @@ async def get_signal(symbol: str):
 
         message = (
             f"📈 *ScalpMaster AI Signal Alert* 📉\n\n"
-            f"📊 *Symbol:* `{processed_symbol}`\n" # Use processed_symbol here
+            f"📊 *Symbol:* `{processed_symbol}`\n"
             f"🚀 *Signal:* `{signal_type}`\n"
             f"💰 *Current Price:* `{latest_close_price}`\n"
             f"⭐ *Confidence:* `{confidence}%`\n"
@@ -158,16 +175,13 @@ async def get_signal(symbol: str):
     elif signal_result.get("status") == "blocked":
         message = (
             f"🚫 *ScalpMaster AI Blocked Signal* 🚫\n\n"
-            f"📊 *Symbol:* `{processed_symbol}`\n" # Use processed_symbol here
+            f"📊 *Symbol:* `{processed_symbol}`\n"
             f"⚠️ *Reason:* `{signal_result.get('error', 'Market conditions not favorable.')}`\n\n"
             f"Consider reviewing market conditions."
         )
         send_telegram_message(message)
 
     return signal_result
-
-# ... rest of app.py
-
 
 # You can add more endpoints here for admin control, insight center, etc.
 # For example, an endpoint to get signal logs
@@ -189,3 +203,4 @@ def get_signal_logs(symbol: str):
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
     
     return logs
+    
