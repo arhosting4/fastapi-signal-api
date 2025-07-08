@@ -158,11 +158,14 @@ def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 
 def root():
     return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
 
-@app.get("/signal/{symbol}")
-async def get_signal(symbol: str):
+# UPDATED: Changed from path parameter to query parameter for better symbol handling
+@app.get("/signal")
+async def get_signal(symbol: str): # symbol is now a query parameter
     """
     Generates a trading signal for the given symbol using the AI fusion engine.
+    Example: /signal?symbol=AAPL or /signal?symbol=EUR/USD
     """
+    print(f"DEBUG: Received symbol: {symbol}") # Debug print to confirm received symbol
     if not symbol:
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
@@ -233,4 +236,3 @@ def get_signal_logs(symbol: str):
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
     
     return logs
-    
