@@ -8,6 +8,7 @@ from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 from agents.tierbot import get_tier
 import pandas as pd # Import pandas for potential future use or debugging
+import traceback # Import traceback module for detailed error logging
 
 def generate_final_signal(symbol: str, candles: list):
     """
@@ -82,6 +83,7 @@ def generate_final_signal(symbol: str, candles: list):
         }
 
     except Exception as e:
-        print(f"Error in fusion_engine: {e}")
-        return {"status": "error", "message": str(e)}
+        print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
+        traceback.print_exc() # This will print the full traceback to the logs
+        return {"status": "error", "message": f"An internal AI error occurred: {e}"}
 
