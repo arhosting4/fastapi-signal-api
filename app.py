@@ -129,33 +129,45 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
         # Log the signal
         log_signal(symbol, signal_result, candles)
 
-        # Send Telegram message if a clear signal is generated
-        if signal_result["status"] == "ok" and signal_result["signal"] in ["buy", "sell"]:
+        # Safely get values for Telegram message, providing defaults if keys are missing
+        # This handles cases where signal_result might not have all expected keys
+        symbol_upper = signal_result.get('symbol', symbol).upper()
+        signal_type = signal_result.get('signal', 'N/A').upper()
+        confidence = signal_result.get('confidence', 0.0)
+        tier = signal_result.get('tier', 'N/A')
+        pattern = signal_result.get('pattern', 'N/A')
+        reason = signal_result.get('reason', 'No specific reason provided.')
+        risk = signal_result.get('risk', 'N/A')
+        news = signal_result.get('news', 'N/A')
+
+
+        # Send Telegram message based on status
+        if signal_result.get("status") == "ok" and signal_type in ["BUY", "SELL"]:
             message = (
                 f"📈 ScalpMaster AI Signal Alert 📈\n\n"
-                f"Symbol: *{signal_result['symbol'].upper()}*\n"
-                f"Signal: *{signal_result['signal'].upper()}*\n"
-                f"Confidence: *{signal_result['confidence']:.2f}%*\n"
-                f"Tier: *{signal_result['tier']}*\n"
-                f"Pattern: *{signal_result['pattern']}*\n"
-                f"Reason: _{signal_result['reason']}_\n\n"
-                f"Risk: {signal_result['risk']} | News: {signal_result['news']}"
+                f"Symbol: *{symbol_upper}*\n"
+                f"Signal: *{signal_type}*\n"
+                f"Confidence: *{confidence:.2f}%*\n"
+                f"Tier: *{tier}*\n"
+                f"Pattern: *{pattern}*\n"
+                f"Reason: _{reason}_\n\n"
+                f"Risk: {risk} | News: {news}"
             )
             send_telegram_message(message)
-        elif signal_result["status"] == "blocked":
+        elif signal_result.get("status") == "blocked":
             message = (
                 f"🚫 ScalpMaster AI Alert 🚫\n\n"
-                f"Symbol: *{signal_result['symbol'].upper()}*\n"
+                f"Symbol: *{symbol_upper}*\n"
                 f"Status: *BLOCKED*\n"
-                f"Reason: _{signal_result['error']}_"
+                f"Reason: _{signal_result.get('error', 'Unknown reason.')}_"
             )
             send_telegram_message(message)
-        elif signal_result["status"] == "no-signal":
+        elif signal_result.get("status") == "no-signal":
             message = (
                 f" neutral ScalpMaster AI Alert neutral \n\n"
-                f"Symbol: *{signal_result['symbol'].upper()}*\n"
+                f"Symbol: *{symbol_upper}*\n"
                 f"Status: *NO SIGNAL*\n"
-                f"Reason: _{signal_result['reason']}_"
+                f"Reason: _{reason}_"
             )
             send_telegram_message(message)
 
@@ -171,3 +183,4 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
         traceback.print_exc() # Print full traceback
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
 
+                    
