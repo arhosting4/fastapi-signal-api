@@ -37,16 +37,17 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     # MACD (Moving Average Convergence Divergence)
     # MACD Line, Signal Line, Histogram
     macd = ta.macd(close_series, fast=12, slow=26, signal=9)
-    macd_line = macd['MACD_12_26_9']
-    macd_signal = macd['MACACS_12_26_9'] # This is typically the signal line
-    macd_hist = macd['MACDH_12_26_9'] # This is the histogram
+    # Corrected MACD signal line column name
+    macd_line = macd[f'MACD_{12}_{26}_{9}']
+    macd_signal = macd[f'MACDS_{12}_{26}_{9}'] # Corrected: Use MACDS for signal line
+    macd_hist = macd[f'MACDH_{12}_{26}_{9}'] # This is the histogram
 
     # Bollinger Bands (BBANDS)
     # Lower Band, Middle Band (SMA), Upper Band
     bbands = ta.bbands(close_series, length=20, std=2.0)
-    bb_lower = bbands['BBL_20_2.0']
-    bb_upper = bbands['BBU_20_2.0']
-    bb_middle = bbands['BBM_20_2.0'] # This is the SMA(20)
+    bb_lower = bbands[f'BBL_{20}_{2.0}']
+    bb_upper = bbands[f'BBU_{20}_{2.0}']
+    bb_middle = bbands[f'BBM_{20}_{2.0}'] # This is the SMA(20)
 
     # --- Signal Generation Logic ---
     # Combine multiple indicators for a stronger signal
@@ -55,30 +56,40 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     sell_signals = 0
 
     # 1. SMA Crossover
-    if sma_short.iloc[-1] > sma_long.iloc[-1] and sma_short.iloc[-2] <= sma_long.iloc[-2]:
-        buy_signals += 1 # Short SMA crosses above Long SMA (Golden Cross)
-    elif sma_short.iloc[-1] < sma_long.iloc[-1] and sma_short.iloc[-2] >= sma_long.iloc[-2]:
-        sell_signals += 1 # Short SMA crosses below Long SMA (Death Cross)
+    # Ensure values are not NaN before comparison
+    if not sma_short.empty and not sma_long.empty and \
+       not pd.isna(sma_short.iloc[-1]) and not pd.isna(sma_long.iloc[-1]) and \
+       not pd.isna(sma_short.iloc[-2]) and not pd.isna(sma_long.iloc[-2]):
+        if sma_short.iloc[-1] > sma_long.iloc[-1] and sma_short.iloc[-2] <= sma_long.iloc[-2]:
+            buy_signals += 1 # Short SMA crosses above Long SMA (Golden Cross)
+        elif sma_short.iloc[-1] < sma_long.iloc[-1] and sma_short.iloc[-2] >= sma_long.iloc[-2]:
+            sell_signals += 1 # Short SMA crosses below Long SMA (Death Cross)
 
     # 2. RSI
-    if rsi.iloc[-1] < 30: # Oversold
-        buy_signals += 1
-    elif rsi.iloc[-1] > 70: # Overbought
-        sell_signals += 1
+    if not rsi.empty and not pd.isna(rsi.iloc[-1]):
+        if rsi.iloc[-1] < 30: # Oversold
+            buy_signals += 1
+        elif rsi.iloc[-1] > 70: # Overbought
+            sell_signals += 1
 
     # 3. MACD Crossover
-    # Check if MACD line crosses above signal line (bullish) or below (bearish)
-    if macd_line.iloc[-1] > macd_signal.iloc[-1] and macd_line.iloc[-2] <= macd_signal.iloc[-2]:
-        buy_signals += 1
-    elif macd_line.iloc[-1] < macd_signal.iloc[-1] and macd_line.iloc[-2] >= macd_signal.iloc[-2]:
-        sell_signals += 1
-        
+    # Ensure values are not NaN before comparison
+    if not macd_line.empty and not macd_signal.empty and \
+       not pd.isna(macd_line.iloc[-1]) and not pd.isna(macd_signal.iloc[-1]) and \
+       not pd.isna(macd_line.iloc[-2]) and not pd.isna(macd_signal.iloc[-2]):
+        if macd_line.iloc[-1] > macd_signal.iloc[-1] and macd_line.iloc[-2] <= macd_signal.iloc[-2]:
+            buy_signals += 1
+        elif macd_line.iloc[-1] < macd_signal.iloc[-1] and macd_line.iloc[-2] >= macd_signal.iloc[-2]:
+            sell_signals += 1
+            
     # 4. Bollinger Bands
-    # Price touching or breaking lower band (buy), upper band (sell)
-    if close_series.iloc[-1] < bb_lower.iloc[-1]: # Price below lower band
-        buy_signals += 1
-    elif close_series.iloc[-1] > bb_upper.iloc[-1]: # Price above upper band
-        sell_signals += 1
+    # Ensure values are not NaN before comparison
+    if not close_series.empty and not bb_lower.empty and not bb_upper.empty and \
+       not pd.isna(close_series.iloc[-1]) and not pd.isna(bb_lower.iloc[-1]) and not pd.isna(bb_upper.iloc[-1]):
+        if close_series.iloc[-1] < bb_lower.iloc[-1]: # Price below lower band
+            buy_signals += 1
+        elif close_series.iloc[-1] > bb_upper.iloc[-1]: # Price above upper band
+            sell_signals += 1
 
     # --- Final Decision ---
     if buy_signals > sell_signals and buy_signals >= 2: # Require at least 2 buy signals
@@ -87,16 +98,4 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
         return "sell"
     else:
         return "wait"
-
-# fetch_ohlc is no longer needed as data is fetched by app.py and passed as 'closes'
-# def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
-#     if len(data) < 5:
-#         return {}
-#     return {
-#         "open": data[-5],
-#         "high": max(data[-5:]),
-#         "low": min(data[-5:]),
-#         "close": data[-1],
-#         "volume": 1000
-#     }
 
