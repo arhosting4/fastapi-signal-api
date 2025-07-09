@@ -1,6 +1,6 @@
 # app.py
 from fastapi import FastAPI, HTTPException
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # Removed for production environment
 import os
 import requests
 import json
@@ -12,7 +12,7 @@ from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
 
 # Load environment variables from .env file (for local development)
-load_dotenv()
+# load_dotenv() # Removed for production environment
 
 app = FastAPI(
     title="ScalpMasterSignalsAi API",
