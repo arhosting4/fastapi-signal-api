@@ -22,9 +22,9 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Alpha Vantage API Key (from environment variables)
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-# --- یہ نئی لائن شامل کی گئی ہے ---
+
+# This print is for debugging purposes to confirm API key loading
 print(f"DEBUG: Value of ALPHA_VANTAGE_API_KEY from os.getenv(): {ALPHA_VANTAGE_API_KEY}")
-# --- یہاں تک ---
 
 def send_telegram_message(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -109,7 +109,11 @@ def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 
     print(f"DEBUG: Alpha Vantage API URL: {url}") # Debug print
 
     try:
-        response = requests.get(url)
+        # Add User-Agent header
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers) # <--- headers=headers شامل کریں
         response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
         data = response.json()
 
@@ -235,4 +239,4 @@ def get_signal_logs(symbol: str):
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
     
     return logs
-    
+                         
