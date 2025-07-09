@@ -26,21 +26,21 @@ def detect_patterns(candles: list) -> dict:
 
     # --- Candlestick Pattern Detection ---
     # pandas_ta returns 0 for no pattern, 100 for bullish, -100 for bearish
-    # We need to call them as functions and then check the last value.
+    # We need to call them using the cdl_pattern wrapper and then check the last value.
 
     # Bullish Patterns
-    engulfing_bull = ta.cdl_engulfing(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    hammer = ta.cdl_hammer(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    morning_star = ta.cdl_morningstar(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    piercing = ta.cdl_piercing(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    three_white_soldiers = ta.cdl_3whitesoldiers(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
+    engulfing_bull = df.ta.cdl_pattern(name="engulfing").iloc[-1]
+    hammer = df.ta.cdl_pattern(name="hammer").iloc[-1]
+    morning_star = df.ta.cdl_pattern(name="morningstar").iloc[-1]
+    piercing = df.ta.cdl_pattern(name="piercing").iloc[-1]
+    three_white_soldiers = df.ta.cdl_pattern(name="3whitesoldiers").iloc[-1]
 
     # Bearish Patterns
-    dark_cloud_cover = ta.cdl_darkcloudcover(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    hanging_man = ta.cdl_hangingman(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    shooting_star = ta.cdl_shootingstar(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    evening_star = ta.cdl_eveningstar(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    three_black_crows = ta.cdl_3blackcrows(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
+    dark_cloud_cover = df.ta.cdl_pattern(name="darkcloudcover").iloc[-1]
+    hanging_man = df.ta.cdl_pattern(name="hangingman").iloc[-1]
+    shooting_star = df.ta.cdl_pattern(name="shootingstar").iloc[-1]
+    evening_star = df.ta.cdl_pattern(name="eveningstar").iloc[-1]
+    three_black_crows = df.ta.cdl_pattern(name="3blackcrows").iloc[-1]
 
 
     # Check for patterns in the latest candle
