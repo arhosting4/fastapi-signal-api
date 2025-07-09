@@ -37,10 +37,26 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     # MACD (Moving Average Convergence Divergence)
     # MACD Line, Signal Line, Histogram
     macd = ta.macd(close_series, fast=12, slow=26, signal=9)
-    # Corrected MACD signal line column name
-    macd_line = macd[f'MACD_{12}_{26}_{9}']
-    macd_signal = macd[f'MACDS_{12}_{26}_{9}'] # Corrected: Use MACDS for signal line
-    macd_hist = macd[f'MACDH_{12}_{26}_{9}'] # This is the histogram
+        
+    # --- DEBUGGING MACD COLUMNS ---
+    print(f"DEBUG: MACD DataFrame columns: {macd.columns.tolist()}")
+    # --- END DEBUGGING ---
+
+    # Try to access MACD components using common naming conventions
+    # Fallback to default if specific names are not found
+    macd_line_col = f'MACD_{12}_{26}_{9}'
+    macd_signal_col = f'MACDS_{12}_{26}_{9}'
+    macd_hist_col = f'MACDH_{12}_{26}_{9}'
+
+    # Check if columns exist, otherwise try alternative names or handle gracefully
+    macd_line = macd[macd_line_col] if macd_line_col in macd.columns else None
+    macd_signal = macd[macd_signal_col] if macd_signal_col in macd.columns else None
+    macd_hist = macd[macd_hist_col] if macd_hist_col in macd.columns else None
+
+    # If any MACD component is missing, return 'wait' or handle as an error
+    if macd_line is None or macd_signal is None or macd_hist is None:
+        print(f"DEBUG: Missing one or more MACD columns. Found: {macd.columns.tolist()}")
+        return "wait" # Or raise an error if this is critical
 
     # Bollinger Bands (BBANDS)
     # Lower Band, Middle Band (SMA), Upper Band
@@ -99,3 +115,4 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     else:
         return "wait"
 
+                                     
