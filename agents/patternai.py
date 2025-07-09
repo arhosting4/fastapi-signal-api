@@ -1,4 +1,3 @@
-# src/agents/patternai.py
 import pandas_ta as ta
 import pandas as pd
 
@@ -30,9 +29,14 @@ def detect_patterns(candles: list) -> dict:
 
     # Helper function to safely get pattern value
     def get_pattern_value(pattern_series):
-        if pattern_series is not None and not pattern_series.empty:
-            return pattern_series.iloc[-1]
-        return 0 # Default to 0 if no pattern or empty series
+        # Ensure pattern_series is a pandas Series and not empty
+        if isinstance(pattern_series, pd.Series) and not pattern_series.empty:
+            # Get the last value and convert it to a float, handling potential NaNs
+            value = pattern_series.iloc[-1]
+            if pd.isna(value):
+                return 0.0 # Return 0 if the last value is NaN
+            return float(value)
+        return 0.0 # Default to 0.0 if no pattern or empty series
 
     # Bullish Patterns
     engulfing_bull = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="engulfing"))
