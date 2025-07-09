@@ -24,11 +24,11 @@ def generate_final_signal(symbol: str, candles: list):
 
         # ✅ Step 1: Core AI strategy signal
         # strategybot now directly takes closes
-        closes = [float(c['close']) for c in candles]
-        strategy_signal = generate_core_signal(symbol, tf, closes)
+        closes = [float(c["close"]) for c in candles]
+        core_signal = generate_core_signal(symbol, tf, closes) # <-- یہاں تبدیلی کی گئی ہے
             
-        # If strategy_signal is 'wait' due to insufficient data, return early
-        if strategy_signal == "wait" and len(closes) < 34: # Based on strategybot's data requirement
+        # If core_signal is 'wait' due to insufficient data, return early
+        if core_signal == "wait" and len(closes) < 34: # Based on strategybot's data requirement
             return {
                 "status": "no-signal",
                 "symbol": symbol,
@@ -116,7 +116,7 @@ def generate_final_signal(symbol: str, candles: list):
         return {
             "status": "ok", # Or "no-signal" if core_signal is "wait"
             "symbol": symbol,
-            "signal": strategy_signal,
+            "signal": core_signal, # <-- یہاں بھی تبدیلی کی گئی ہے
             "pattern": pattern_name,
             "risk": risk_status,
             "news": news_impact,
