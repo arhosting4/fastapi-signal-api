@@ -1,89 +1,102 @@
-import pandas as pd
+# src/agents/strategybot.py
 import pandas_ta as ta
+import pandas as pd
+import numpy as np
 
 def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     """
-    Generates a core trading signal based on a more advanced strategy using pandas_ta.
-    This version combines RSI, MACD, and Bollinger Bands for confirmation.
+    Generates a core trading signal (buy/sell/wait) based on multiple
+    technical indicators using pandas_ta.
+
+    Parameters:
+        symbol (str): The trading pair symbol.
+        tf (str): Timeframe (e.g., 1min).
+        closes (list): List of closing prices (oldest to newest).
+
+    Returns:
+        str: "buy", "sell", or "wait".
     """
-    # Need enough data for indicators:
-    # RSI(14) needs 14 periods
-    # MACD(12, 26, 9) needs at least 26 periods
-    # Bollinger Bands (20) needs 20 periods
-    # Let's ensure we have at least 100 periods for robust calculation
-    if len(closes) < 100:
+    # Ensure we have enough data for indicators (e.g., 20 periods for many MAs)
+    if len(closes) < 34: # Adjusted for indicators like MACD (26 periods) or BBands (20 periods)
         return "wait"
 
-    # Convert closes list to a pandas Series
+    # Convert closes list to a pandas Series for pandas_ta
     close_series = pd.Series(closes)
 
-    # Calculate Indicators
+    # --- Indicator Calculations ---
+
+    # SMA (Simple Moving Average) - Crossover Strategy
+    # Short-term SMA (e.g., 10 periods) and Long-term SMA (e.g., 30 periods)
+    sma_short = ta.sma(close_series, length=10)
+    sma_long = ta.sma(close_series, length=30)
+
     # RSI (Relative Strength Index)
+    # RSI values typically range from 0 to 100. Overbought > 70, Oversold < 30.
     rsi = ta.rsi(close_series, length=14)
 
     # MACD (Moving Average Convergence Divergence)
-    # Default: fast=12, slow=26, signal=9
+    # MACD Line, Signal Line, Histogram
     macd = ta.macd(close_series, fast=12, slow=26, signal=9)
-    macd_line = macd[macd.columns[0]] # MACD line
-    signal_line = macd[macd.columns[1]] # Signal line
+    macd_line = macd['MACD_12_26_9']
+    macd_signal = macd['MACACS_12_26_9'] # This is typically the signal line
+    macd_hist = macd['MACDH_12_26_9'] # This is the histogram
 
-    # Bollinger Bands
-    # Default: length=20, std=2
-    bbands = ta.bbands(close_series, length=20, std=2)
-    bb_lower = bbands[bbands.columns[0]] # Lower Band
-    bb_middle = bbands[bbands.columns[1]] # Middle Band (SMA)
-    bb_upper = bbands[bbands.columns[2]] # Upper Band
+    # Bollinger Bands (BBANDS)
+    # Lower Band, Middle Band (SMA), Upper Band
+    bbands = ta.bbands(close_series, length=20, std=2.0)
+    bb_lower = bbands['BBL_20_2.0']
+    bb_upper = bbands['BBU_20_2.0']
+    bb_middle = bbands['BBM_20_2.0'] # This is the SMA(20)
 
-    # Get the latest values
-    latest_rsi = rsi.iloc[-1]
-    latest_macd_line = macd_line.iloc[-1]
-    latest_signal_line = signal_line.iloc[-1]
-    latest_close = close_series.iloc[-1]
-    latest_bb_lower = bb_lower.iloc[-1]
-    latest_bb_upper = bb_upper.iloc[-1]
+    # --- Signal Generation Logic ---
+    # Combine multiple indicators for a stronger signal
 
-    # Get previous values for crosses
-    prev_macd_line = macd_line.iloc[-2]
-    prev_signal_line = signal_line.iloc[-2]
+    buy_signals = 0
+    sell_signals = 0
 
-    # --- Trading Strategy Logic ---
+    # 1. SMA Crossover
+    if sma_short.iloc[-1] > sma_long.iloc[-1] and sma_short.iloc[-2] <= sma_long.iloc[-2]:
+        buy_signals += 1 # Short SMA crosses above Long SMA (Golden Cross)
+    elif sma_short.iloc[-1] < sma_long.iloc[-1] and sma_short.iloc[-2] >= sma_long.iloc[-2]:
+        sell_signals += 1 # Short SMA crosses below Long SMA (Death Cross)
 
-    # Buy Conditions:
-    # 1. RSI is not overbought (e.g., < 70)
-    # 2. MACD line crosses above Signal line (bullish crossover)
-    # 3. Price is near or below Bollinger Lower Band (potential reversal from oversold)
-    buy_condition_rsi = latest_rsi < 70
-    buy_condition_macd = (latest_macd_line > latest_signal_line) and (prev_macd_line <= prev_signal_line)
-    buy_condition_bb = latest_close <= latest_bb_lower # Price touches or goes below lower band
+    # 2. RSI
+    if rsi.iloc[-1] < 30: # Oversold
+        buy_signals += 1
+    elif rsi.iloc[-1] > 70: # Overbought
+        sell_signals += 1
 
-    if buy_condition_rsi and buy_condition_macd and buy_condition_bb:
+    # 3. MACD Crossover
+    # Check if MACD line crosses above signal line (bullish) or below (bearish)
+    if macd_line.iloc[-1] > macd_signal.iloc[-1] and macd_line.iloc[-2] <= macd_signal.iloc[-2]:
+        buy_signals += 1
+    elif macd_line.iloc[-1] < macd_signal.iloc[-1] and macd_line.iloc[-2] >= macd_signal.iloc[-2]:
+        sell_signals += 1
+        
+    # 4. Bollinger Bands
+    # Price touching or breaking lower band (buy), upper band (sell)
+    if close_series.iloc[-1] < bb_lower.iloc[-1]: # Price below lower band
+        buy_signals += 1
+    elif close_series.iloc[-1] > bb_upper.iloc[-1]: # Price above upper band
+        sell_signals += 1
+
+    # --- Final Decision ---
+    if buy_signals > sell_signals and buy_signals >= 2: # Require at least 2 buy signals
         return "buy"
-
-    # Sell Conditions:
-    # 1. RSI is not oversold (e.g., > 30)
-    # 2. MACD line crosses below Signal line (bearish crossover)
-    # 3. Price is near or above Bollinger Upper Band (potential reversal from overbought)
-    sell_condition_rsi = latest_rsi > 30
-    sell_condition_macd = (latest_macd_line < latest_signal_line) and (prev_macd_line >= prev_signal_line)
-    sell_condition_bb = latest_close >= latest_bb_upper # Price touches or goes above upper band
-
-    if sell_condition_rsi and sell_condition_macd and sell_condition_bb:
+    elif sell_signals > buy_signals and sell_signals >= 2: # Require at least 2 sell signals
         return "sell"
+    else:
+        return "wait"
 
-    return "wait"
+# fetch_ohlc is no longer needed as data is fetched by app.py and passed as 'closes'
+# def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
+#     if len(data) < 5:
+#         return {}
+#     return {
+#         "open": data[-5],
+#         "high": max(data[-5:]),
+#         "low": min(data[-5:]),
+#         "close": data[-1],
+#         "volume": 1000
+#     }
 
-def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
-    # This function is now redundant as real data is fetched by fetch_real_ohlc_data in app.py
-    # and fusion_engine uses the full candle data.
-    # However, if you still need a dummy OHLC for some reason, keep it.
-    # Otherwise, you can remove this function if it's not called anywhere else.
-    if len(data) < 5:
-        return {}
-    return {
-        "open": data[-5],
-        "high": max(data[-5:]),
-        "low": min(data[-5:]),
-        "close": data[-1],
-        "volume": 1000
-    }
-    
