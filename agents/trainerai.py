@@ -1,50 +1,86 @@
-# src/agents/trainerai.py
-
 import random
+import pandas as pd
+import pandas_ta as ta # Import pandas_ta for indicator calculations
 
-def get_confidence(pair: str, tf: str, core_signal: str, pattern_data: dict) -> float:
+def get_confidence(pair: str, tf: str, core_signal: str, pattern_signal: str, candles: list) -> float:
     """
-    Estimates signal confidence based on current logic fusion.
-    In a future upgrade, this will use adaptive ML training logs and historical performance.
+    Estimates signal confidence based on current logic fusion and indicator values.
+    This version uses indicator values from the latest candles to provide a more
+    meaningful confidence score.
 
     Parameters:
-        pair (str): Trading pair symbol (e.g., XAU/USD).
-        tf (str): Timeframe (e.g., 1min).
-        core_signal (str): Signal from core strategy logic ("buy", "sell", "wait").
-        pattern_data (dict): Dictionary containing pattern and its confidence
-                             (e.g., {"pattern": "Bullish Engulfing", "confidence": 0.82}).
+        pair (str): Trading pair symbol (e.g., XAU/USD)
+        tf (str): Timeframe (e.g., 1min)
+        core_signal (str): Signal from core strategy logic (buy/sell/wait)
+        pattern_signal (str): Signal from pattern recognition agent (currently dummy)
+        candles (list): List of OHLC candles from the API.
 
     Returns:
-        float: Confidence percentage from 0% to 100%.
+        float: Confidence percentage from 0% to 100%
     """
-    pattern_name = pattern_data.get("pattern", "No Specific Pattern")
-    pattern_confidence = pattern_data.get("confidence", 0.0)
+    confidence = 50.0 # Base confidence
 
-    base_confidence = 50.0 # Starting point for confidence
+    if not candles or len(candles) < 100: # Need enough data for indicators
+        return confidence # Return base if not enough data
 
-    # Adjust confidence based on core signal and pattern alignment
-    if core_signal in ["buy", "sell"]:
-        if (core_signal == "buy" and ("Bullish" in pattern_name or "Upward Momentum" in pattern_name)) or \
-           (core_signal == "sell" and ("Bearish" in pattern_name or "Downward Momentum" in pattern_name)):
-            # Strong agreement between core signal and pattern
-            base_confidence += 30 # Significant boost
-            base_confidence += (pattern_confidence * 20) # Add more based on pattern's own confidence
-        elif core_signal != "wait" and "No Specific Pattern" not in pattern_name:
-            # Core signal exists, but pattern is mixed or conflicting
-            base_confidence -= 10 # Slight reduction for conflict
-            base_confidence += (pattern_confidence * 10) # Still consider pattern's confidence
-        else:
-            # Core signal exists, but no specific pattern detected
-            base_confidence += 5 # Small boost for core signal
-    else: # core_signal == "wait"
-        base_confidence -= 20 # Lower confidence if core strategy is waiting
+    close_series = pd.Series([c['close'] for c in candles])
+        
+    # Calculate Indicators
+    rsi = ta.rsi(close_series, length=14).iloc[-1]
+    macd = ta.macd(close_series, fast=12, slow=26, signal=9)
+    macd_line = macd[macd.columns[0]].iloc[-1]
+    signal_line = macd[macd.columns[1]].iloc[-1]
+        
+    bbands = ta.bbands(close_series, length=20, std=2)
+    bb_lower = bbands[bbands.columns[0]].iloc[-1]
+    bb_upper = bbands[bbands.columns[2]].iloc[-1]
+    latest_close = close_series.iloc[-1]
 
-    # Add a small random factor for variability (for now)
-    random_factor = random.uniform(-5, 5)
-    final_confidence = base_confidence + random_factor
+    # Adjust confidence based on core signal and indicator alignment
+    if core_signal == "buy":
+        # Stronger buy signal if RSI is low (oversold), MACD is bullish, and price is near lower BB
+        if rsi < 40: # More oversold
+            confidence += 10
+        if macd_line > signal_line: # MACD bullish
+            confidence += 10
+            if macd_line > 0: # MACD above zero line
+                confidence += 5
+        if latest_close <= bb_lower: # Price touching/below lower band
+            confidence += 15
+        elif latest_close < bbands[bbands.columns[1]].iloc[-1]: # Price below middle band
+            confidence += 5
+            
+        # Penalize if RSI is too high or MACD is bearish
+        if rsi > 70:
+            confidence -= 15
+        if macd_line < signal_line:
+            confidence -= 10
+
+    elif core_signal == "sell":
+        # Stronger sell signal if RSI is high (overbought), MACD is bearish, and price is near upper BB
+        if rsi > 60: # More overbought
+            confidence += 10
+        if macd_line < signal_line: # MACD bearish
+            confidence += 10
+            if macd_line < 0: # MACD below zero line
+                confidence += 5
+        if latest_close >= bb_upper: # Price touching/above upper band
+            confidence += 15
+        elif latest_close > bbands[bbands.columns[1]].iloc[-1]: # Price above middle band
+            confidence += 5
+
+        # Penalize if RSI is too low or MACD is bullish
+        if rsi < 30:
+            confidence -= 15
+        if macd_line > signal_line:
+            confidence -= 10
+
+    # Adjust based on pattern signal (currently dummy, but can be expanded)
+    if core_signal == pattern_signal and core_signal != "wait":
+        confidence += 5 # Small bonus for alignment
 
     # Ensure confidence is within 0-100 range
-    final_confidence = max(0.0, min(100.0, final_confidence))
+    confidence = max(0.0, min(100.0, confidence))
 
-    return round(final_confidence, 2)
-
+    return round(confidence, 2)
+    
