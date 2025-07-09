@@ -1,44 +1,42 @@
-# src/agents/sentinel.py
+from datetime import datetime, time, timedelta
 
 def check_news(symbol: str, high_impact_events: list = None) -> bool:
     """
-    Checks for high-impact news events related to the symbol.
-    This function is a placeholder for future integration with a live news API.
-    Currently, it will always return False unless explicitly provided with events.
+    Checks for high-impact news events or predefined risky trading hours.
+    Returns True if trading should be avoided due to news/market conditions.
 
     Parameters:
-        symbol (str): The trading pair symbol (e.g., XAU/USD).
-        high_impact_events (list): A list of strings representing high-impact news events.
-                                   In a real scenario, this would come from a news API.
+        symbol (str): The trading pair symbol.
+        high_impact_events (list): (Optional) A list of upcoming high-impact news events.
+                                   (Currently not used, placeholder for future integration)
 
     Returns:
-        bool: True if a high-impact news event is detected for the symbol, False otherwise.
+        bool: True if a high-impact news event is detected or risky hours, False otherwise.
     """
-    if high_impact_events is None:
-        high_impact_events = []
+    current_utc_time = datetime.utcnow().time()
 
-    if not symbol or not high_impact_events:
-        # No news events provided or symbol is empty, so no news detected.
-        return False
+    # Define common high-impact news release times (UTC) for major currencies
+    # These are examples and should be adjusted based on actual news calendars
+    risky_hours_utc = [
+        # Example: US Non-Farm Payrolls (first Friday of month, 12:30 UTC)
+        # Example: FOMC meetings, ECB press conferences, etc.
+        # For simplicity, let's define some general risky time windows
+        (time(12, 0), time(13, 0)), # Around London/NY open overlap (12:00 - 13:00 UTC)
+        (time(14, 30), time(15, 30)), # US economic data releases (e.g., CPI, PPI)
+        (time(8, 0), time(9, 0)) # European session open
+    ]
 
-    symbol_lower = symbol.lower()
-    for event in high_impact_events:
-        # Simple check: if the symbol is mentioned in the event description (case-insensitive)
-        if symbol_lower in event.lower():
-            print(f"⚠️ Sentinel: High-impact news event detected for {symbol}: {event}")
+    # Check if current time falls within any risky hour window
+    for start_time, end_time in risky_hours_utc:
+        if start_time <= current_utc_time <= end_time:
+            print(f"⚠️ High-impact news/risky hour detected for {symbol} (UTC: {current_utc_time.strftime('%H:%M')}). Trading advised against.")
             return True
 
-    return False
+    # Future integration: Check against actual high_impact_events list
+    # if high_impact_events:
+    #     for event in high_impact_events:
+    #         # Logic to parse event time and compare with current time
+    #         pass
 
-# Example of how you might integrate with a news API (future work):
-# def fetch_live_news(api_key: str, symbol: str) -> list:
-#     """
-#     Placeholder to fetch live news from a financial news API.
-#     """
-#     # Example with a hypothetical news API
-#     # url = f"https://api.news-provider.com/v1/news?symbol={symbol}&impact=high&api_key={api_key}"
-#     # response = requests.get(url)
-#     # if response.status_code == 200:
-#     #     news_data = response.json()
-#     #     return [item['headline'] for item in news_data['articles']]
-#     return []
+    return False
+    
