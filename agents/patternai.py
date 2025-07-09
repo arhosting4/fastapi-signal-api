@@ -26,21 +26,39 @@ def detect_patterns(candles: list) -> dict:
 
     # --- Candlestick Pattern Detection ---
     # pandas_ta returns 0 for no pattern, 100 for bullish, -100 for bearish
-    # We need to call them as functions and then check the last value.
+    # We need to call them as methods on the DataFrame and then check the last value.
 
     # Bullish Patterns
-    engulfing_bull = ta.cdl_engulfing(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    hammer = ta.cdl_hammer(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    morning_star = ta.cdl_morningstar(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    piercing = ta.cdl_piercing(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    three_white_soldiers = ta.cdl_3whitesoldiers(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
+    df.ta.cdl_engulfing(append=True)
+    engulfing_bull = df["CDL_ENGULFING"].iloc[-1] if "CDL_ENGULFING" in df.columns else 0
+
+    df.ta.cdl_hammer(append=True)
+    hammer = df["CDL_HAMMER"].iloc[-1] if "CDL_HAMMER" in df.columns else 0
+
+    df.ta.cdl_morningstar(append=True)
+    morning_star = df["CDL_MORNINGSTAR"].iloc[-1] if "CDL_MORNINGSTAR" in df.columns else 0
+
+    df.ta.cdl_piercing(append=True)
+    piercing = df["CDL_PIERCING"].iloc[-1] if "CDL_PIERCING" in df.columns else 0
+
+    df.ta.cdl_3whitesoldiers(append=True)
+    three_white_soldiers = df["CDL_3WHITESOLDIERS"].iloc[-1] if "CDL_3WHITESOLDIERS" in df.columns else 0
 
     # Bearish Patterns
-    dark_cloud_cover = ta.cdl_darkcloudcover(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    hanging_man = ta.cdl_hangingman(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    shooting_star = ta.cdl_shootingstar(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    evening_star = ta.cdl_eveningstar(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
-    three_black_crows = ta.cdl_3blackcrows(df["open"], df["high"], df["low"], df["close"]).iloc[-1]
+    df.ta.cdl_darkcloudcover(append=True)
+    dark_cloud_cover = df["CDL_DARKCLOUDCOVER"].iloc[-1] if "CDL_DARKCLOUDCOVER" in df.columns else 0
+
+    df.ta.cdl_hangingman(append=True)
+    hanging_man = df["CDL_HANGINGMAN"].iloc[-1] if "CDL_HANGINGMAN" in df.columns else 0
+
+    df.ta.cdl_shootingstar(append=True)
+    shooting_star = df["CDL_SHOOTINGSTAR"].iloc[-1] if "CDL_SHOOTINGSTAR" in df.columns else 0
+
+    df.ta.cdl_eveningstar(append=True)
+    evening_star = df["CDL_EVENINGSTAR"].iloc[-1] if "CDL_EVENINGSTAR" in df.columns else 0
+
+    df.ta.cdl_3blackcrows(append=True)
+    three_black_crows = df["CDL_3BLACKCROWS"].iloc[-1] if "CDL_3BLACKCROWS" in df.columns else 0
 
 
     # Check for patterns in the latest candle
