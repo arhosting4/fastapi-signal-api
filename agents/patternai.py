@@ -26,46 +26,69 @@ def detect_patterns(candles: list) -> dict:
 
     # --- Candlestick Pattern Detection ---
     # pandas_ta returns 0 for no pattern, 100 for bullish, -100 for bearish
+    # We need to call them as methods on the DataFrame or directly as functions
+    # and then check the last value.
 
     # Bullish Patterns
-    engulfing_bull = ta.cdl_engulfing(df['open'], df['high'], df['low'], df['close'])
-    hammer = ta.cdl_hammer(df['open'], df['high'], df['low'], df['close'])
-    morning_star = ta.cdl_morningstar(df['open'], df['high'], df['low'], df['close'])
-    piercing = ta.cdl_piercing(df['open'], df['high'], df['low'], df['close'])
-    three_white_soldiers = ta.cdl_3whitesoldiers(df['open'], df['high'], df['low'], df['close'])
+    # Use df.ta.cdl_engulfing() which adds the column directly to df
+    # Then access the last value from the DataFrame column
+    df.ta.cdl_engulfing(append=True)
+    engulfing_bull = df['CDL_ENGULFING'].iloc[-1] if 'CDL_ENGULFING' in df.columns else 0
+
+    df.ta.cdl_hammer(append=True)
+    hammer = df['CDL_HAMMER'].iloc[-1] if 'CDL_HAMMER' in df.columns else 0
+
+    df.ta.cdl_morningstar(append=True)
+    morning_star = df['CDL_MORNINGSTAR'].iloc[-1] if 'CDL_MORNINGSTAR' in df.columns else 0
+
+    df.ta.cdl_piercing(append=True)
+    piercing = df['CDL_PIERCING'].iloc[-1] if 'CDL_PIERCING' in df.columns else 0
+
+    df.ta.cdl_3whitesoldiers(append=True)
+    three_white_soldiers = df['CDL_3WHITESOLDIERS'].iloc[-1] if 'CDL_3WHITESOLDIERS' in df.columns else 0
 
     # Bearish Patterns
-    dark_cloud_cover = ta.cdl_darkcloudcover(df['open'], df['high'], df['low'], df['close'])
-    hanging_man = ta.cdl_hangingman(df['open'], df['high'], df['low'], df['close'])
-    shooting_star = ta.cdl_shootingstar(df['open'], df['high'], df['low'], df['close'])
-    evening_star = ta.cdl_eveningstar(df['open'], df['high'], df['low'], df['close'])
-    three_black_crows = ta.cdl_3blackcrows(df['open'], df['high'], df['low'], df['close'])
+    df.ta.cdl_darkcloudcover(append=True)
+    dark_cloud_cover = df['CDL_DARKCLOUDCOVER'].iloc[-1] if 'CDL_DARKCLOUDCOVER' in df.columns else 0
+
+    df.ta.cdl_hangingman(append=True)
+    hanging_man = df['CDL_HANGINGMAN'].iloc[-1] if 'CDL_HANGINGMAN' in df.columns else 0
+
+    df.ta.cdl_shootingstar(append=True)
+    shooting_star = df['CDL_SHOOTINGSTAR'].iloc[-1] if 'CDL_SHOOTINGSTAR' in df.columns else 0
+
+    df.ta.cdl_eveningstar(append=True)
+    evening_star = df['CDL_EVENINGSTAR'].iloc[-1] if 'CDL_EVENINGSTAR' in df.columns else 0
+
+    df.ta.cdl_3blackcrows(append=True)
+    three_black_crows = df['CDL_3BLACKCROWS'].iloc[-1] if 'CDL_3BLACKCROWS' in df.columns else 0
+
 
     # Check for patterns in the latest candle
     # Prioritize stronger or more common patterns
 
     # Bearish Checks
-    if not dark_cloud_cover.empty and dark_cloud_cover.iloc[-1] < 0:
+    if dark_cloud_cover < 0:
         return {"pattern": "Dark Cloud Cover", "type": "bearish"}
-    if not hanging_man.empty and hanging_man.iloc[-1] < 0:
+    if hanging_man < 0:
         return {"pattern": "Hanging Man", "type": "bearish"}
-    if not shooting_star.empty and shooting_star.iloc[-1] < 0:
+    if shooting_star < 0:
         return {"pattern": "Shooting Star", "type": "bearish"}
-    if not evening_star.empty and evening_star.iloc[-1] < 0:
+    if evening_star < 0:
         return {"pattern": "Evening Star", "type": "bearish"}
-    if not three_black_crows.empty and three_black_crows.iloc[-1] < 0:
+    if three_black_crows < 0:
         return {"pattern": "Three Black Crows", "type": "bearish"}
 
     # Bullish Checks
-    if not engulfing_bull.empty and engulfing_bull.iloc[-1] > 0:
+    if engulfing_bull > 0:
         return {"pattern": "Bullish Engulfing", "type": "bullish"}
-    if not hammer.empty and hammer.iloc[-1] > 0:
+    if hammer > 0:
         return {"pattern": "Hammer", "type": "bullish"}
-    if not morning_star.empty and morning_star.iloc[-1] > 0:
+    if morning_star > 0:
         return {"pattern": "Morning Star", "type": "bullish"}
-    if not piercing.empty and piercing.iloc[-1] > 0:
+    if piercing > 0:
         return {"pattern": "Piercing Pattern", "type": "bullish"}
-    if not three_white_soldiers.empty and three_white_soldiers.iloc[-1] > 0:
+    if three_white_soldiers > 0:
         return {"pattern": "Three White Soldiers", "type": "bullish"}
 
     return {"pattern": "No Specific Pattern", "type": "neutral"}
