@@ -1,18 +1,14 @@
 # app.py
 from fastapi import FastAPI, HTTPException
-# from dotenv import load_dotenv # Removed for production environment
 import os
 import requests
 import json
 from datetime import datetime, timedelta
-import random # Required for _generate_dummy_candles
+import random
 
 # Import your AI agents
 from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
-
-# Load environment variables from .env file (for local development)
-# load_dotenv() # Removed for production environment
 
 app = FastAPI(
     title="ScalpMasterSignalsAi API",
@@ -26,6 +22,9 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Alpha Vantage API Key (from environment variables)
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+# --- یہ نئی لائن شامل کی گئی ہے ---
+print(f"DEBUG: Value of ALPHA_VANTAGE_API_KEY from os.getenv(): {ALPHA_VANTAGE_API_KEY}")
+# --- یہاں تک ---
 
 def send_telegram_message(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
