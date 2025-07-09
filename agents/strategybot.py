@@ -50,4 +50,3 @@ def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
         "close": data[-1],
         "volume": 1000
     }
-    
