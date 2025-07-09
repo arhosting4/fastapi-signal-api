@@ -7,8 +7,8 @@ from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 from agents.tierbot import get_tier
-import pandas as pd # Import pandas for potential future use or debugging
-import traceback # Import traceback module for detailed error logging
+import pandas as pd
+import traceback
 
 def generate_final_signal(symbol: str, candles: list):
     """
@@ -83,9 +83,11 @@ def generate_final_signal(symbol: str, candles: list):
         }
 
     except Exception as e:
-        # Ensure a proper exception is raised, not just a string
-        # This will allow the traceback to be printed correctly in app.py
-        print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
-        traceback.print_exc() # Still print here for redundancy
-        raise Exception(f"Error in AI fusion for {symbol}: {e}") # Raise a proper Exception object
+        # --- START DEBUGGING CODE ---
+        print(f"DEBUG: Type of exception in fusion_engine: {type(e)}")
+        print(f"DEBUG: Value of exception in fusion_engine: {e}")
+        traceback.print_exc() # Print full traceback here
+        # --- END DEBUGGING CODE ---
+        raise Exception(f"Error in AI fusion for {symbol}: {e}") # Re-raise the exception
+
 
