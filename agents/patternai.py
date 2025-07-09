@@ -28,19 +28,25 @@ def detect_patterns(candles: list) -> dict:
     # pandas_ta returns 0 for no pattern, 100 for bullish, -100 for bearish
     # We need to call them using the cdl_pattern wrapper and then check the last value.
 
+    # Helper function to safely get pattern value
+    def get_pattern_value(pattern_series):
+        if pattern_series is not None and not pattern_series.empty:
+            return pattern_series.iloc[-1]
+        return 0 # Default to 0 if no pattern or empty series
+
     # Bullish Patterns
-    engulfing_bull = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="engulfing").iloc[-1]
-    hammer = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="hammer").iloc[-1]
-    morning_star = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="morningstar").iloc[-1]
-    piercing = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="piercing").iloc[-1]
-    three_white_soldiers = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="3whitesoldiers").iloc[-1]
+    engulfing_bull = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="engulfing"))
+    hammer = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="hammer"))
+    morning_star = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="morningstar"))
+    piercing = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="piercing"))
+    three_white_soldiers = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="3whitesoldiers"))
 
     # Bearish Patterns
-    dark_cloud_cover = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="darkcloudcover").iloc[-1]
-    hanging_man = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="hangingman").iloc[-1]
-    shooting_star = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="shootingstar").iloc[-1]
-    evening_star = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="eveningstar").iloc[-1]
-    three_black_crows = ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="3blackcrows").iloc[-1]
+    dark_cloud_cover = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="darkcloudcover"))
+    hanging_man = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="hangingman"))
+    shooting_star = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="shootingstar"))
+    evening_star = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="eveningstar"))
+    three_black_crows = get_pattern_value(ta.cdl_pattern(df["open"], df["high"], df["low"], df["close"], name="3blackcrows"))
 
 
     # Check for patterns in the latest candle
