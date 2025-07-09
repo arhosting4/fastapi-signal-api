@@ -1,4 +1,3 @@
-# src/agents/strategybot.py
 import pandas_ta as ta
 import pandas as pd
 import numpy as np
@@ -17,6 +16,8 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
         str: "buy", "sell", or "wait".
     """
     # Ensure we have enough data for indicators (e.g., 20 periods for many MAs)
+    # MACD needs at least 26 periods, Bollinger Bands 20, SMA 30.
+    # Let's ensure we have enough data for the longest period (30 for SMA_long) plus a few for lookback.
     if len(closes) < 34: # Adjusted for indicators like MACD (26 periods) or BBands (20 periods)
         return "wait"
 
@@ -39,16 +40,17 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     macd = ta.macd(close_series, fast=12, slow=26, signal=9)
         
     # Corrected MACD column names based on debug logs
-    macd_line = macd[f'MACD_12_26_9']
-    macd_signal = macd[f'MACDs_12_26_9'] # Corrected: Use 'MACDs' (lowercase s)
-    macd_hist = macd[f'MACDh_12_26_9'] # Corrected: Use 'MACDh' (lowercase h)
+    # Ensure MACD columns exist before accessing
+    macd_line = macd[f'MACD_12_26_9'] if f'MACD_12_26_9' in macd else pd.Series()
+    macd_signal = macd[f'MACDs_12_26_9'] if f'MACDs_12_26_9' in macd else pd.Series()
+    macd_hist = macd[f'MACDh_12_26_9'] if f'MACDh_12_26_9' in macd else pd.Series()
 
     # Bollinger Bands (BBANDS)
     # Lower Band, Middle Band (SMA), Upper Band
     bbands = ta.bbands(close_series, length=20, std=2.0)
-    bb_lower = bbands[f'BBL_20_2.0']
-    bb_upper = bbands[f'BBU_20_2.0']
-    bb_middle = bbands[f'BBM_20_2.0'] # This is the SMA(20)
+    bb_lower = bbands[f'BBL_20_2.0'] if f'BBL_20_2.0' in bbands else pd.Series()
+    bb_upper = bbands[f'BBU_20_2.0'] if f'BBU_20_2.0' in bbands else pd.Series()
+    bb_middle = bbands[f'BBM_20_2.0'] if f'BBM_20_2.0' in bbands else pd.Series() # This is the SMA(20)
 
     # --- Signal Generation Logic ---
     # Combine multiple indicators for a stronger signal
@@ -56,40 +58,73 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     buy_signals = 0
     sell_signals = 0
 
+    # Helper function to safely get the last valid value from a Series
+    def get_last_valid(series):
+        if not series.empty and not series.isnull().all():
+            return series.iloc[-1]
+        return np.nan # Return NaN if series is empty or all NaNs
+
+    def get_second_last_valid(series):
+        if len(series) >= 2 and not series.iloc[-2:].isnull().all():
+            # Find the last non-NaN value from the last two elements
+            if not pd.isna(series.iloc[-1]):
+                if not pd.isna(series.iloc[-2]):
+                    return series.iloc[-2]
+                else: # If last is valid, but second last is NaN, try to find earlier valid
+                    for i in range(len(series) - 2, -1, -1):
+                        if not pd.isna(series.iloc[i]):
+                            return series.iloc[i]
+            else: # If last is NaN, try to find the last valid one
+                for i in range(len(series) - 1, -1, -1):
+                    if not pd.isna(series.iloc[i]):
+                        return series.iloc[i]
+        return np.nan
+
+
     # 1. SMA Crossover
     # Ensure values are not NaN before comparison
-    if not sma_short.empty and not sma_long.empty and \
-       not pd.isna(sma_short.iloc[-1]) and not pd.isna(sma_long.iloc[-1]) and \
-       not pd.isna(sma_short.iloc[-2]) and not pd.isna(sma_long.iloc[-2]):
-        if sma_short.iloc[-1] > sma_long.iloc[-1] and sma_short.iloc[-2] <= sma_long.iloc[-2]:
+    sma_short_last = get_last_valid(sma_short)
+    sma_long_last = get_last_valid(sma_long)
+    sma_short_prev = get_second_last_valid(sma_short)
+    sma_long_prev = get_second_last_valid(sma_long)
+
+    if not pd.isna(sma_short_last) and not pd.isna(sma_long_last) and \
+       not pd.isna(sma_short_prev) and not pd.isna(sma_long_prev):
+        if sma_short_last > sma_long_last and sma_short_prev <= sma_long_prev:
             buy_signals += 1 # Short SMA crosses above Long SMA (Golden Cross)
-        elif sma_short.iloc[-1] < sma_long.iloc[-1] and sma_short.iloc[-2] >= sma_long.iloc[-2]:
+        elif sma_short_last < sma_long_last and sma_short_prev >= sma_long_prev:
             sell_signals += 1 # Short SMA crosses below Long SMA (Death Cross)
 
     # 2. RSI
-    if not rsi.empty and not pd.isna(rsi.iloc[-1]):
-        if rsi.iloc[-1] < 30: # Oversold
+    rsi_last = get_last_valid(rsi)
+    if not pd.isna(rsi_last):
+        if rsi_last < 30: # Oversold
             buy_signals += 1
-        elif rsi.iloc[-1] > 70: # Overbought
+        elif rsi_last > 70: # Overbought
             sell_signals += 1
 
     # 3. MACD Crossover
-    # Ensure values are not NaN before comparison
-    if not macd_line.empty and not macd_signal.empty and \
-       not pd.isna(macd_line.iloc[-1]) and not pd.isna(macd_signal.iloc[-1]) and \
-       not pd.isna(macd_line.iloc[-2]) and not pd.isna(macd_signal.iloc[-2]):
-        if macd_line.iloc[-1] > macd_signal.iloc[-1] and macd_line.iloc[-2] <= macd_signal.iloc[-2]:
+    macd_line_last = get_last_valid(macd_line)
+    macd_signal_last = get_last_valid(macd_signal)
+    macd_line_prev = get_second_last_valid(macd_line)
+    macd_signal_prev = get_second_last_valid(macd_signal)
+
+    if not pd.isna(macd_line_last) and not pd.isna(macd_signal_last) and \
+       not pd.isna(macd_line_prev) and not pd.isna(macd_signal_prev):
+        if macd_line_last > macd_signal_last and macd_line_prev <= macd_signal_prev:
             buy_signals += 1
-        elif macd_line.iloc[-1] < macd_signal.iloc[-1] and macd_line.iloc[-2] >= macd_signal.iloc[-2]:
+        elif macd_line_last < macd_signal_last and macd_line_prev >= macd_signal_prev:
             sell_signals += 1
             
     # 4. Bollinger Bands
-    # Ensure values are not NaN before comparison
-    if not close_series.empty and not bb_lower.empty and not bb_upper.empty and \
-       not pd.isna(close_series.iloc[-1]) and not pd.isna(bb_lower.iloc[-1]) and not pd.isna(bb_upper.iloc[-1]):
-        if close_series.iloc[-1] < bb_lower.iloc[-1]: # Price below lower band
+    close_last = get_last_valid(close_series)
+    bb_lower_last = get_last_valid(bb_lower)
+    bb_upper_last = get_last_valid(bb_upper)
+
+    if not pd.isna(close_last) and not pd.isna(bb_lower_last) and not pd.isna(bb_upper_last):
+        if close_last < bb_lower_last: # Price below lower band
             buy_signals += 1
-        elif close_series.iloc[-1] > bb_upper.iloc[-1]: # Price above upper band
+        elif close_last > bb_upper_last: # Price above upper band
             sell_signals += 1
 
     # --- Final Decision ---
