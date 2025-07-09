@@ -1,38 +1,56 @@
-# app.py
-from fastapi import FastAPI, HTTPException
 import os
 import requests
-import json
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
-import random
+import time
+import json
 
-# Import your AI agents
+# Import all agents
 from agents.fusion_engine import generate_final_signal
-from agents.logger import log_signal
+from agents.logger import log_signal # Assuming you have a logger.py in agents
 
 app = FastAPI(
-    title="ScalpMasterSignalsAi API",
-    description="The Most Advanced, Sentient-Level, Self-Learning Forex Signal AI System",
+    title="ScalpMaster AI Signal API",
+    description="The Most Advanced, Sentient-Level, Self-Learning Forex Signal AI System API.",
     version="1.0.0",
 )
 
-# Telegram credentials from environment
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# Configure CORS for frontend access
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+    "http://localhost:5500", # For Live Server VS Code extension
+    "https://scalpmasterai.in", # Your domain
+    "https://www.scalpmasterai.in", # Your domain with www
+    "https://fastapi-signal-api-1.onrender.com", # Your Render URL
+    # Add any other origins where your frontend might be hosted
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Environment variables for API keys and Telegram
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY") # Primary data source
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY") # Secondary data source (if needed)
 
-# Twelve Data API Key (from environment variables)
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
-
-# This print is for debugging purposes to confirm API key loading
-print(f"DEBUG: Value of TWELVE_DATA_API_KEY from os.getenv(): {TWELVE_DATA_API_KEY}")
+# --- Helper Functions ---
 
 def send_telegram_message(message: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    """Sends a message to the configured Telegram chat."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ Telegram credentials not set. Skipping message send.")
         return
 
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
             "text": message,
@@ -46,191 +64,206 @@ def send_telegram_message(message: str):
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
-# Helper function for dummy data (for local testing without API key)
-def _generate_dummy_candles(outputsize: int) -> list:
-    dummy_candles = []
-    base_price = 100.0
-    for i in range(outputsize):
-        # Simulate some price movement
-        close_price = base_price + (i * 0.1) + (random.uniform(-0.5, 0.5))
-        open_price = close_price + random.uniform(-0.2, 0.2)
-        high_price = max(open_price, close_price) + random.uniform(0, 0.3)
-        low_price = min(open_price, close_price) - random.uniform(0, 0.3)
-
-        dummy_candles.append({
-            "datetime": (datetime.now() - timedelta(minutes=outputsize - 1 - i)).isoformat(),
-            "open": open_price,
-            "high": high_price,
-            "low": low_price,
-            "close": close_price,
-            "volume": 1000 + i * 10
-        })
-    return dummy_candles # Already oldest first
-
-# fetch_real_ohlc_data to use Twelve Data API
-def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
+async def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 100) -> list:
     """
-    Fetches OHLC data for a given symbol from Twelve Data API.
-
-    Parameters:
-        symbol (str): The trading pair symbol (e.g., "AAPL", "EUR/USD").
-        interval (str): The interval of the candles (e.g., "1min", "5min", "15min", "1h", "1day").
-        outputsize (int): The number of data points to retrieve.
-
-    Returns:
-        list: A list of OHLC candle dictionaries, ordered from oldest to newest.
-              Returns an empty list if data fetching fails or API key is missing.
+    Fetches OHLC data from Twelve Data API.
+    Prioritizes Twelve Data.
     """
     if not TWELVE_DATA_API_KEY:
-        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data. Using dummy data.")
-        return _generate_dummy_candles(outputsize)
+        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data.")
+        raise HTTPException(status_code=500, detail="Data API key not configured.")
 
-    # --- Twelve Data Symbol Formatting ---
-    # Twelve Data expects symbols like "AAPL" for stocks, "EUR/USD" or "FX:EURUSD" for forex.
-    # We will try to send the symbol as is, and if it fails, try a common forex format.
-    formatted_symbol = symbol.upper()
-    
-    # List of symbols to try in order
-    symbols_to_try = [formatted_symbol]
-    if '/' in formatted_symbol: # If it's a forex pair like EUR/USD
-        symbols_to_try.append(formatted_symbol.replace('/', '')) # EURUSD
-        symbols_to_try.append(f"FX:{formatted_symbol.replace('/', '')}") # FX:EURUSD
-    
-    # Add common stock symbols if it's not a forex pair
-    if not any(s in formatted_symbol for s in ['/', ':']): # Simple check if it's likely a stock
-        symbols_to_try.append(formatted_symbol) # Just the symbol
-    
-    final_data = None
-    for s_to_try in symbols_to_try:
-        url = f"https://api.twelvedata.com/time_series?symbol={s_to_try}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
-        print(f"DEBUG: Trying Twelve Data API URL: {url}") # Debug print for each attempt
+    # Convert common forex symbols to Twelve Data format (e.g., EUR/USD to EUR/USD)
+    # Twelve Data generally accepts EUR/USD or EURUSD. Let's stick to EUR/USD for consistency.
+    formatted_symbol = symbol.replace('/', '%2F') # URL encode slash if present
 
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-            response = requests.get(url, headers=headers)
-            response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-            data = response.json()
+    # Calculate 'from' and 'to' timestamps for the last 'outputsize' minutes
+    # Finnhub uses Unix timestamps
+    to_timestamp = int(datetime.now().timestamp())
+    from_timestamp = int((datetime.now() - timedelta(minutes=outputsize * 2)).timestamp()) # Fetch more to ensure enough data after cleaning
 
-            if "values" in data and isinstance(data["values"], list):
-                final_data = data
-                break # Found data, exit loop
-            elif "code" in data and data["code"] == 400:
-                print(f"⚠️ Twelve Data API Error for {s_to_try}: {data.get('message', 'Unknown error')}")
-                # Continue to next symbol to try
-            elif "status" in data and data["status"] == "error":
-                print(f"⚠️ Twelve Data API Error for {s_to_try}: {data.get('message', 'Unknown error')}")
-                # Continue to next symbol to try
+    # --- Try Twelve Data ---
+    twelve_data_url = (
+        f"https://api.twelvedata.com/time_series?"
+        f"symbol={formatted_symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
+    )
+    print(f"DEBUG: Trying Twelve Data API URL: {twelve_data_url}")
+
+    try:
+        response = requests.get(twelve_data_url, headers={"User-Agent": "ScalpMasterAI/1.0"})
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+        data = response.json()
+
+        if data.get("status") == "error":
+            error_message = data.get("message", "Unknown error from Twelve Data API.")
+            print(f"⚠️ Twelve Data API Error for {symbol}: {error_message}")
+            # If Twelve Data fails, try Finnhub if key is available
+            if FINNHUB_API_KEY:
+                print(f"DEBUG: Twelve Data failed, trying Finnhub for {symbol}.")
+                return await fetch_finnhub_data(symbol, interval, outputsize)
             else:
-                print(f"⚠️ Unexpected response from Twelve Data API for {s_to_try}: {data}")
-                # Continue to next symbol to try
-        except requests.exceptions.RequestException as e:
-            print(f"⚠️ Error fetching data from Twelve Data for {s_to_try}: {e}")
-            # Continue to next symbol to try
-        except (ValueError, TypeError, KeyError) as e:
-            print(f"⚠️ Data parsing error from Twelve Data for {s_to_try}: {e}. Raw data: {data}")
-            # Continue to next symbol to try
-        except Exception as e:
-            print(f"⚠️ An unexpected error occurred during data fetch for {s_to_try}: {e}")
-            # Continue to next symbol to try
+                raise HTTPException(status_code=503, detail=f"Twelve Data API Error: {error_message}")
+        
+        if "values" not in data or not data["values"]:
+            print(f"⚠️ No OHLC data found for {symbol} from Twelve Data. Response: {data}")
+            # If no data from Twelve Data, try Finnhub if key is available
+            if FINNHUB_API_KEY:
+                print(f"DEBUG: No data from Twelve Data, trying Finnhub for {symbol}.")
+                return await fetch_finnhub_data(symbol, interval, outputsize)
+            else:
+                raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
 
-    if not final_data:
-        print(f"⚠️ Failed to fetch data for {symbol} after trying all formats.")
-        return []
+        # Process Twelve Data response
+        ohlc_data = []
+        for entry in data["values"]:
+            ohlc_data.append({
+                "open": float(entry["open"]),
+                "high": float(entry["high"]),
+                "low": float(entry["low"]),
+                "close": float(entry["close"]),
+                "volume": float(entry["volume"]),
+                "datetime": entry["datetime"]
+            })
+        return ohlc_data[::-1] # Reverse to get oldest first
 
-    processed_candles = []
-    for candle_data in reversed(final_data["values"]): # Twelve Data returns newest first
-        processed_candles.append({
-            "datetime": candle_data["datetime"],
-            "open": float(candle_data["open"]),
-            "high": float(candle_data["high"]),
-            "low": float(candle_data["low"]),
-            "close": float(candle_data["close"]),
-            "volume": float(candle_data.get("volume", 0))
-        })
-    return processed_candles
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Network or API connection error with Twelve Data for {symbol}: {e}")
+        if FINNHUB_API_KEY:
+            print(f"DEBUG: Twelve Data connection failed, trying Finnhub for {symbol}.")
+            return await fetch_finnhub_data(symbol, interval, outputsize)
+        else:
+            raise HTTPException(status_code=503, detail=f"Could not connect to Twelve Data API: {e}")
+    except Exception as e:
+        print(f"⚠️ An unexpected error occurred while fetching from Twelve Data for {symbol}: {e}")
+        if FINNHUB_API_KEY:
+            print(f"DEBUG: Twelve Data unexpected error, trying Finnhub for {symbol}.")
+            return await fetch_finnhub_data(symbol, interval, outputsize)
+        else:
+            raise HTTPException(status_code=500, detail=f"An unexpected error occurred with Twelve Data: {e}")
 
+async def fetch_finnhub_data(symbol: str, resolution: str = "1", count: int = 100) -> list:
+    """
+    Fetches OHLC data from Finnhub API.
+    'resolution' for Finnhub: 1, 5, 15, 30, 60, D, W, M
+    'interval' for Twelve Data: 1min, 5min, 15min, 30min, 45min, 1h, 2h, 4h, 1day, 1week, 1month
+    """
+    if not FINNHUB_API_KEY:
+        print("⚠️ FINNHUB_API_KEY is not set. Cannot fetch real data from Finnhub.")
+        raise HTTPException(status_code=500, detail="Finnhub API key not configured.")
+
+    # Finnhub requires specific symbol formats for forex (e.g., OANDA:EURUSD)
+    # For stocks, it's usually just the ticker (e.g., AAPL)
+    # Let's assume for now that if it contains '/', it's forex and needs OANDA: prefix
+    finnhub_symbol = symbol
+    if '/' in symbol:
+        finnhub_symbol = f"OANDA:{symbol.replace('/', '')}" # Finnhub uses EURUSD, not EUR/USD for OANDA
+
+    # Convert outputsize to Finnhub's 'count' parameter
+    # Finnhub uses 'from' and 'to' timestamps, not 'count' directly for candles
+    to_timestamp = int(datetime.now().timestamp())
+    from_timestamp = int((datetime.now() - timedelta(minutes=count * 2)).timestamp()) # Fetch more to ensure enough data
+
+    finnhub_url = (
+        f"https://finnhub.io/api/v1/forex/candle?" # Use forex endpoint for now
+        f"symbol={finnhub_symbol}&resolution={resolution}&from={from_timestamp}&to={to_timestamp}&token={FINNHUB_API_KEY}"
+    )
+    print(f"DEBUG: Trying Finnhub API URL: {finnhub_url}")
+
+    try:
+        response = requests.get(finnhub_url, headers={"User-Agent": "ScalpMasterAI/1.0"})
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("s") != "ok":
+            error_message = data.get("error", "Unknown error from Finnhub API.")
+            print(f"⚠️ Finnhub API Error for {symbol}: {error_message}")
+            raise HTTPException(status_code=503, detail=f"Finnhub API Error: {error_message}")
+        
+        if not data.get("c") or not data.get("o") or not data.get("h") or not data.get("l") or not data.get("v") or not data.get("t"):
+            print(f"⚠️ No OHLC data found for {symbol} from Finnhub. Response: {data}")
+            raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
+
+        ohlc_data = []
+        for i in range(len(data["c"])):
+            ohlc_data.append({
+                "open": data["o"][i],
+                "high": data["h"][i],
+                "low": data["l"][i],
+                "close": data["c"][i],
+                "volume": data["v"][i],
+                "datetime": datetime.fromtimestamp(data["t"][i]).isoformat()
+            })
+        return ohlc_data
+
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Network or API connection error with Finnhub for {symbol}: {e}")
+        raise HTTPException(status_code=503, detail=f"Could not connect to Finnhub API: {e}")
+    except Exception as e:
+        print(f"⚠️ An unexpected error occurred while fetching from Finnhub for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred with Finnhub: {e}")
+
+
+# --- API Endpoints ---
 
 @app.get("/")
-def root():
-    return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
+async def root():
+    """Root endpoint for the ScalpMaster AI API."""
+    return {"message": "ScalpMaster AI API is running. Visit /docs for API documentation."}
 
 @app.get("/signal")
-async def get_signal(symbol: str): # symbol is now a query parameter
+async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)")):
     """
     Generates a trading signal for the given symbol using the AI fusion engine.
-    Example: /signal?symbol=AAPL or /signal?symbol=EUR/USD
     """
-    print(f"DEBUG: Received symbol: {symbol}") # Debug print to confirm received symbol
-    if not symbol:
-        raise HTTPException(status_code=400, detail="Symbol is required.")
-
-    # Symbol is processed inside fetch_real_ohlc_data for Twelve Data specific formatting
-    processed_symbol_for_log = symbol.upper() # Keep this for consistent logging
-
-    # Fetch real OHLC data
-    candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50) # Pass original symbol
-
-    if not candles:
-        raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
-
-    # Generate final signal using the fusion engine
-    signal_result = generate_final_signal(processed_symbol_for_log, candles)
-
-    # Log the signal result
-    log_signal(processed_symbol_for_log, signal_result, candles)
-
-    # Send Telegram message if a valid signal is generated
-    if signal_result.get("status") == "ok" and signal_result.get("signal") in ["buy", "sell"]:
-        signal_type = signal_result["signal"].upper()
-        confidence = signal_result.get("confidence", "N/A")
-        tier = signal_result.get("tier", "N/A")
-        reason = signal_result.get("reason", "No specific reason.")
-        
-        # Get the latest close price from the fetched candles
-        latest_close_price = candles[-1].get("close", "N/A")
-
-        message = (
-            f"📈 *ScalpMaster AI Signal Alert* 📉\n\n"
-            f"📊 *Symbol:* `{processed_symbol_for_log}`\n"
-            f"🚀 *Signal:* `{signal_type}`\n"
-            f"💰 *Current Price:* `{latest_close_price}`\n"
-            f"⭐ *Confidence:* `{confidence}%`\n"
-            f"🏆 *Tier:* `{tier}`\n"
-            f"💡 *Reason:* _{reason}_\n\n"
-            f"🔗 [View on ScalpMasterSignalsAi.in](https://ScalpMasterSignalsAi.in)" # Placeholder URL
-        )
-        send_telegram_message(message)
-    elif signal_result.get("status") == "blocked":
-        message = (
-            f"🚫 *ScalpMaster AI Blocked Signal* 🚫\n\n"
-            f"📊 *Symbol:* `{processed_symbol_for_log}`\n"
-            f"⚠️ *Reason:* `{signal_result.get('error', 'Market conditions not favorable.')}`\n\n"
-            f"Consider reviewing market conditions."
-        )
-        send_telegram_message(message)
-
-    return signal_result
-
-# You can add more endpoints here for admin control, insight center, etc.
-# For example, an endpoint to get signal logs
-@app.get("/logs/{symbol}")
-def get_signal_logs(symbol: str):
-    """
-    Retrieves signal logs for a specific symbol.
-    """
-    log_file_path = os.path.join("logs", f"{symbol.replace('/', '_')}_log.jsonl")
-    if not os.path.exists(log_file_path):
-        raise HTTPException(status_code=404, detail=f"No logs found for {symbol}")
-
-    logs = []
-    try:
-        with open(log_file_path, "r") as f:
-            for line in f:
-                logs.append(json.loads(line))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
+    print(f"DEBUG: Received symbol: {symbol}")
     
-    return logs
-                                                                          
+    try:
+        # Fetch real OHLC data
+        candles = await fetch_real_ohlc_data(symbol)
+        
+        # Pass candles to the fusion engine
+        signal_result = generate_final_signal(symbol, candles)
+
+        # Log the signal
+        log_signal(symbol, signal_result, candles)
+
+        # Send Telegram message if a clear signal is generated
+        if signal_result["status"] == "ok" and signal_result["signal"] in ["buy", "sell"]:
+            message = (
+                f"📈 ScalpMaster AI Signal Alert 📈\n\n"
+                f"Symbol: *{signal_result['symbol'].upper()}*\n"
+                f"Signal: *{signal_result['signal'].upper()}*\n"
+                f"Confidence: *{signal_result['confidence']:.2f}%*\n"
+                f"Tier: *{signal_result['tier']}*\n"
+                f"Pattern: *{signal_result['pattern']}*\n"
+                f"Reason: _{signal_result['reason']}_\n\n"
+                f"Risk: {signal_result['risk']} | News: {signal_result['news']}"
+            )
+            send_telegram_message(message)
+        elif signal_result["status"] == "blocked":
+            message = (
+                f"🚫 ScalpMaster AI Alert 🚫\n\n"
+                f"Symbol: *{signal_result['symbol'].upper()}*\n"
+                f"Status: *BLOCKED*\n"
+                f"Reason: _{signal_result['error']}_"
+            )
+            send_telegram_message(message)
+        elif signal_result["status"] == "no-signal":
+            message = (
+                f" neutral ScalpMaster AI Alert neutral \n\n"
+                f"Symbol: *{signal_result['symbol'].upper()}*\n"
+                f"Status: *NO SIGNAL*\n"
+                f"Reason: _{signal_result['reason']}_"
+            )
+            send_telegram_message(message)
+
+
+        return signal_result
+
+    except HTTPException as e:
+        print(f"Error processing signal for {symbol}: {e.detail}")
+        raise e
+    except Exception as e:
+        print(f"An unexpected error occurred for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
+
