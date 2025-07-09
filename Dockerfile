@@ -1,13 +1,10 @@
 # Use a specific Python version as the base image
-# We'll use Python 3.11-slim-buster for a smaller image size and stability
 FROM python:3.11-slim-buster
 
 # Set the working directory in the container
 WORKDIR /app
 
 # Install system dependencies required for pandas and other libraries
-# build-essential is for compiling C extensions
-# libgfortran5 is often needed for numpy/scipy related packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -25,5 +22,5 @@ COPY . .
 EXPOSE 10000
 
 # Command to run the application
-# Use gunicorn to serve the FastAPI app
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:10000"]
+# Use uvicorn directly instead of gunicorn for simpler logging
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "10000"] # <--- یہ لائن تبدیل کریں
