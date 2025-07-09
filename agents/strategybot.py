@@ -38,32 +38,17 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     # MACD Line, Signal Line, Histogram
     macd = ta.macd(close_series, fast=12, slow=26, signal=9)
         
-    # --- DEBUGGING MACD COLUMNS ---
-    print(f"DEBUG: MACD DataFrame columns: {macd.columns.tolist()}")
-    # --- END DEBUGGING ---
-
-    # Try to access MACD components using common naming conventions
-    # Fallback to default if specific names are not found
-    macd_line_col = f'MACD_{12}_{26}_{9}'
-    macd_signal_col = f'MACDS_{12}_{26}_{9}'
-    macd_hist_col = f'MACDH_{12}_{26}_{9}'
-
-    # Check if columns exist, otherwise try alternative names or handle gracefully
-    macd_line = macd[macd_line_col] if macd_line_col in macd.columns else None
-    macd_signal = macd[macd_signal_col] if macd_signal_col in macd.columns else None
-    macd_hist = macd[macd_hist_col] if macd_hist_col in macd.columns else None
-
-    # If any MACD component is missing, return 'wait' or handle as an error
-    if macd_line is None or macd_signal is None or macd_hist is None:
-        print(f"DEBUG: Missing one or more MACD columns. Found: {macd.columns.tolist()}")
-        return "wait" # Or raise an error if this is critical
+    # Corrected MACD column names based on debug logs
+    macd_line = macd[f'MACD_12_26_9']
+    macd_signal = macd[f'MACDs_12_26_9'] # Corrected: Use 'MACDs' (lowercase s)
+    macd_hist = macd[f'MACDh_12_26_9'] # Corrected: Use 'MACDh' (lowercase h)
 
     # Bollinger Bands (BBANDS)
     # Lower Band, Middle Band (SMA), Upper Band
     bbands = ta.bbands(close_series, length=20, std=2.0)
-    bb_lower = bbands[f'BBL_{20}_{2.0}']
-    bb_upper = bbands[f'BBU_{20}_{2.0}']
-    bb_middle = bbands[f'BBM_{20}_{2.0}'] # This is the SMA(20)
+    bb_lower = bbands[f'BBL_20_2.0']
+    bb_upper = bbands[f'BBU_20_2.0']
+    bb_middle = bbands[f'BBM_20_2.0'] # This is the SMA(20)
 
     # --- Signal Generation Logic ---
     # Combine multiple indicators for a stronger signal
@@ -115,4 +100,3 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     else:
         return "wait"
 
-                                     
