@@ -1,46 +1,78 @@
-# src/agents/patternai.py
+import pandas as pd
+import pandas_ta as ta
 
 def detect_patterns(symbol: str, tf: str, candles: list) -> dict:
     """
-    Detects chart patterns based on OHLC candle data.
-    Currently returns a dummy pattern. This is where advanced pattern recognition
-    algorithms (e.g., using TA-Lib or custom logic) would be integrated.
+    Detects common candlestick patterns using pandas_ta.
 
     Parameters:
-        symbol (str): Trading pair symbol (e.g., XAU/USD).
-        tf (str): Timeframe (e.g., 1min).
-        candles (list): List of OHLC candles, from oldest to newest.
+        symbol (str): Trading pair symbol.
+        tf (str): Timeframe.
+        candles (list): List of OHLC candles.
 
     Returns:
         dict: A dictionary containing detected pattern and its confidence.
-              Example: {"pattern": "Bullish Engulfing", "confidence": 0.82}
-                       {"pattern": "No Specific Pattern", "confidence": 0.0}
+              Returns "No Specific Pattern" if no significant pattern is found.
     """
-    if not candles or len(candles) < 5: # Need enough candles to detect patterns
-        return {"pattern": "No Specific Pattern", "confidence": 0.0}
+    if not candles or len(candles) < 30: # Need enough data for patterns
+        return {"pattern": "No Specific Pattern", "confidence": 0.5}
 
-    # --- Placeholder for actual pattern detection logic ---
-    # In a real scenario, you would analyze the 'candles' data here.
-    # For example, using a library like TA-Lib:
-    # import talib
-    # closes = np.array([float(c['close']) for c in candles])
-    # opens = np.array([float(c['open']) for c in candles])
-    # highs = np.array([float(c['high']) for c in candles])
-    # lows = np.array([float(c['low']) for c in candles])
+    # Convert list of dicts to pandas DataFrame
+    df = pd.DataFrame(candles)
+    # Ensure columns are numeric and correctly named for pandas_ta
+    df['open'] = pd.to_numeric(df['open'])
+    df['high'] = pd.to_numeric(df['high'])
+    df['low'] = pd.to_numeric(df['low'])
+    df['close'] = pd.to_numeric(df['close'])
+    df['volume'] = pd.to_numeric(df['volume'])
 
-    # if talib.CDLENGULFING(opens, highs, lows, closes)[-1] != 0:
-    #     return {"pattern": "Engulfing Pattern", "confidence": 0.75}
-    # -----------------------------------------------------
+    # --- Candlestick Pattern Detection using pandas_ta ---
+    # pandas_ta has many candlestick patterns. We'll check for a few common ones.
+    # The functions return a Series with 100 for bullish, -100 for bearish, 0 for no pattern.
 
-    # For now, let's return a simple dummy pattern based on a very basic condition
-    # This can be made more sophisticated later.
-    last_close = float(candles[-1]['close'])
-    second_last_close = float(candles[-2]['close'])
+    # Bullish Patterns
+    engulfing_bull = ta.cdl_engulfing(df['open'], df['high'], df['low'], df['close'])
+    hammer = ta.cdl_hammer(df['open'], df['high'], df['low'], df['close'])
+    morning_star = ta.cdl_morningstar(df['open'], df['high'], df['low'], df['close'])
+    piercing = ta.cdl_piercing(df['open'], df['high'], df['low'], df['close'])
 
-    if last_close > second_last_close * 1.005: # If price increased by more than 0.5% in last candle
-        return {"pattern": "Strong Upward Momentum", "confidence": 0.65}
-    elif last_close < second_last_close * 0.995: # If price decreased by more than 0.5% in last candle
-        return {"pattern": "Strong Downward Momentum", "confidence": 0.65}
-    else:
-        return {"pattern": "No Specific Pattern", "confidence": 0.0}
+    # Bearish Patterns
+    engulfing_bear = ta.cdl_engulfing(df['open'], df['high'], df['low'], df['close']) * -1 # Engulfing is bidirectional
+    hanging_man = ta.cdl_hangingman(df['open'], df['high'], df['low'], df['close'])
+    evening_star = ta.cdl_eveningstar(df['open'], df['high'], df['low'], df['close'])
+    dark_cloud_cover = ta.cdl_darkcloudcover(df['open'], df['high'], df['low'], df['close'])
 
+    # Get the latest pattern values
+    latest_engulfing_bull = engulfing_bull.iloc[-1]
+    latest_hammer = hammer.iloc[-1]
+    latest_morning_star = morning_star.iloc[-1]
+    latest_piercing = piercing.iloc[-1]
+
+    latest_engulfing_bear = engulfing_bear.iloc[-1]
+    latest_hanging_man = hanging_man.iloc[-1]
+    latest_evening_star = evening_star.iloc[-1]
+    latest_dark_cloud_cover = dark_cloud_cover.iloc[-1]
+
+    # Prioritize patterns (you can adjust this order based on importance)
+    # Bullish patterns
+    if latest_engulfing_bull == 100:
+        return {"pattern": "Bullish Engulfing", "confidence": 0.85}
+    if latest_morning_star == 100:
+        return {"pattern": "Morning Star", "confidence": 0.80}
+    if latest_piercing == 100:
+        return {"pattern": "Piercing Pattern", "confidence": 0.75}
+    if latest_hammer == 100:
+        return {"pattern": "Hammer", "confidence": 0.70}
+
+    # Bearish patterns
+    if latest_engulfing_bear == -100:
+        return {"pattern": "Bearish Engulfing", "confidence": 0.85}
+    if latest_evening_star == -100:
+        return {"pattern": "Evening Star", "confidence": 0.80}
+    if latest_dark_cloud_cover == -100:
+        return {"pattern": "Dark Cloud Cover", "confidence": 0.75}
+    if latest_hanging_man == -100:
+        return {"pattern": "Hanging Man", "confidence": 0.70}
+
+    return {"pattern": "No Specific Pattern", "confidence": 0.5}
+    
