@@ -4,5 +4,6 @@ requests==2.32.3
 python-dotenv==1.0.1
 gunicorn==22.0.0
 numpy==1.26.4
-pandas==2.2.2 # Add pandas as pandas_ta depends on it
-pandas_ta==0.3.14b0 # Add pandas_ta
+TA-Lib==0.4.29
+pandas==2.2.2
+finnhub-python==2.0.0 # <--- یہ لائن شامل کریں
