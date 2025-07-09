@@ -13,8 +13,6 @@ RUN apt-get update && \
     libgfortran5 && \
     rm -rf /var/lib/apt/lists/*
 
-# Removed TA-Lib C library installation block
-
 # Copy requirements.txt and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
