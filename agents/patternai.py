@@ -1,74 +1,72 @@
-import pandas as pd
+# src/agents/patternai.py
 import pandas_ta as ta
+import pandas as pd
 
 def detect_patterns(candles: list) -> dict:
     """
-    Detects common candlestick patterns using pandas_ta.
+    Detects various candlestick patterns using pandas_ta.
 
     Parameters:
-        candles (list): List of OHLCV data (dicts) from the API.
+        candles (list): List of OHLC candles (oldest to newest).
 
     Returns:
-        dict: Dictionary containing detected pattern and confidence.
+        dict: A dictionary containing detected pattern and its type (bullish/bearish).
     """
-    if not candles or len(candles) < 20: # Need enough data for pattern detection
-        return {"pattern": "Insufficient Data", "confidence": 0.0}
+    if not candles or len(candles) < 20: # Need enough data for some patterns
+        return {"pattern": "Insufficient Data", "type": "neutral"}
 
     # Convert list of dicts to pandas DataFrame
     df = pd.DataFrame(candles)
         
-    # Ensure columns are numeric
+    # Ensure columns are numeric and correctly named for pandas_ta
     df['open'] = pd.to_numeric(df['open'])
     df['high'] = pd.to_numeric(df['high'])
     df['low'] = pd.to_numeric(df['low'])
     df['close'] = pd.to_numeric(df['close'])
-    df['volume'] = pd.to_numeric(df['volume'])
 
-    # --- Candlestick Pattern Detection using pandas_ta ---
-    # pandas_ta returns a DataFrame with boolean columns for each pattern
-    # We check for common reversal patterns first
+    # --- Candlestick Pattern Detection ---
+    # pandas_ta returns 0 for no pattern, 100 for bullish, -100 for bearish
 
-    # Bullish Reversal Patterns
-    # Note: pandas_ta returns positive values for bullish patterns and negative for bearish
-    # We check for values > 0 for bullish and < 0 for bearish
+    # Bullish Patterns
     engulfing_bull = ta.cdl_engulfing(df['open'], df['high'], df['low'], df['close'])
     hammer = ta.cdl_hammer(df['open'], df['high'], df['low'], df['close'])
     morning_star = ta.cdl_morningstar(df['open'], df['high'], df['low'], df['close'])
-    piercing_pattern = ta.cdl_piercing(df['open'], df['high'], df['low'], df['close'])
-    doji_star_bull = ta.cdl_dojistar(df['open'], df['high'], df['low'], df['close']) # Doji Star can be bullish or bearish
+    piercing = ta.cdl_piercing(df['open'], df['high'], df['low'], df['close'])
+    three_white_soldiers = ta.cdl_3whitesoldiers(df['open'], df['high'], df['low'], df['close'])
 
-    # Bearish Reversal Patterns
-    # No separate function for bearish engulfing, it's the negative output of cdl_engulfing
-    hanging_man = ta.cdl_hangingman(df['open'], df['high'], df['low'], df['close'])
-    evening_star = ta.cdl_eveningstar(df['open'], df['high'], df['low'], df['close'])
-    dark_cloud_cover = ta.cdl_darkcloudcover(df['open'], df['high'], df['low'], df['close'])
-        
-    # Check for patterns in the most recent candle (last row of the DataFrame)
-    # .iloc[-1] gets the last value of the Series
-        
-    # Bullish Patterns
-    if not engulfing_bull.empty and engulfing_bull.iloc[-1] > 0:
-        return {"pattern": "Bullish Engulfing", "confidence": 0.85}
-    if not hammer.empty and hammer.iloc[-1] > 0:
-        return {"pattern": "Hammer", "confidence": 0.75}
-    if not morning_star.empty and morning_star.iloc[-1] > 0:
-        return {"pattern": "Morning Star", "confidence": 0.90}
-    if not piercing_pattern.empty and piercing_pattern.iloc[-1] > 0:
-        return {"pattern": "Piercing Pattern", "confidence": 0.80}
-        
     # Bearish Patterns
-    if not engulfing_bull.empty and engulfing_bull.iloc[-1] < 0: # Negative value for bearish engulfing
-        return {"pattern": "Bearish Engulfing", "confidence": 0.85}
-    if not hanging_man.empty and hanging_man.iloc[-1] < 0:
-        return {"pattern": "Hanging Man", "confidence": 0.75}
-    if not evening_star.empty and evening_star.iloc[-1] < 0:
-        return {"pattern": "Evening Star", "confidence": 0.90}
-    if not dark_cloud_cover.empty and dark_cloud_cover.iloc[-1] < 0:
-        return {"pattern": "Dark Cloud Cover", "confidence": 0.80}
-        
-    # Doji Star (can be reversal or continuation, needs context)
-    if not doji_star_bull.empty and doji_star_bull.iloc[-1] != 0:
-        return {"pattern": "Doji Star", "confidence": 0.60} # Lower confidence as it's ambiguous alone
+    dark_cloud_cover = ta.cdl_darkcloudcover(df['open'], df['high'], df['low'], df['close'])
+    hanging_man = ta.cdl_hangingman(df['open'], df['high'], df['low'], df['close'])
+    shooting_star = ta.cdl_shootingstar(df['open'], df['high'], df['low'], df['close'])
+    evening_star = ta.cdl_eveningstar(df['open'], df['high'], df['low'], df['close'])
+    three_black_crows = ta.cdl_3blackcrows(df['open'], df['high'], df['low'], df['close'])
 
-    return {"pattern": "No Specific Pattern", "confidence": 0.50}
+    # Check for patterns in the latest candle
+    # Prioritize stronger or more common patterns
+
+    # Bearish Checks
+    if not dark_cloud_cover.empty and dark_cloud_cover.iloc[-1] < 0:
+        return {"pattern": "Dark Cloud Cover", "type": "bearish"}
+    if not hanging_man.empty and hanging_man.iloc[-1] < 0:
+        return {"pattern": "Hanging Man", "type": "bearish"}
+    if not shooting_star.empty and shooting_star.iloc[-1] < 0:
+        return {"pattern": "Shooting Star", "type": "bearish"}
+    if not evening_star.empty and evening_star.iloc[-1] < 0:
+        return {"pattern": "Evening Star", "type": "bearish"}
+    if not three_black_crows.empty and three_black_crows.iloc[-1] < 0:
+        return {"pattern": "Three Black Crows", "type": "bearish"}
+
+    # Bullish Checks
+    if not engulfing_bull.empty and engulfing_bull.iloc[-1] > 0:
+        return {"pattern": "Bullish Engulfing", "type": "bullish"}
+    if not hammer.empty and hammer.iloc[-1] > 0:
+        return {"pattern": "Hammer", "type": "bullish"}
+    if not morning_star.empty and morning_star.iloc[-1] > 0:
+        return {"pattern": "Morning Star", "type": "bullish"}
+    if not piercing.empty and piercing.iloc[-1] > 0:
+        return {"pattern": "Piercing Pattern", "type": "bullish"}
+    if not three_white_soldiers.empty and three_white_soldiers.iloc[-1] > 0:
+        return {"pattern": "Three White Soldiers", "type": "bullish"}
+
+    return {"pattern": "No Specific Pattern", "type": "neutral"}
 
