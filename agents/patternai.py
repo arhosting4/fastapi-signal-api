@@ -29,6 +29,8 @@ def detect_patterns(candles: list) -> dict:
     # We check for common reversal patterns first
 
     # Bullish Reversal Patterns
+    # Note: pandas_ta returns positive values for bullish patterns and negative for bearish
+    # We check for values > 0 for bullish and < 0 for bearish
     engulfing_bull = ta.cdl_engulfing(df['open'], df['high'], df['low'], df['close'])
     hammer = ta.cdl_hammer(df['open'], df['high'], df['low'], df['close'])
     morning_star = ta.cdl_morningstar(df['open'], df['high'], df['low'], df['close'])
@@ -36,30 +38,37 @@ def detect_patterns(candles: list) -> dict:
     doji_star_bull = ta.cdl_dojistar(df['open'], df['high'], df['low'], df['close']) # Doji Star can be bullish or bearish
 
     # Bearish Reversal Patterns
-    engulfing_bear = ta.cdl_engulfing(df['open'], df['high'], df['low'], df['close']) # Same function, check negative values
+    # No separate function for bearish engulfing, it's the negative output of cdl_engulfing
     hanging_man = ta.cdl_hangingman(df['open'], df['high'], df['low'], df['close'])
     evening_star = ta.cdl_eveningstar(df['open'], df['high'], df['low'], df['close'])
     dark_cloud_cover = ta.cdl_darkcloudcover(df['open'], df['high'], df['low'], df['close'])
-
+        
     # Check for patterns in the most recent candle (last row of the DataFrame)
-    last_candle_index = df.index[-1]
-
+    # .iloc[-1] gets the last value of the Series
+        
     # Bullish Patterns
-    if engulfing_bull is not None and not engulfing_bull.empty and engulfing_bull.iloc[-1] > 0:
+    if not engulfing_bull.empty and engulfing_bull.iloc[-1] > 0:
         return {"pattern": "Bullish Engulfing", "confidence": 0.85}
-    if hammer is not None and not hammer.empty and hammer.iloc[-1] > 0:
+    if not hammer.empty and hammer.iloc[-1] > 0:
         return {"pattern": "Hammer", "confidence": 0.75}
-    if morning_star is not None and not morning_star.empty and morning_star.iloc[-1] > 0:
+    if not morning_star.empty and morning_star.iloc[-1] > 0:
         return {"pattern": "Morning Star", "confidence": 0.90}
-    if piercing_pattern is not None and not piercing_pattern.empty and piercing_pattern.iloc[-1] > 0:
+    if not piercing_pattern.empty and piercing_pattern.iloc[-1] > 0:
         return {"pattern": "Piercing Pattern", "confidence": 0.80}
         
     # Bearish Patterns
-    if engulfing_bear is not None and not engulfing_bear.empty and engulfing_bear.iloc[-1] < 0:
+    if not engulfing_bull.empty and engulfing_bull.iloc[-1] < 0: # Negative value for bearish engulfing
         return {"pattern": "Bearish Engulfing", "confidence": 0.85}
-    if hanging_man is not None and not hanging_man.empty and hanging_man.iloc[-1] < 0:
+    if not hanging_man.empty and hanging_man.iloc[-1] < 0:
         return {"pattern": "Hanging Man", "confidence": 0.75}
-    if evening_star is not None and not evening_star.empty and evening_star.iloc[-1] < 0:
+    if not evening_star.empty and evening_star.iloc[-1] < 0:
         return {"pattern": "Evening Star", "confidence": 0.90}
-    if dark_cloud_cover is not None and not dark_cloud_cover.
-    
+    if not dark_cloud_cover.empty and dark_cloud_cover.iloc[-1] < 0:
+        return {"pattern": "Dark Cloud Cover", "confidence": 0.80}
+        
+    # Doji Star (can be reversal or continuation, needs context)
+    if not doji_star_bull.empty and doji_star_bull.iloc[-1] != 0:
+        return {"pattern": "Doji Star", "confidence": 0.60} # Lower confidence as it's ambiguous alone
+
+    return {"pattern": "No Specific Pattern", "confidence": 0.50}
+
