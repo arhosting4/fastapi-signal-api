@@ -1,9 +1,6 @@
 # src/agents/patternai.py
 import pandas_ta as ta
 import pandas as pd
-import warnings
-
-warnings.filterwarnings("ignore", category=UserWarning, module=\'pandas_ta\')
 
 def detect_patterns(candles: list) -> dict:
     """
