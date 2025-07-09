@@ -13,7 +13,7 @@ RUN apt-get update && \
     libgfortran5 \
     wget \
     tar \
-    unzip && \ # Add unzip for TA-Lib
+    unzip && \
     rm -rf /var/lib/apt/lists/*
 
 # Install TA-Lib C library
@@ -24,8 +24,7 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     make && \
     make install && \
     cd .. && \
-    rm ta-lib-0.4.0-src.tar.gz && \
-    rm -rf ta-lib
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz # <--- یہ لائن تبدیل کریں
 
 # Copy requirements.txt and install Python dependencies
 COPY requirements.txt .
