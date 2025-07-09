@@ -83,7 +83,9 @@ def generate_final_signal(symbol: str, candles: list):
         }
 
     except Exception as e:
+        # Ensure a proper exception is raised, not just a string
+        # This will allow the traceback to be printed correctly in app.py
         print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
-        traceback.print_exc() # This will print the full traceback to the logs
-        return {"status": "error", "message": f"An internal AI error occurred: {e}"}
+        traceback.print_exc() # Still print here for redundancy
+        raise Exception(f"Error in AI fusion for {symbol}: {e}") # Raise a proper Exception object
 
