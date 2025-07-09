@@ -236,12 +236,4 @@ def get_signal_logs(symbol: str):
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
     
     return logs
-# ... (existing imports) ...
-
-# Alpha Vantage API Key (from environment variables)
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-print(f"DEBUG: ALPHA_VANTAGE_API_KEY loaded: {ALPHA_VANTAGE_API_KEY is not None}") # <--- یہ لائن شامل کریں
-print(f"DEBUG: ALPHA_VANTAGE_API_KEY value (first 5 chars): {str(ALPHA_VANTAGE_API_KEY)[:5] if ALPHA_VANTAGE_API_KEY else 'None'}") # <--- یہ لائن بھی شامل کریں
-
-def send_telegram_message(message: str):
-# ... (rest of the code) ...
+    
