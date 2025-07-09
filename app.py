@@ -22,9 +22,6 @@ def send_telegram_message(message: str):
 
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        # Using httpx.post for consistency, though it's not async here
-        # For a synchronous function, requests would also work fine.
-        # Keeping it httpx for potential future async Telegram calls.
         response = httpx.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"})
         response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
         print("✅ Telegram response:", response.status_code, response.text)
@@ -34,7 +31,7 @@ def send_telegram_message(message: str):
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
 
-async def fetch_real_ohlc_data(symbol: str) -> list:
+async def fetch_real_ohlc_data(symbol: str, interval: str) -> list: # Added 'interval' parameter
     """
     Fetches real OHLCV data from Twelve Data API.
     Returns a list of dictionaries, each representing a candle.
@@ -43,8 +40,8 @@ async def fetch_real_ohlc_data(symbol: str) -> list:
         raise ValueError("TWELVE_DATA_API_KEY is not set in environment variables.")
 
     # Twelve Data API endpoint for time series
-    # Using 1min resolution and outputsize=100 for sufficient data for TA-Lib
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval=1min&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
+    # Using the provided 'interval' and outputsize=100 for sufficient data for TA-Lib
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
         
     print(f"DEBUG: Trying Twelve Data API URL: {url}") # Log the URL being used
 
@@ -53,9 +50,8 @@ async def fetch_real_ohlc_data(symbol: str) -> list:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # Use httpx.AsyncClient for asynchronous requests
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers, timeout=10) # Added await
+            response = await client.get(url, headers=headers, timeout=10)
         
         response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
@@ -92,10 +88,10 @@ async def fetch_real_ohlc_data(symbol: str) -> list:
 
         return ohlc_data
 
-    except httpx.TimeoutException: # Changed exception type
+    except httpx.TimeoutException:
         print(f"⚠️ Twelve Data API request timed out for {symbol}.")
         raise HTTPException(status_code=504, detail=f"Twelve Data API request timed out for {symbol}.")
-    except httpx.RequestError as e: # Changed exception type
+    except httpx.RequestError as e:
         print(f"⚠️ Network or API connection error for {symbol}: {e}")
         raise HTTPException(status_code=503, detail=f"Network or API connection error: {e}")
     except json.JSONDecodeError as e:
@@ -114,24 +110,26 @@ def root():
 
 
 @app.get("/signal")
-async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)")):
+async def get_signal(
+    symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)"),
+    timeframe: str = Query("1min", description="Candle interval (e.g., 1min, 5min, 15min, 1hr, 4hr, 1day)") # New parameter
+):
     """
-    Generates a trading signal for the given symbol using the AI fusion engine.
+    Generates a trading signal for the given symbol and timeframe using the AI fusion engine.
     """
-    print(f"DEBUG: Received symbol: {symbol}")
+    print(f"DEBUG: Received symbol: {symbol}, timeframe: {timeframe}") # Log timeframe
         
     try:
-        # Fetch real OHLC data
-        candles = await fetch_real_ohlc_data(symbol)
+        # Fetch real OHLC data using the specified timeframe
+        candles = await fetch_real_ohlc_data(symbol, timeframe) # Pass timeframe to fetch_real_ohlc_data
             
-        # Pass candles to the fusion engine
-        signal_result = generate_final_signal(symbol, candles)
+        # Pass candles and timeframe to the fusion engine
+        signal_result = generate_final_signal(symbol, candles, timeframe) # Pass timeframe to generate_final_signal
 
         # Log the signal
         log_signal(symbol, signal_result, candles)
 
         # Safely get values for Telegram message, providing defaults if keys are missing
-        # This handles cases where signal_result might not have all expected keys
         symbol_upper = signal_result.get('symbol', symbol).upper()
         signal_type = signal_result.get('signal', 'N/A').upper()
         confidence = signal_result.get('confidence', 0.0)
@@ -140,6 +138,8 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
         reason = signal_result.get('reason', 'No specific reason provided.')
         risk = signal_result.get('risk', 'N/A')
         news = signal_result.get('news', 'N/A')
+        # Add timeframe to the Telegram message
+        signal_timeframe = signal_result.get('timeframe', timeframe)
 
 
         # Send Telegram message based on status
@@ -147,6 +147,7 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
             message = (
                 f"📈 ScalpMaster AI Signal Alert 📈\n\n"
                 f"Symbol: *{symbol_upper}*\n"
+                f"Timeframe: *{signal_timeframe}*\n" # Added timeframe
                 f"Signal: *{signal_type}*\n"
                 f"Confidence: *{confidence:.2f}%*\n"
                 f"Tier: *{tier}*\n"
@@ -159,6 +160,7 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
             message = (
                 f"🚫 ScalpMaster AI Alert 🚫\n\n"
                 f"Symbol: *{symbol_upper}*\n"
+                f"Timeframe: *{signal_timeframe}*\n" # Added timeframe
                 f"Status: *BLOCKED*\n"
                 f"Reason: _{signal_result.get('error', 'Unknown reason.')}_"
             )
@@ -167,6 +169,7 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
             message = (
                 f" neutral ScalpMaster AI Alert neutral \n\n"
                 f"Symbol: *{symbol_upper}*\n"
+                f"Timeframe: *{signal_timeframe}*\n" # Added timeframe
                 f"Status: *NO SIGNAL*\n"
                 f"Reason: _{reason}_"
             )
@@ -176,11 +179,10 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
         return signal_result
 
     except HTTPException as e:
-        # Re-raise HTTPException directly as it's already a proper HTTP error
         raise e
     except Exception as e:
-        # Catch any other unexpected errors and log them with full traceback
         print(f"CRITICAL ERROR in app.py for {symbol}: {e}")
-        traceback.print_exc() # Print full traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
 
+                    
