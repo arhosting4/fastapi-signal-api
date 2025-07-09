@@ -1,4 +1,3 @@
-# src/agents/fusion_engine.py
 from agents.strategybot import generate_core_signal
 from agents.patternai import detect_patterns
 from agents.riskguardian import check_risk
@@ -8,24 +7,27 @@ from agents.trainerai import get_confidence
 from agents.tierbot import get_tier
 import traceback # For detailed error logging
 
-def generate_final_signal(symbol: str, candles: list):
+# Added 'timeframe' parameter
+def generate_final_signal(symbol: str, candles: list, timeframe: str):
     """
     Core AI fusion engine combining all agents to generate a god-level trading signal.
 
     Parameters:
         symbol (str): The trading pair (e.g., XAU/USD).
         candles (list): List of OHLC candles from the API.
+        timeframe (str): The timeframe of the candles (e.g., 1min, 5min). # New parameter
 
     Returns:
         dict: Final AI signal output with full intelligence context.
     """
     try:
-        tf = "1min" # Timeframe is fixed for now
-
+        # tf = "1min" # Timeframe is now passed as a parameter
+        
         # ✅ Step 1: Core AI strategy signal
         # strategybot now directly takes closes
         closes = [float(c["close"]) for c in candles]
-        core_signal = generate_core_signal(symbol, tf, closes) # <-- یہاں تبدیلی کی گئی ہے
+        # Pass timeframe to generate_core_signal
+        core_signal = generate_core_signal(symbol, timeframe, closes)
             
         # If core_signal is 'wait' due to insufficient data, return early
         if core_signal == "wait" and len(closes) < 34: # Based on strategybot's data requirement
@@ -38,7 +40,8 @@ def generate_final_signal(symbol: str, candles: list):
                 "news": "Clear",
                 "reason": "Insufficient historical data for a reliable signal.",
                 "confidence": 50.0,
-                "tier": "Tier 5 – Weak"
+                "tier": "Tier 5 – Weak",
+                "timeframe": timeframe # Include timeframe in the result
             }
 
         # ✅ Step 2: Detect chart pattern
@@ -63,7 +66,8 @@ def generate_final_signal(symbol: str, candles: list):
                 "news": "Clear", # News is checked separately
                 "reason": f"Trading BLOCKED: {risk_reason}",
                 "confidence": 0.0, # No confidence if blocked
-                "tier": "Tier 5 – Weak"
+                "tier": "Tier 5 – Weak",
+                "timeframe": timeframe # Include timeframe in the result
             }
 
         # ✅ Step 4: News filter (Placeholder for now)
@@ -116,13 +120,14 @@ def generate_final_signal(symbol: str, candles: list):
         return {
             "status": "ok", # Or "no-signal" if core_signal is "wait"
             "symbol": symbol,
-            "signal": core_signal, # <-- یہاں بھی تبدیلی کی گئی ہے
+            "signal": core_signal,
             "pattern": pattern_name,
             "risk": risk_status,
             "news": news_impact,
             "reason": reason,
             "confidence": round(confidence, 2),
-            "tier": tier
+            "tier": tier,
+            "timeframe": timeframe # Include timeframe in the result
         }
 
     except Exception as e:
