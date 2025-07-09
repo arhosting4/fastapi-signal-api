@@ -1,9 +1,8 @@
-# app.py
 from fastapi import FastAPI, HTTPException, Query
 from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
 import os
-import requests
+import httpx # Changed from 'requests' to 'httpx'
 import traceback
 import json # Import json for parsing API responses
 
@@ -23,15 +22,13 @@ def send_telegram_message(message: str):
 
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
-        response = requests.post(url, data=payload)
+        # Using httpx.post for consistency, though it's not async here
+        # For a synchronous function, requests would also work fine.
+        # Keeping it httpx for potential future async Telegram calls.
+        response = httpx.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"})
         response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
         print("✅ Telegram response:", response.status_code, response.text)
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e: # Changed exception type
         print(f"⚠️ Telegram Send Failed: {e}")
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
@@ -55,7 +52,11 @@ async def fetch_real_ohlc_data(symbol: str) -> list:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=10)
+        
+        # Use httpx.AsyncClient for asynchronous requests
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=10) # Added await
+        
         response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
 
@@ -91,10 +92,10 @@ async def fetch_real_ohlc_data(symbol: str) -> list:
 
         return ohlc_data
 
-    except requests.exceptions.Timeout:
+    except httpx.TimeoutException: # Changed exception type
         print(f"⚠️ Twelve Data API request timed out for {symbol}.")
         raise HTTPException(status_code=504, detail=f"Twelve Data API request timed out for {symbol}.")
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e: # Changed exception type
         print(f"⚠️ Network or API connection error for {symbol}: {e}")
         raise HTTPException(status_code=503, detail=f"Network or API connection error: {e}")
     except json.JSONDecodeError as e:
@@ -183,4 +184,3 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
         traceback.print_exc() # Print full traceback
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
 
-                    
