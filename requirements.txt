@@ -3,7 +3,8 @@ uvicorn==0.30.1
 requests==2.32.3
 python-dotenv==1.0.1
 gunicorn==22.0.0
-numpy==1.23.5 # <--- numpy کا ورژن تبدیل کریں
-TA-Lib==0.4.29
+numpy==1.26.4
+# TA-Lib==0.4.29 # REMOVED
 pandas==2.2.2
 finnhub-python==2.0.0
+pandas_ta==0.3.14b0 # ADDED
