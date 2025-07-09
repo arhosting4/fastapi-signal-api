@@ -5,10 +5,14 @@ import requests
 import json
 from datetime import datetime, timedelta
 import random
+import time # For Finnhub rate limiting
 
 # Import your AI agents
 from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
+
+# NEW: Finnhub client
+import finnhub
 
 app = FastAPI(
     title="ScalpMasterSignalsAi API",
@@ -20,11 +24,14 @@ app = FastAPI(
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Alpha Vantage API Key (from environment variables)
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+# NEW: Finnhub API Key (from environment variables)
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+
+# Initialize Finnhub client
+finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
 # This print is for debugging purposes to confirm API key loading
-print(f"DEBUG: Value of ALPHA_VANTAGE_API_KEY from os.getenv(): {ALPHA_VANTAGE_API_KEY}")
+print(f"DEBUG: Value of FINNHUB_API_KEY from os.getenv(): {FINNHUB_API_KEY}")
 
 def send_telegram_message(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -67,93 +74,79 @@ def _generate_dummy_candles(outputsize: int) -> list:
         })
     return dummy_candles # Already oldest first
 
-# UPDATED: fetch_real_ohlc_data to use Alpha Vantage API
-def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 100) -> list:
+# NEW: fetch_real_ohlc_data to use Finnhub API
+def fetch_real_ohlc_data(symbol: str, interval: str = "1", outputsize: int = 50) -> list:
     """
-    Fetches OHLC data for a given symbol from Alpha Vantage API.
+    Fetches OHLC data for a given symbol from Finnhub API.
 
     Parameters:
-        symbol (str): The trading pair symbol (e.g., "IBM", "EUR/USD").
-        interval (str): The interval of the candles (e.g., "1min", "5min", "15min", "60min").
-                        Note: Alpha Vantage free tier only supports 1min, 5min, 15min, 30min, 60min for intraday.
-        outputsize (int): The number of data points to retrieve. Alpha Vantage 'compact' gives 100, 'full' gives all.
+        symbol (str): The trading pair symbol (e.g., "AAPL", "OANDA:EURUSD").
+        interval (str): The interval of the candles (e.g., "1", "5", "15", "60").
+                        Finnhub uses seconds for resolution (1, 5, 15, 30, 60, D, W, M).
+        outputsize (int): The number of data points to retrieve.
 
     Returns:
         list: A list of OHLC candle dictionaries, ordered from oldest to newest.
               Returns an empty list if data fetching fails or API key is missing.
     """
-    if not ALPHA_VANTAGE_API_KEY:
-        print("⚠️ ALPHA_VANTAGE_API_KEY is not set. Cannot fetch real data. Using dummy data.")
+    if not FINNHUB_API_KEY:
+        print("⚠️ FINNHUB_API_KEY is not set. Cannot fetch real data. Using dummy data.")
         return _generate_dummy_candles(outputsize)
 
-    # Alpha Vantage uses different function for stocks vs. forex
-    # Forex symbols are typically like "EUR/USD" or "USD/JPY"
-    # Stock symbols are like "AAPL", "IBM"
-    function = ""
-    url = ""
-    
-    if '/' in symbol: # Assuming forex if symbol contains a slash (e.g., EUR/USD)
-        function = "FX_INTRADAY"
-        # Alpha Vantage forex symbols are like EUR, USD (base, quote)
-        base_currency = symbol.split('/')[0].upper()
-        quote_currency = symbol.split('/')[1].upper()
-        url = f"https://www.alphavantage.co/query?function={function}&from_symbol={base_currency}&to_symbol={quote_currency}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
-    else: # Assuming stock (e.g., AAPL, IBM)
-        function = "TIME_SERIES_INTRADAY"
-        url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol.upper()}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
-    
-    # For outputsize, Alpha Vantage has 'compact' (last 100 points) and 'full' (all data)
-    # We'll stick to compact for now to manage rate limits
-    url += "&outputsize=compact" # Always request compact for free tier
+    # Convert interval to Finnhub resolution (seconds)
+    # Finnhub resolution: 1, 5, 15, 30, 60, D, W, M
+    resolution = interval
+    if interval == "1min": resolution = "1"
+    elif interval == "5min": resolution = "5"
+    elif interval == "15min": resolution = "15"
+    elif interval == "60min": resolution = "60"
+    elif interval == "D": resolution = "D"
+    elif interval == "W": resolution = "W"
+    elif interval == "M": resolution = "M"
 
-    print(f"DEBUG: Alpha Vantage API URL: {url}") # Debug print
+    # Get current timestamp and timestamp for 'outputsize' minutes ago
+    to_timestamp = int(time.time())
+    from_timestamp = int(to_timestamp - (outputsize * int(resolution) * 60)) # Approx for minutes
+
+    # Finnhub expects forex symbols like "OANDA:EURUSD" or "FX_IDC:EURUSD"
+    # For stocks, it's just "AAPL"
+    finnhub_symbol = symbol.upper()
+    if '/' in symbol: # Convert EUR/USD to OANDA:EURUSD
+        finnhub_symbol = f"OANDA:{symbol.replace('/', '')}"
+
+    print(f"DEBUG: Fetching Finnhub data for symbol: {finnhub_symbol}, resolution: {resolution}, from: {from_timestamp}, to: {to_timestamp}")
 
     try:
-        # Add User-Agent header
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers) # <--- headers=headers شامل کریں
-        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-        data = response.json()
+        # Finnhub API call
+        # Note: Finnhub's free tier has a rate limit of 30 calls/sec and 500 calls/month for some endpoints.
+        # Candle data might be limited to 60 calls/min.
+        data = finnhub_client.stock_candles(finnhub_symbol, resolution, from_timestamp, to_timestamp)
 
-        time_series_key = None
-        if function == "FX_INTRADAY":
-            time_series_key = f"Time Series FX ({interval})"
-        elif function == "TIME_SERIES_INTRADAY":
-            time_series_key = f"Time Series ({interval})"
-
-        if time_series_key and time_series_key in data and isinstance(data[time_series_key], dict):
-            raw_candles = data[time_series_key]
-            processed_candles = []
-            # Alpha Vantage returns newest first, so we need to reverse for our logic (oldest first)
-            for dt_str, candle_data in reversed(list(raw_candles.items())):
-                processed_candles.append({
-                    "datetime": dt_str,
-                    "open": float(candle_data["1. open"]),
-                    "high": float(candle_data["2. high"]),
-                    "low": float(candle_data["3. low"]),
-                    "close": float(candle_data["4. close"]),
-                    "volume": float(candle_data.get("5. volume", 0))
+        if data and data.get('s') == 'ok':
+            candles_data = []
+            # Finnhub returns 'c' (close), 'h' (high), 'l' (low), 'o' (open), 't' (timestamp), 'v' (volume)
+            # Data is usually oldest first, which is what we need.
+            for i in range(len(data['t'])):
+                candles_data.append({
+                    "datetime": datetime.fromtimestamp(data['t'][i]).isoformat(),
+                    "open": data['o'][i],
+                    "high": data['h'][i],
+                    "low": data['l'][i],
+                    "close": data['c'][i],
+                    "volume": data['v'][i]
                 })
-            return processed_candles
-        elif "Error Message" in data:
-            print(f"⚠️ Alpha Vantage API Error for {symbol}: {data['Error Message']}")
-            return []
-        elif "Note" in data: # Rate limit message
-            print(f"⚠️ Alpha Vantage Rate Limit Exceeded for {symbol}: {data['Note']}")
+            return candles_data
+        elif data and data.get('s') == 'no_data':
+            print(f"⚠️ Finnhub API: No data found for {finnhub_symbol} with resolution {resolution}.")
             return []
         else:
-            print(f"⚠️ Unexpected response from Alpha Vantage API for {symbol}: {data}")
+            print(f"⚠️ Unexpected response from Finnhub API for {finnhub_symbol}: {data}")
             return []
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ Error fetching data from Alpha Vantage for {symbol}: {e}")
-        return []
-    except (ValueError, TypeError, KeyError) as e: # Catch errors during float conversion or missing keys
-        print(f"⚠️ Data parsing error from Alpha Vantage for {symbol}: {e}. Raw data: {data}")
+    except finnhub.FinnhubAPIException as e:
+        print(f"⚠️ Finnhub API Error for {finnhub_symbol}: {e}")
         return []
     except Exception as e:
-        print(f"⚠️ An unexpected error occurred during data fetch for {symbol}: {e}")
+        print(f"⚠️ An unexpected error occurred during Finnhub data fetch for {finnhub_symbol}: {e}")
         return []
 
 
@@ -172,11 +165,12 @@ async def get_signal(symbol: str): # symbol is now a query parameter
     if not symbol:
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
-    # Symbol is processed inside fetch_real_ohlc_data for Alpha Vantage specific formatting
+    # Symbol is processed inside fetch_real_ohlc_data for Finnhub specific formatting
     processed_symbol_for_log = symbol.upper() # Keep this for consistent logging
 
     # Fetch real OHLC data
-    candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50) # Pass original symbol
+    # Finnhub resolution is '1' for 1-minute, '5' for 5-minute etc.
+    candles = fetch_real_ohlc_data(symbol, interval="1", outputsize=50) # Pass original symbol
 
     if not candles:
         raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
@@ -193,7 +187,7 @@ async def get_signal(symbol: str): # symbol is now a query parameter
         confidence = signal_result.get("confidence", "N/A")
         tier = signal_result.get("tier", "N/A")
         reason = signal_result.get("reason", "No specific reason.")
-        
+                
         # Get the latest close price from the fetched candles
         latest_close_price = candles[-1].get("close", "N/A")
 
@@ -237,6 +231,5 @@ def get_signal_logs(symbol: str):
                 logs.append(json.loads(line))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
-    
+            
     return logs
-                         
