@@ -5,14 +5,10 @@ import requests
 import json
 from datetime import datetime, timedelta
 import random
-import time # For Finnhub rate limiting
 
 # Import your AI agents
 from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
-
-# NEW: Finnhub client
-import finnhub
 
 app = FastAPI(
     title="ScalpMasterSignalsAi API",
@@ -24,14 +20,11 @@ app = FastAPI(
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# NEW: Finnhub API Key (from environment variables)
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
-
-# Initialize Finnhub client
-finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
+# Twelve Data API Key (from environment variables)
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 # This print is for debugging purposes to confirm API key loading
-print(f"DEBUG: Value of FINNHUB_API_KEY from os.getenv(): {FINNHUB_API_KEY}")
+print(f"DEBUG: Value of TWELVE_DATA_API_KEY from os.getenv(): {TWELVE_DATA_API_KEY}")
 
 def send_telegram_message(message: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -74,87 +67,95 @@ def _generate_dummy_candles(outputsize: int) -> list:
         })
     return dummy_candles # Already oldest first
 
-# NEW: fetch_real_ohlc_data to use Finnhub API
-def fetch_real_ohlc_data(symbol: str, interval: str = "1", outputsize: int = 50) -> list:
+# fetch_real_ohlc_data to use Twelve Data API
+def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: int = 50) -> list:
     """
-    Fetches OHLC data for a given symbol from Finnhub API.
+    Fetches OHLC data for a given symbol from Twelve Data API.
 
     Parameters:
-        symbol (str): The trading pair symbol (e.g., "AAPL", "OANDA:EURUSD").
-        interval (str): The interval of the candles (e.g., "1", "5", "15", "60").
-                        Finnhub uses seconds for resolution (1, 5, 15, 30, 60, D, W, M).
+        symbol (str): The trading pair symbol (e.g., "AAPL", "EUR/USD").
+        interval (str): The interval of the candles (e.g., "1min", "5min", "15min", "1h", "1day").
         outputsize (int): The number of data points to retrieve.
 
     Returns:
         list: A list of OHLC candle dictionaries, ordered from oldest to newest.
               Returns an empty list if data fetching fails or API key is missing.
     """
-    if not FINNHUB_API_KEY:
-        print("⚠️ FINNHUB_API_KEY is not set. Cannot fetch real data. Using dummy data.")
+    if not TWELVE_DATA_API_KEY:
+        print("⚠️ TWELVE_DATA_API_KEY is not set. Cannot fetch real data. Using dummy data.")
         return _generate_dummy_candles(outputsize)
 
-    # Convert interval to Finnhub resolution (seconds)
-    # Finnhub resolution: 1, 5, 15, 30, 60, D, W, M
-    resolution = interval
-    if interval == "1min": resolution = "1"
-    elif interval == "5min": resolution = "5"
-    elif interval == "15min": resolution = "15"
-    elif interval == "60min": resolution = "60"
-    elif interval == "D": resolution = "D"
-    elif interval == "W": resolution = "W"
-    elif interval == "M": resolution = "M"
+    # --- Twelve Data Symbol Formatting ---
+    # Twelve Data expects symbols like "AAPL" for stocks, "EUR/USD" or "FX:EURUSD" for forex.
+    # We will try to send the symbol as is, and if it fails, try a common forex format.
+    formatted_symbol = symbol.upper()
+    
+    # List of symbols to try in order
+    symbols_to_try = [formatted_symbol]
+    if '/' in formatted_symbol: # If it's a forex pair like EUR/USD
+        symbols_to_try.append(formatted_symbol.replace('/', '')) # EURUSD
+        symbols_to_try.append(f"FX:{formatted_symbol.replace('/', '')}") # FX:EURUSD
+    
+    # Add common stock symbols if it's not a forex pair
+    if not any(s in formatted_symbol for s in ['/', ':']): # Simple check if it's likely a stock
+        symbols_to_try.append(formatted_symbol) # Just the symbol
+    
+    final_data = None
+    for s_to_try in symbols_to_try:
+        url = f"https://api.twelvedata.com/time_series?symbol={s_to_try}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize={outputsize}"
+        print(f"DEBUG: Trying Twelve Data API URL: {url}") # Debug print for each attempt
 
-    # Get current timestamp and timestamp for 'outputsize' minutes ago
-    to_timestamp = int(time.time())
-    from_timestamp = int(to_timestamp - (outputsize * int(resolution) * 60)) # Approx for minutes
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            response = requests.get(url, headers=headers)
+            response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+            data = response.json()
 
-    # Finnhub expects forex symbols like "OANDA:EURUSD" or "FX_IDC:EURUSD"
-    # For stocks, it's just "AAPL"
-    finnhub_symbol = symbol.upper()
-    if '/' in symbol: # Convert EUR/USD to OANDA:EURUSD
-        finnhub_symbol = f"OANDA:{symbol.replace('/', '')}"
+            if "values" in data and isinstance(data["values"], list):
+                final_data = data
+                break # Found data, exit loop
+            elif "code" in data and data["code"] == 400:
+                print(f"⚠️ Twelve Data API Error for {s_to_try}: {data.get('message', 'Unknown error')}")
+                # Continue to next symbol to try
+            elif "status" in data and data["status"] == "error":
+                print(f"⚠️ Twelve Data API Error for {s_to_try}: {data.get('message', 'Unknown error')}")
+                # Continue to next symbol to try
+            else:
+                print(f"⚠️ Unexpected response from Twelve Data API for {s_to_try}: {data}")
+                # Continue to next symbol to try
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Error fetching data from Twelve Data for {s_to_try}: {e}")
+            # Continue to next symbol to try
+        except (ValueError, TypeError, KeyError) as e:
+            print(f"⚠️ Data parsing error from Twelve Data for {s_to_try}: {e}. Raw data: {data}")
+            # Continue to next symbol to try
+        except Exception as e:
+            print(f"⚠️ An unexpected error occurred during data fetch for {s_to_try}: {e}")
+            # Continue to next symbol to try
 
-    print(f"DEBUG: Fetching Finnhub data for symbol: {finnhub_symbol}, resolution: {resolution}, from: {from_timestamp}, to: {to_timestamp}")
-
-    try:
-        # Finnhub API call
-        # Note: Finnhub's free tier has a rate limit of 30 calls/sec and 500 calls/month for some endpoints.
-        # Candle data might be limited to 60 calls/min.
-        data = finnhub_client.stock_candles(finnhub_symbol, resolution, from_timestamp, to_timestamp)
-
-        if data and data.get('s') == 'ok':
-            candles_data = []
-            # Finnhub returns 'c' (close), 'h' (high), 'l' (low), 'o' (open), 't' (timestamp), 'v' (volume)
-            # Data is usually oldest first, which is what we need.
-            for i in range(len(data['t'])):
-                candles_data.append({
-                    "datetime": datetime.fromtimestamp(data['t'][i]).isoformat(),
-                    "open": data['o'][i],
-                    "high": data['h'][i],
-                    "low": data['l'][i],
-                    "close": data['c'][i],
-                    "volume": data['v'][i]
-                })
-            return candles_data
-        elif data and data.get('s') == 'no_data':
-            print(f"⚠️ Finnhub API: No data found for {finnhub_symbol} with resolution {resolution}.")
-            return []
-        else:
-            print(f"⚠️ Unexpected response from Finnhub API for {finnhub_symbol}: {data}")
-            return []
-    except finnhub.FinnhubAPIException as e:
-        print(f"⚠️ Finnhub API Error for {finnhub_symbol}: {e}")
+    if not final_data:
+        print(f"⚠️ Failed to fetch data for {symbol} after trying all formats.")
         return []
-    except Exception as e:
-        print(f"⚠️ An unexpected error occurred during Finnhub data fetch for {finnhub_symbol}: {e}")
-        return []
+
+    processed_candles = []
+    for candle_data in reversed(final_data["values"]): # Twelve Data returns newest first
+        processed_candles.append({
+            "datetime": candle_data["datetime"],
+            "open": float(candle_data["open"]),
+            "high": float(candle_data["high"]),
+            "low": float(candle_data["low"]),
+            "close": float(candle_data["close"]),
+            "volume": float(candle_data.get("volume", 0))
+        })
+    return processed_candles
 
 
 @app.get("/")
 def root():
     return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
 
-# UPDATED: Changed from path parameter to query parameter for better symbol handling
 @app.get("/signal")
 async def get_signal(symbol: str): # symbol is now a query parameter
     """
@@ -165,12 +166,11 @@ async def get_signal(symbol: str): # symbol is now a query parameter
     if not symbol:
         raise HTTPException(status_code=400, detail="Symbol is required.")
 
-    # Symbol is processed inside fetch_real_ohlc_data for Finnhub specific formatting
+    # Symbol is processed inside fetch_real_ohlc_data for Twelve Data specific formatting
     processed_symbol_for_log = symbol.upper() # Keep this for consistent logging
 
     # Fetch real OHLC data
-    # Finnhub resolution is '1' for 1-minute, '5' for 5-minute etc.
-    candles = fetch_real_ohlc_data(symbol, interval="1", outputsize=50) # Pass original symbol
+    candles = fetch_real_ohlc_data(symbol, interval="1min", outputsize=50) # Pass original symbol
 
     if not candles:
         raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
@@ -187,7 +187,7 @@ async def get_signal(symbol: str): # symbol is now a query parameter
         confidence = signal_result.get("confidence", "N/A")
         tier = signal_result.get("tier", "N/A")
         reason = signal_result.get("reason", "No specific reason.")
-                
+        
         # Get the latest close price from the fetched candles
         latest_close_price = candles[-1].get("close", "N/A")
 
@@ -231,5 +231,6 @@ def get_signal_logs(symbol: str):
                 logs.append(json.loads(line))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e}")
-            
+    
     return logs
+                                                                          
