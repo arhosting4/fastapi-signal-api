@@ -1,103 +1,46 @@
-# src/agents/strategybot.py
-import numpy as np
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta as ta # Import pandas_ta
 
-def generate_core_signal(symbol: str, tf: str, candles: list) -> str:
+def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     """
-    Generates a core trading signal using multiple technical indicators:
-    SMA Crossover, RSI, and MACD (using pandas_ta).
-
-    Parameters:
-        symbol (str): The trading pair symbol.
-        tf (str): The timeframe.
-        candles (list): A list of OHLCV candle dictionaries (oldest to newest).
-
-    Returns:
-        str: "buy", "sell", or "wait".
+    Generates a core trading signal based on a simple strategy using pandas_ta.
+    This version uses RSI (Relative Strength Index) and SMA (Simple Moving Average).
     """
-    if len(candles) < 34: # Minimum data needed for MACD (26 + 9 for signal line)
+    if len(closes) < 100: # Need enough data for indicators, e.g., RSI(14) needs at least 14 periods
         return "wait"
 
-    # Convert candles to a Pandas DataFrame for pandas_ta
-    df = pd.DataFrame(candles)
-    df['open'] = pd.to_numeric(df['open'])
-    df['high'] = pd.to_numeric(df['high'])
-    df['low'] = pd.to_numeric(df['low'])
-    df['close'] = pd.to_numeric(df['close'])
-    df['volume'] = pd.to_numeric(df['volume'])
+    # Convert closes list to a pandas Series
+    close_series = pd.Series(closes)
 
-    # --- 1. SMA Crossover Strategy (e.g., 10-period SMA vs 30-period SMA) ---
-    df.ta.sma(length=10, append=True)
-    df.ta.sma(length=30, append=True)
+    # Calculate RSI
+    rsi = ta.rsi(close_series, length=14)
 
-    sma_short = df[f'SMA_10']
-    sma_long = df[f'SMA_30']
+    # Calculate SMA
+    sma_short = ta.sma(close_series, length=20)
+    sma_long = ta.sma(close_series, length=50)
 
-    sma_signal = "wait"
-    if len(sma_short) >= 2 and len(sma_long) >= 2:
-        if sma_short.iloc[-1] > sma_long.iloc[-1] and sma_short.iloc[-2] <= sma_long.iloc[-2]:
-            sma_signal = "buy" # Bullish crossover
-        elif sma_short.iloc[-1] < sma_long.iloc[-1] and sma_short.iloc[-2] >= sma_long.iloc[-2]:
-            sma_signal = "sell" # Bearish crossover
+    # Get the latest values
+    latest_rsi = rsi.iloc[-1]
+    latest_close = close_series.iloc[-1] # Not directly used for signal, but good to have
+    latest_sma_short = sma_short.iloc[-1]
+    latest_sma_long = sma_long.iloc[-1]
 
-    # --- 2. RSI (Relative Strength Index) Strategy ---
-    df.ta.rsi(length=14, append=True)
-    rsi = df['RSI_14']
+    # Simple Strategy:
+    # Buy if RSI is oversold (e.g., < 30) and short SMA crosses above long SMA
+    # Sell if RSI is overbought (e.g., > 70) and short SMA crosses below long SMA
 
-    rsi_signal = "wait"
-    if len(rsi) > 0:
-        if rsi.iloc[-1] < 30:
-            rsi_signal = "buy" # Oversold, potential buy
-        elif rsi.iloc[-1] > 70:
-            rsi_signal = "sell" # Overbought, potential sell
-
-    # --- 3. MACD (Moving Average Convergence Divergence) Strategy ---
-    df.ta.macd(fast=12, slow=26, signal=9, append=True)
-    macd = df['MACD_12_26_9']
-    macdsignal = df['MACDs_12_26_9']
-
-    macd_signal = "wait"
-    if len(macd) >= 2 and len(macdsignal) >= 2:
-        if macd.iloc[-1] > macdsignal.iloc[-1] and macd.iloc[-2] <= macdsignal.iloc[-2]:
-            macd_signal = "buy"
-        elif macd.iloc[-1] < macdsignal.iloc[-1] and macd.iloc[-2] >= macdsignal.iloc[-2]:
-            macd_signal = "sell"
-
-    # --- Combine Signals (Simple Voting Mechanism) ---
-    buy_votes = 0
-    sell_votes = 0
-
-    if sma_signal == "buy":
-        buy_votes += 1
-    elif sma_signal == "sell":
-        sell_votes += 1
-
-    if rsi_signal == "buy":
-        buy_votes += 1
-    elif rsi_signal == "sell":
-        sell_votes += 1
-
-    if macd_signal == "buy":
-        buy_votes += 1
-    elif macd_signal == "sell":
-        sell_votes += 1
-
-    # Decision Logic
-    if buy_votes >= 2: # At least two indicators suggest buy
+    if latest_rsi < 30 and latest_sma_short > latest_sma_long and sma_short.iloc[-2] <= sma_long.iloc[-2]:
         return "buy"
-    elif sell_votes >= 2: # At least two indicators suggest sell
+    elif latest_rsi > 70 and latest_sma_short < latest_sma_long and sma_short.iloc[-2] >= sma_long.iloc[-2]:
         return "sell"
     else:
         return "wait"
 
-# The fetch_ohlc function is no longer needed as data is passed directly from app.py
-# You can remove it or keep it as a placeholder.
 def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
-    """
-    This function is now redundant as real OHLC data is fetched in app.py.
-    It's kept for compatibility but will not be actively used for real data.
-    """
+    # This function is now redundant as real data is fetched by fetch_real_ohlc_data in app.py
+    # and fusion_engine uses the full candle data.
+    # However, if you still need a dummy OHLC for some reason, keep it.
+    # Otherwise, you can remove this function if it's not called anywhere else.
     if len(data) < 5:
         return {}
     return {
@@ -106,5 +49,5 @@ def fetch_ohlc(symbol: str, interval: str, data: list) -> dict:
         "low": min(data[-5:]),
         "close": data[-1],
         "volume": 1000
-        }
+    }
     
