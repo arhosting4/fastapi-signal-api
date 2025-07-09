@@ -1,95 +1,80 @@
-import pandas as pd
-import pandas_ta as ta
+# src/agents/reasonbot.py
 
-def generate_reason(core_signal: str, pattern_data: dict, candles: list) -> str:
+def generate_reason(
+    core_signal: str,
+    pattern_data: dict, # Now a dict from patternai
+    risk_status: str,
+    news_impact: str,
+    confidence: float
+) -> str:
     """
-    Generates a natural language reason for the signal decision based on
-    core strategy, pattern recognition, and indicator states.
+    Generates a natural language reason for the signal decision
+    based on core strategy, pattern alignment, risk, news, and confidence.
 
     Parameters:
-        core_signal (str): Signal from core strategy logic (buy/sell/wait).
-        pattern_data (dict): Dictionary from patternai containing 'pattern' and 'confidence'.
-        candles (list): List of OHLC candles from the API.
+        core_signal (str): Signal from core strategy logic ("buy", "sell", "wait").
+        pattern_data (dict): Dictionary from patternai with 'pattern' and 'type'.
+        risk_status (str): Risk assessment from riskguardian ("Normal", "Moderate", "High").
+        news_impact (str): News impact assessment from sentinel ("Clear", "Low", "Medium", "High").
+        confidence (float): Overall confidence score.
 
     Returns:
-        str: A detailed reason for the signal.
+        str: A descriptive reason for the signal.
     """
     reason_parts = []
-    pattern = pattern_data.get("pattern", "No Specific Pattern")
-    pattern_confidence = pattern_data.get("confidence", 0.5)
 
-    # --- Indicator Analysis for Reasoning ---
-    if not candles or len(candles) < 100:
-        return "Not enough data for detailed reasoning."
+    # --- Core Signal and Pattern Alignment ---
+    pattern_name = pattern_data.get("pattern", "No Specific Pattern")
+    pattern_type = pattern_data.get("type", "neutral")
 
-    close_series = pd.Series([c['close'] for c in candles])
-        
-    # Calculate Indicators
-    rsi = ta.rsi(close_series, length=14).iloc[-1]
-    macd = ta.macd(close_series, fast=12, slow=26, signal=9)
-    macd_line = macd[macd.columns[0]].iloc[-1]
-    signal_line = macd[macd.columns[1]].iloc[-1]
-        
-    bbands = ta.bbands(close_series, length=20, std=2)
-    bb_lower = bbands[bbands.columns[0]].iloc[-1]
-    bb_upper = bbands[bbands.columns[2]].iloc[-1]
-    latest_close = close_series.iloc[-1]
-
-    # --- Core Signal Reasoning ---
     if core_signal == "buy":
-        reason_parts.append("Core strategy indicates a *BUY* opportunity.")
-        if rsi < 30:
-            reason_parts.append(f"RSI ({rsi:.2f}) is in oversold territory, suggesting a potential rebound.")
-        elif rsi < 50:
-            reason_parts.append(f"RSI ({rsi:.2f}) is below 50, indicating bearish momentum might be weakening.")
-            
-        if macd_line > signal_line:
-            reason_parts.append("MACD shows a bullish crossover, confirming upward momentum.")
-            if macd_line > 0:
-                reason_parts.append("MACD is above the zero line, reinforcing bullish sentiment.")
-            
-        if latest_close <= bb_lower:
-            reason_parts.append("Price is touching or below the Bollinger Lower Band, suggesting it's undervalued.")
-        elif latest_close < bbands[bbands.columns[1]].iloc[-1]:
-            reason_parts.append("Price is below the Bollinger Middle Band, but showing signs of recovery.")
-
-    elif core_signal == "sell":
-        reason_parts.append("Core strategy indicates a *SELL* opportunity.")
-        if rsi > 70:
-            reason_parts.append(f"RSI ({rsi:.2f}) is in overbought territory, suggesting a potential pullback.")
-        elif rsi > 50:
-            reason_parts.append(f"RSI ({rsi:.2f}) is above 50, indicating bullish momentum might be weakening.")
-            
-        if macd_line < signal_line:
-            reason_parts.append("MACD shows a bearish crossover, confirming downward momentum.")
-            if macd_line < 0:
-                reason_parts.append("MACD is below the zero line, reinforcing bearish sentiment.")
-            
-        if latest_close >= bb_upper:
-            reason_parts.append("Price is touching or above the Bollinger Upper Band, suggesting it's overvalued.")
-        elif latest_close > bbands[bbands.columns[1]].iloc[-1]:
-            reason_parts.append("Price is above the Bollinger Middle Band, but showing signs of decline.")
-
-    else: # core_signal == "wait"
-        reason_parts.append("Market is currently neutral or lacks clear signals.")
-        if 40 <= rsi <= 60:
-            reason_parts.append(f"RSI ({rsi:.2f}) is near the neutral zone.")
-        if abs(macd_line - signal_line) < 0.01: # Small difference
-            reason_parts.append("MACD lines are converging or flat, indicating indecision.")
-        if bb_lower < latest_close < bb_upper:
-            reason_parts.append("Price is within Bollinger Bands, suggesting consolidation.")
-
-    # --- Pattern Reasoning ---
-    if pattern != "No Specific Pattern":
-        if core_signal == "buy" and ("Bullish" in pattern or "Morning Star" in pattern or "Hammer" in pattern or "Piercing" in pattern):
-            reason_parts.append(f"A *{pattern}* candlestick pattern is detected, reinforcing the buy signal.")
-        elif core_signal == "sell" and ("Bearish" in pattern or "Evening Star" in pattern or "Hanging Man" in pattern or "Dark Cloud Cover" in pattern):
-            reason_parts.append(f"A *{pattern}* candlestick pattern is detected, reinforcing the sell signal.")
+        reason_parts.append("Core strategy indicates a BUY opportunity.")
+        if pattern_type == "bullish":
+            reason_parts.append(f"A strong bullish pattern ({pattern_name}) provides further confirmation.")
+        elif pattern_type == "bearish":
+            reason_parts.append(f"However, a bearish pattern ({pattern_name}) suggests caution.")
         else:
-            reason_parts.append(f"A *{pattern}* candlestick pattern is detected, but its alignment with the core signal is mixed.")
-    else:
-        reason_parts.append("No significant candlestick pattern identified.")
+            reason_parts.append("No significant candlestick pattern detected for additional confirmation.")
+    elif core_signal == "sell":
+        reason_parts.append("Core strategy indicates a SELL opportunity.")
+        if pattern_type == "bearish":
+            reason_parts.append(f"A strong bearish pattern ({pattern_name}) provides further confirmation.")
+        elif pattern_type == "bullish":
+            reason_parts.append(f"However, a bullish pattern ({pattern_name}) suggests caution.")
+        else:
+            reason_parts.append("No significant candlestick pattern detected for additional confirmation.")
+    else: # core_signal == "wait"
+        reason_parts.append("Current market conditions suggest a WAIT or neutral stance.")
+        if pattern_type != "neutral":
+            reason_parts.append(f"A {pattern_type} pattern ({pattern_name}) was observed, but core strategy remains neutral.")
+        else:
+            reason_parts.append("No strong directional signals or patterns identified.")
 
-    # Combine all parts into a single reason
+    # --- Risk Assessment ---
+    if risk_status == "High":
+        reason_parts.append(f"Market risk is HIGH due to {risk_status.lower()} volatility/price action.")
+    elif risk_status == "Moderate":
+        reason_parts.append(f"Market risk is MODERATE due to {risk_status.lower()} volatility/price action.")
+    else:
+        reason_parts.append("Market risk appears normal.")
+
+    # --- News Impact ---
+    if news_impact == "High":
+        reason_parts.append("High-impact news events are expected, increasing uncertainty.")
+    elif news_impact == "Medium":
+        reason_parts.append("Medium-impact news events are expected.")
+    elif news_impact == "Low":
+        reason_parts.append("Low-impact news events are expected.")
+    else:
+        reason_parts.append("No significant news events are anticipated.")
+
+    # --- Confidence Level ---
+    if confidence >= 80:
+        reason_parts.append(f"Overall confidence is HIGH ({confidence:.2f}%).")
+    elif confidence >= 60:
+        reason_parts.append(f"Overall confidence is MODERATE ({confidence:.2f}%).")
+    else:
+        reason_parts.append(f"Overall confidence is LOW ({confidence:.2f}%).")
+
     return " ".join(reason_parts)
-    
+
