@@ -1,41 +1,47 @@
-# src/agents/riskguardian.py
+import pandas as pd
+import pandas_ta as ta
 
-def check_risk(symbol: str, closes: list) -> bool:
+def check_risk(symbol: str, candles: list) -> bool:
     """
-    Performs a basic volatility/risk check.
-    Flags as risky if the price has changed too sharply in the last few candles.
+    Checks market risk based on volatility using Average True Range (ATR).
+    Returns True if volatility is too high, indicating risky trading conditions.
 
     Parameters:
-        symbol (str): Trading pair symbol (e.g., XAU/USD).
-        closes (list): List of closing prices, from oldest to newest.
+        symbol (str): The trading pair symbol.
+        candles (list): List of OHLC candles.
 
     Returns:
-        bool: True if market is considered risky, False otherwise.
+        bool: True if market risk is high, False otherwise.
     """
-    if len(closes) < 5: # Need at least 5 candles to assess recent volatility
-        return False
+    if not candles or len(candles) < 20: # ATR(14) needs at least 14 periods, let's use 20 for safety
+        return False # Not enough data to assess risk, assume low risk for now
 
-    # Calculate percentage change for the last few candles
-    # We'll look at the last 3 candles for significant movement
-    last_candle_change_pct = abs((closes[-1] - closes[-2]) / closes[-2]) if closes[-2] != 0 else 0
-    second_last_candle_change_pct = abs((closes[-2] - closes[-3]) / closes[-3]) if closes[-3] != 0 else 0
-    third_last_candle_change_pct = abs((closes[-3] - closes[-4]) / closes[-4]) if closes[-4] != 0 else 0
+    df = pd.DataFrame(candles)
+    df['high'] = pd.to_numeric(df['high'])
+    df['low'] = pd.to_numeric(df['low'])
+    df['close'] = pd.to_numeric(df['close'])
 
-    # Define a threshold for high volatility (e.g., 1% change in a single candle)
-    # This threshold can be adjusted based on the asset and timeframe
-    VOLATILITY_THRESHOLD_PCT = 0.015 # 1.5% change in a single candle
+    # Calculate ATR (Average True Range)
+    # Default length is 14
+    atr = ta.atr(df['high'], df['low'], df['close'], length=14)
 
-    # If any of the last 3 candles show a very high percentage change, flag as risky
-    if (last_candle_change_pct > VOLATILITY_THRESHOLD_PCT or
-        second_last_candle_change_pct > VOLATILITY_THRESHOLD_PCT or
-        third_last_candle_change_pct > VOLATILITY_THRESHOLD_PCT):
-        print(f"⚠️ RiskGuardian: High volatility detected for {symbol}. Last changes: {last_candle_change_pct:.2%}, {second_last_candle_change_pct:.2%}, {third_last_candle_change_pct:.2%}")
+    if atr.empty:
+        return False # Could not calculate ATR, assume low risk
+
+    latest_atr = atr.iloc[-1]
+    average_close = df['close'].mean() # Average price over the period
+
+    # Define a dynamic risk threshold based on average price
+    # For example, if ATR is more than 1% of the average price, consider it high risk.
+    # This threshold might need tuning based on asset class (stocks vs. forex)
+    risk_threshold_percentage = 0.01 # 1% of average price
+    risk_threshold_value = risk_threshold_percentage * average_close
+
+    print(f"DEBUG: Risk Check for {symbol}: Latest ATR={latest_atr:.4f}, Avg Close={average_close:.4f}, Threshold={risk_threshold_value:.4f}")
+
+    if latest_atr > risk_threshold_value:
+        print(f"⚠️ High risk detected for {symbol}: ATR ({latest_atr:.4f}) > Threshold ({risk_threshold_value:.4f})")
         return True
-
-    # You can add more sophisticated risk checks here, e.g.,:
-    # - Average True Range (ATR) based volatility
-    # - Deviation from moving averages
-    # - Volume spikes
-
-    return False
-
+    else:
+        return False
+        
