@@ -116,13 +116,19 @@ async def fetch_real_ohlc_data(symbol: str, interval: str = "1min", outputsize: 
         # Process Twelve Data response
         ohlc_data = []
         for entry in data["values"]:
+            # Safely get volume, default to 0.0 if not present or invalid
+            volume = float(entry.get("volume", 0.0)) if entry.get("volume") is not None else 0.0
+            
+            # Safely get datetime, default to current time if not present
+            entry_datetime = entry.get("datetime", datetime.now().isoformat())
+
             ohlc_data.append({
                 "open": float(entry["open"]),
                 "high": float(entry["high"]),
                 "low": float(entry["low"]),
                 "close": float(entry["close"]),
-                "volume": float(entry["volume"]),
-                "datetime": entry["datetime"]
+                "volume": volume, # Use the safely obtained volume
+                "datetime": entry_datetime # Use the safely obtained datetime
             })
         return ohlc_data[::-1] # Reverse to get oldest first
 
