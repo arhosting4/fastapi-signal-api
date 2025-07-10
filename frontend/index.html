@@ -22,15 +22,12 @@
 
     <main class="container mx-auto px-6 py-8">
         
-        <!-- کنٹرول پینل -->
         <div class="bg-gray-800 p-4 rounded-lg mb-8 shadow-xl">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                <!-- سمبل ان پٹ -->
                 <div>
                     <label for="symbolInput" class="block text-sm font-medium text-gray-400 mb-1">Symbol</label>
                     <input type="text" id="symbolInput" placeholder="e.g., EUR/USD" value="XAU/USD" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
-                <!-- ٹائم فریم سلیکٹر -->
                 <div>
                     <label for="timeframeSelect" class="block text-sm font-medium text-gray-400 mb-1">Timeframe</label>
                     <select id="timeframeSelect" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -43,10 +40,8 @@
                         <option value="1day">1 Day</option>
                     </select>
                 </div>
-                <!-- بٹن -->
                 <button id="fetchSignalBtn" class="w-full md:w-auto bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300">Fetch Signal</button>
             </div>
-            <!-- مشہور پیئرز -->
             <div class="mt-4">
                 <span class="text-sm font-medium text-gray-400 mr-2">Quick Pairs:</span>
                 <button class="pair-btn bg-gray-700 hover:bg-gray-600 text-xs py-1 px-2 rounded-md" data-symbol="EUR/USD">EUR/USD</button>
@@ -56,11 +51,8 @@
             </div>
         </div>
 
-        <!-- مین لے آؤٹ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- چارٹ -->
             <div id="chart-container" class="lg:col-span-2 bg-gray-800 p-2 rounded-lg shadow-xl"></div>
-            <!-- سگنل کارڈ -->
             <div id="signal-card-container" class="bg-gray-800 p-6 rounded-lg shadow-xl">
                 <p class="text-gray-400">Select a symbol and timeframe to begin.</p>
             </div>
@@ -77,7 +69,8 @@
             const pairButtons = document.querySelectorAll('.pair-btn');
             let chart = null;
 
-            const createChart = (candleData) => {
+            // *** اہم تبدیلی: createChart فنکشن اب سگنل بھی لے گا ***
+            const createChart = (candleData, signal) => {
                 if (!candleData || candleData.length === 0) {
                     chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">No chart data available.</p></div>`;
                     return;
@@ -106,6 +99,20 @@
                 }));
                 
                 candleSeries.setData(formattedData);
+
+                // *** اہم تبدیلی: سگنل مارکر شامل کریں ***
+                if (signal && (signal.signal === 'buy' || signal.signal === 'sell')) {
+                    const lastCandle = formattedData[formattedData.length - 1];
+                    const marker = {
+                        time: lastCandle.time,
+                        position: signal.signal === 'buy' ? 'belowBar' : 'aboveBar',
+                        color: signal.signal === 'buy' ? '#26a69a' : '#ef5350',
+                        shape: signal.signal === 'buy' ? 'arrowUp' : 'arrowDown',
+                        text: signal.signal.toUpperCase()
+                    };
+                    candleSeries.setMarkers([marker]);
+                }
+
                 chart.timeScale().fitContent();
             };
 
@@ -126,7 +133,8 @@
                     
                     const data = await response.json();
                     displaySignal(data);
-                    createChart(data.candles);
+                    // *** اہم تبدیلی: createChart کو پورا 'data' آبجیکٹ بھیجیں ***
+                    createChart(data.candles, data);
 
                 } catch (error) {
                     console.error("Fetch Error:", error);
@@ -171,7 +179,6 @@
                 });
             });
 
-            // صفحہ لوڈ ہونے پر ڈیفالٹ سگنل حاصل کریں
             fetchSignal();
         });
     </script>
