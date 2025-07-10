@@ -95,6 +95,6 @@ async def check_signals():
     print(f"[{datetime.now()}] --- Feedback Checker Finished ---")
 
 
-if __name__ == "__main__":
+
     asyncio.run(check_signals())
   
