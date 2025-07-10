@@ -55,107 +55,109 @@
     </main>
 
     <script>
-        const API_BASE_URL = "";
-        const symbolInput = document.getElementById('symbolInput');
-        const fetchSignalBtn = document.getElementById('fetchSignalBtn');
-        const signalCardContainer = document.getElementById('signal-card-container');
-        const chartContainer = document.getElementById('chart-container');
-        let chart = null;
+        // *** اہم تبدیلی: تمام کوڈ کو DOMContentLoaded کے اندر ڈالیں ***
+        document.addEventListener('DOMContentLoaded', () => {
+            const API_BASE_URL = "";
+            const symbolInput = document.getElementById('symbolInput');
+            const fetchSignalBtn = document.getElementById('fetchSignalBtn');
+            const signalCardContainer = document.getElementById('signal-card-container');
+            const chartContainer = document.getElementById('chart-container');
+            let chart = null;
 
-        function createChart(data) {
-            chartContainer.innerHTML = ''; // Clear any "Loading..." text
-            if (chart) {
-                chart.remove();
-            }
-            
-            // *** اہم تبدیلی: createChart کو ID دیں، عنصر نہیں ***
-            chart = LightweightCharts.createChart('chart-container', {
-                width: chartContainer.clientWidth,
-                height: chartContainer.clientHeight,
-                layout: { backgroundColor: '#1f2937', textColor: 'rgba(255, 255, 255, 0.9)' },
-                grid: { vertLines: { color: '#2a313d' }, horzLines: { color: '#2a313d' } },
-                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                timeScale: { timeVisible: true, secondsVisible: false },
-            });
-
-            const candleSeries = chart.addCandlestickSeries({
-                upColor: '#10B981', downColor: '#EF4444', borderDownColor: '#EF4444', borderUpColor: '#10B981',
-                wickDownColor: '#EF4444', wickUpColor: '#10B981',
-            });
-            
-            const formattedData = data.map(d => ({
-                time: (new Date(d.datetime + 'Z').getTime()) / 1000,
-                open: d.open, high: d.high, low: d.low, close: d.close
-            }));
-            candleSeries.setData(formattedData);
-            chart.timeScale().fitContent();
-        }
-
-        async function fetchAndDisplaySignal(symbol) {
-            if (!symbol) return;
-            signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-indigo-400">Analyzing ${symbol.toUpperCase()}...</h3></div>`;
-            chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">Loading chart...</p></div>`;
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`);
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">API Error!</h3><p>${data.detail || 'Unknown error'}</p></div>`;
-                    chartContainer.innerHTML = '';
-                    return;
-                }
-                
-                displaySignal(data);
-
-                if (data.candles && data.candles.length > 0) {
-                    createChart(data.candles);
-                } else {
-                    chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">No chart data available.</p></div>`;
-                }
-            } catch (error) {
-                console.error("Fetch error:", error);
-                signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">Network Error!</h3><p>Could not connect to the AI backend.</p></div>`;
+            function createChart(data) {
                 chartContainer.innerHTML = '';
+                if (chart) {
+                    chart.remove();
+                }
+                
+                chart = LightweightCharts.createChart(chartContainer, { // اب یہ عنصر کو یقینی طور پر تلاش کر لے گا
+                    width: chartContainer.clientWidth,
+                    height: chartContainer.clientHeight,
+                    layout: { backgroundColor: '#1f2937', textColor: 'rgba(255, 255, 255, 0.9)' },
+                    grid: { vertLines: { color: '#2a313d' }, horzLines: { color: '#2a313d' } },
+                    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                    timeScale: { timeVisible: true, secondsVisible: false },
+                });
+
+                const candleSeries = chart.addCandlestickSeries({
+                    upColor: '#10B981', downColor: '#EF4444', borderDownColor: '#EF4444', borderUpColor: '#10B981',
+                    wickDownColor: '#EF4444', wickUpColor: '#10B981',
+                });
+                
+                const formattedData = data.map(d => ({
+                    time: (new Date(d.datetime + 'Z').getTime()) / 1000,
+                    open: d.open, high: d.high, low: d.low, close: d.close
+                }));
+                candleSeries.setData(formattedData);
+                chart.timeScale().fitContent();
             }
-        }
 
-        function displaySignal(signalData) {
-            const statusClass = signalData.status === 'ok' ? (signalData.signal ? signalData.signal.toLowerCase() : 'wait') : signalData.status;
-            const signalText = signalData.signal ? signalData.signal.toUpperCase() : 'N/A';
-            const confidence = signalData.confidence ? `${signalData.confidence.toFixed(2)}%` : 'N/A';
-            const price = signalData.price ? `Price: ${signalData.price.toFixed(5)}` : '';
-            const tp = signalData.tp ? `TP: ${signalData.tp.toFixed(5)}` : '';
-            const sl = signalData.sl ? `SL: ${signalData.sl.toFixed(5)}` : '';
+            async function fetchAndDisplaySignal(symbol) {
+                if (!symbol) return;
+                signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-indigo-400">Analyzing ${symbol.toUpperCase()}...</h3></div>`;
+                chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">Loading chart...</p></div>`;
 
-            let content = `
-                <div class="signal-card ${statusClass}">
-                    <h3 class="text-2xl font-bold text-center mb-2">${signalText}</h3>
-                    <p class="text-lg font-semibold text-center text-gray-300 mb-3">${signalData.symbol.toUpperCase()}</p>
-                    <div class="text-left mt-4 space-y-1">
-                        <p><strong>Confidence:</strong> ${confidence}</p>
-                        <p><strong>Tier:</strong> ${signalData.tier || 'N/A'}</p>
-                        <p><strong>Pattern:</strong> ${signalData.pattern || 'N/A'}</p>
-                        <p><strong>Risk:</strong> ${signalData.risk || 'N/A'}</p>
-                        <p class="mt-2"><strong>Reason:</strong> <span class="reason-text">${signalData.reason || 'N/A'}</span></p>
-                        ${price || tp || sl ? `<div class="mt-3 pt-2 border-t border-gray-700 space-y-1">` : ''}
-                        ${price ? `<p><strong>${price}</strong></p>` : ''}
-                        ${tp ? `<p class="text-green-400"><strong>${tp}</strong></p>` : ''}
-                        ${sl ? `<p class="text-red-400"><strong>${sl}</strong></p>` : ''}
-                        ${price || tp || sl ? `</div>` : ''}
+                try {
+                    const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`);
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">API Error!</h3><p>${data.detail || 'Unknown error'}</p></div>`;
+                        chartContainer.innerHTML = '';
+                        return;
+                    }
+                    
+                    displaySignal(data);
+
+                    if (data.candles && data.candles.length > 0) {
+                        createChart(data.candles);
+                    } else {
+                        chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">No chart data available.</p></div>`;
+                    }
+                } catch (error) {
+                    console.error("Fetch error:", error);
+                    signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">Network Error!</h3><p>Could not connect to the AI backend.</p></div>`;
+                    chartContainer.innerHTML = '';
+                }
+            }
+
+            function displaySignal(signalData) {
+                const statusClass = signalData.status === 'ok' ? (signalData.signal ? signalData.signal.toLowerCase() : 'wait') : signalData.status;
+                const signalText = signalData.signal ? signalData.signal.toUpperCase() : 'N/A';
+                const confidence = signalData.confidence ? `${signalData.confidence.toFixed(2)}%` : 'N/A';
+                const price = signalData.price ? `Price: ${signalData.price.toFixed(5)}` : '';
+                const tp = signalData.tp ? `TP: ${signalData.tp.toFixed(5)}` : '';
+                const sl = signalData.sl ? `SL: ${signalData.sl.toFixed(5)}` : '';
+
+                let content = `
+                    <div class="signal-card ${statusClass}">
+                        <h3 class="text-2xl font-bold text-center mb-2">${signalText}</h3>
+                        <p class="text-lg font-semibold text-center text-gray-300 mb-3">${signalData.symbol.toUpperCase()}</p>
+                        <div class="text-left mt-4 space-y-1">
+                            <p><strong>Confidence:</strong> ${confidence}</p>
+                            <p><strong>Tier:</strong> ${signalData.tier || 'N/A'}</p>
+                            <p><strong>Pattern:</strong> ${signalData.pattern || 'N/A'}</p>
+                            <p><strong>Risk:</strong> ${signalData.risk || 'N/A'}</p>
+                            <p class="mt-2"><strong>Reason:</strong> <span class="reason-text">${signalData.reason || 'N/A'}</span></p>
+                            ${price || tp || sl ? `<div class="mt-3 pt-2 border-t border-gray-700 space-y-1">` : ''}
+                            ${price ? `<p><strong>${price}</strong></p>` : ''}
+                            ${tp ? `<p class="text-green-400"><strong>${tp}</strong></p>` : ''}
+                            ${sl ? `<p class="text-red-400"><strong>${sl}</strong></p>` : ''}
+                            ${price || tp || sl ? `</div>` : ''}
+                        </div>
                     </div>
-                </div>
-            `;
-            signalCardContainer.innerHTML = content;
-        }
-
-        fetchSignalBtn.addEventListener('click', () => fetchAndDisplaySignal(symbolInput.value.trim()));
-        symbolInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') fetchAndDisplaySignal(symbolInput.value.trim()); });
-        
-        window.addEventListener('resize', () => {
-            if (chart) {
-                chart.applyOptions({ width: chartContainer.clientWidth });
+                `;
+                signalCardContainer.innerHTML = content;
             }
+
+            fetchSignalBtn.addEventListener('click', () => fetchAndDisplaySignal(symbolInput.value.trim()));
+            symbolInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') fetchAndDisplaySignal(symbolInput.value.trim()); });
+            
+            window.addEventListener('resize', () => {
+                if (chart) {
+                    chart.applyOptions({ width: chartContainer.clientWidth });
+                }
+            });
         });
     </script>
 </body>
