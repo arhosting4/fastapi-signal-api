@@ -32,7 +32,7 @@ async def check_signals():
     """
     Checks all active signals, determines their outcome, and saves feedback.
     """
-    print(f"[{datetime.now()}] --- Running Feedback Checker ---")
+    print(f"[{datetime.now()}] --- Running Feedback Checker (Background Task) ---")
     active_signals = get_active_signals()
 
     if not active_signals:
@@ -92,9 +92,6 @@ async def check_signals():
             save_feedback(symbol, feedback)
             update_signal_status(signal_id, new_status)
 
-    print(f"[{datetime.now()}] --- Feedback Checker Finished ---")
+    print(f"[{datetime.now()}] --- Feedback Checker Finished (Background Task) ---")
 
-
-
-    asyncio.run(check_signals())
-  
+# The if __name__ == "__main__": block has been removed.
