@@ -1,18 +1,48 @@
 from fastapi import FastAPI, HTTPException, Query
 from agents.fusion_engine import generate_final_signal
 from agents.logger import log_signal
+from feedback_checker import check_signals # Import the checker function
+from apscheduler.schedulers.asyncio import AsyncIOScheduler # Import the scheduler
 import os
-import httpx # Changed from 'requests' to 'httpx'
+import httpx
 import traceback
-import json # Import json for parsing API responses
+import json
 
 app = FastAPI()
+
+# Initialize the scheduler
+scheduler = AsyncIOScheduler()
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    This function runs when the FastAPI application starts.
+    It schedules the check_signals function to run every 15 minutes.
+    """
+    # Schedule the job
+    scheduler.add_job(check_signals, 'interval', minutes=15)
+    # Start the scheduler
+    scheduler.start()
+    print("APScheduler started. Feedback checker is scheduled to run every 15 minutes.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    This function runs when the FastAPI application shuts down.
+    It stops the scheduler.
+    """
+    scheduler.shutdown()
+    print("APScheduler shut down.")
+
 
 # Telegram credentials from environment
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # Twelve Data API Key
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+
+# ... (باقی تمام کوڈ جیسے send_telegram_message, fetch_real_ohlc_data, root, get_signal وہی رہے گا)
+# ... (یہاں کوئی تبدیلی نہیں کرنی)
 
 def send_telegram_message(message: str):
     """Sends a message to the configured Telegram chat."""
@@ -198,4 +228,4 @@ async def get_signal(
         print(f"CRITICAL ERROR in app.py for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
-
+    
