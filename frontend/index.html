@@ -7,7 +7,6 @@
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- *** TradingView Lightweight Charts لائبریری شامل کریں *** -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f3f4f6; }
@@ -43,11 +42,8 @@
                     Fetch Signal
                 </button>
             </div>
-            <!-- *** چارٹ اور سگنل کے لیے نیا لے آؤٹ *** -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- چارٹ کنٹینر -->
                 <div id="chart-container" class="lg:col-span-2"></div>
-                <!-- سگنل کارڈ -->
                 <div id="signal-card-container">
                     <div class="signal-card">
                         <h3 class="text-xl font-semibold mb-2 text-gray-400">Welcome to ScalpMaster AI!</h3>
@@ -59,17 +55,16 @@
     </main>
 
     <script>
-        const API_BASE_URL = ""; // Render پر یہ خالی رہے گا
+        const API_BASE_URL = "";
         const symbolInput = document.getElementById('symbolInput');
         const fetchSignalBtn = document.getElementById('fetchSignalBtn');
         const signalCardContainer = document.getElementById('signal-card-container');
         const chartContainer = document.getElementById('chart-container');
-        let chart = null; // چارٹ آبجیکٹ کو اسٹور کرنے کے لیے
+        let chart = null;
 
-        // *** چارٹ بنانے کا فنکشن ***
         function createChart(data) {
             if (chart) {
-                chart.remove(); // پرانا چارٹ ہٹائیں
+                chart.remove();
             }
             chart = LightweightCharts.createChart(chartContainer, {
                 width: chartContainer.clientWidth,
@@ -85,7 +80,7 @@
             });
             
             const formattedData = data.map(d => ({
-                time: new Date(d.datetime).getTime() / 1000,
+                time: (new Date(d.datetime + 'Z').getTime()) / 1000, // 'Z' for UTC
                 open: d.open, high: d.high, low: d.low, close: d.close
             }));
             candleSeries.setData(formattedData);
@@ -95,24 +90,36 @@
         async function fetchAndDisplaySignal(symbol) {
             if (!symbol) return;
             signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-indigo-400">Analyzing ${symbol.toUpperCase()}...</h3></div>`;
+            // چارٹ کو بھی لوڈنگ حالت میں ڈالیں
+            chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">Loading chart...</p></div>`;
+
             try {
-                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`); // 5min timeframe for better view
+                // *** درست API کال ***
+                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`);
                 const data = await response.json();
+                
+                // چارٹ کنٹینر کو صاف کریں
+                chartContainer.innerHTML = '';
+
                 if (!response.ok) {
                     signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">API Error!</h3><p>${data.detail || 'Unknown error'}</p></div>`;
                     return;
                 }
                 displaySignal(data);
                 if (data.candles && data.candles.length > 0) {
-                    createChart(data.candles); // چارٹ بنائیں
+                    createChart(data.candles);
+                } else {
+                    chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">No chart data available.</p></div>`;
                 }
             } catch (error) {
+                console.error("Fetch error:", error);
                 signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">Network Error!</h3><p>Could not connect to the AI backend.</p></div>`;
+                chartContainer.innerHTML = '';
             }
         }
 
         function displaySignal(signalData) {
-            const statusClass = signalData.status === 'ok' ? signalData.signal.toLowerCase() : signalData.status;
+            const statusClass = signalData.status === 'ok' ? (signalData.signal ? signalData.signal.toLowerCase() : 'wait') : signalData.status;
             const signalText = signalData.signal ? signalData.signal.toUpperCase() : 'N/A';
             const confidence = signalData.confidence ? `${signalData.confidence.toFixed(2)}%` : 'N/A';
             const price = signalData.price ? `Price: ${signalData.price.toFixed(5)}` : '';
@@ -129,9 +136,11 @@
                         <p><strong>Pattern:</strong> ${signalData.pattern || 'N/A'}</p>
                         <p><strong>Risk:</strong> ${signalData.risk || 'N/A'}</p>
                         <p class="mt-2"><strong>Reason:</strong> <span class="reason-text">${signalData.reason || 'N/A'}</span></p>
-                        ${price ? `<p class="mt-3 pt-2 border-t border-gray-700"><strong>${price}</strong></p>` : ''}
-                        ${tp ? `<p><strong>${tp}</strong></p>` : ''}
-                        ${sl ? `<p><strong>${sl}</strong></p>` : ''}
+                        ${price || tp || sl ? `<div class="mt-3 pt-2 border-t border-gray-700 space-y-1">` : ''}
+                        ${price ? `<p><strong>${price}</strong></p>` : ''}
+                        ${tp ? `<p class="text-green-400"><strong>${tp}</strong></p>` : ''}
+                        ${sl ? `<p class="text-red-400"><strong>${sl}</strong></p>` : ''}
+                        ${price || tp || sl ? `</div>` : ''}
                     </div>
                 </div>
             `;
@@ -141,13 +150,11 @@
         fetchSignalBtn.addEventListener('click', () => fetchAndDisplaySignal(symbolInput.value.trim()));
         symbolInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') fetchAndDisplaySignal(symbolInput.value.trim()); });
         
-        // Handle window resize
         window.addEventListener('resize', () => {
             if (chart) {
                 chart.applyOptions({ width: chartContainer.clientWidth });
             }
         });
-
     </script>
 </body>
 </html>
