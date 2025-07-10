@@ -79,8 +79,9 @@
                 wickDownColor: '#EF4444', wickUpColor: '#10B981',
             });
             
+            // *** اہم تبدیلی: تاریخ کو UTC کے طور پر پڑھیں ***
             const formattedData = data.map(d => ({
-                time: (new Date(d.datetime + 'Z').getTime()) / 1000, // 'Z' for UTC
+                time: (new Date(d.datetime + 'Z').getTime()) / 1000,
                 open: d.open, high: d.high, low: d.low, close: d.close
             }));
             candleSeries.setData(formattedData);
@@ -90,15 +91,12 @@
         async function fetchAndDisplaySignal(symbol) {
             if (!symbol) return;
             signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-indigo-400">Analyzing ${symbol.toUpperCase()}...</h3></div>`;
-            // چارٹ کو بھی لوڈنگ حالت میں ڈالیں
             chartContainer.innerHTML = `<div class="flex items-center justify-center h-full"><p class="text-gray-400">Loading chart...</p></div>`;
 
             try {
-                // *** درست API کال ***
                 const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`);
                 const data = await response.json();
                 
-                // چارٹ کنٹینر کو صاف کریں
                 chartContainer.innerHTML = '';
 
                 if (!response.ok) {
