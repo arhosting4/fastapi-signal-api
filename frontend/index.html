@@ -5,95 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ScalpMaster AI Signals - Advanced Forex AI</title>
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
-    <!-- Google Fonts: Inter for modern look -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- *** TradingView Lightweight Charts لائبریری شامل کریں *** -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6; /* Light gray background */
-            color: #1f2937; /* Dark gray text */
-        }
-        .container {
-            max-width: 1200px;
-        }
-        .signal-card {
-            background-color: #ffffff;
-            border-radius: 0.75rem; /* More rounded corners */
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Stronger shadow */
-            padding: 1.5rem;
-            text-align: center;
-            transition: transform 0.2s ease-in-out; /* Smooth hover effect */
-        }
-        .signal-card:hover {
-            transform: translateY(-5px);
-        }
-        .signal-card.buy {
-            border-left: 6px solid #10B981; /* Green for Buy */
-        }
-        .signal-card.sell {
-            border-left: 6px solid #EF4444; /* Red for Sell */
-        }
-        .signal-card.wait {
-            border-left: 6px solid #F59E0B; /* Amber for Wait */
-        }
-        .signal-card.blocked {
-            border-left: 6px solid #6B7280; /* Gray for Blocked */
-        }
-        .signal-card.error {
-            border-left: 6px solid #DC2626; /* Darker Red for Error */
-        }
-        .signal-card h3 {
-            font-weight: 700; /* Bold */
-        }
-        .signal-card p {
-            font-size: 0.95rem;
-            line-height: 1.5;
-        }
-        .signal-card strong {
-            color: #1f2937; /* Darker strong text */
-        }
-        .signal-card .reason-text {
-            font-style: italic;
-            color: #4b5563; /* Slightly lighter gray for reason */
-        }
-        .signal-card .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        .status-indicator.buy { background-color: #10B981; }
-        .status-indicator.sell { background-color: #EF4444; }
-        .status-indicator.wait { background-color: #F59E0B; }
-        .status-indicator.blocked { background-color: #6B7280; }
-        .status-indicator.error { background-color: #DC2626; }
-
-        /* Responsive adjustments */
-        @media (min-width: 768px) {
-            .grid-cols-1 {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-        }
-        @media (min-width: 1024px) {
-            .grid-cols-1 {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f3f4f6; }
+        .container { max-width: 1200px; }
+        .signal-card { background-color: #1f2937; border-radius: 0.75rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); padding: 1.5rem; transition: transform 0.2s ease-in-out; border-left: 6px solid #4b5563; }
+        .signal-card.buy { border-left-color: #10B981; }
+        .signal-card.sell { border-left-color: #EF4444; }
+        .signal-card.wait { border-left-color: #F59E0B; }
+        .signal-card h3 { font-weight: 700; }
+        .signal-card strong { color: #d1d5db; }
+        .signal-card .reason-text { font-style: italic; color: #9ca3af; }
+        #chart-container { width: 100%; height: 450px; border-radius: 0.75rem; background-color: #1f2937; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-900">
-    <header class="bg-white shadow-sm py-4">
+<body class="bg-gray-900 text-gray-100">
+    <header class="bg-gray-800 shadow-md py-4">
         <div class="container mx-auto px-4 flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-indigo-600">ScalpMaster AI</h1>
+            <h1 class="text-2xl font-bold text-indigo-400">ScalpMaster AI</h1>
             <nav>
                 <ul class="flex space-x-4">
-                    <li><a href="#" class="text-gray-600 hover:text-indigo-600 font-medium">Live Signals</a></li>
-                    <li><a href="#" class="text-gray-600 hover:text-indigo-600 font-medium">AI Insight</a></li>
-                    <li><a href="#" class="text-gray-600 hover:text-indigo-600 font-medium">Signal Archive</a></li>
-                    <li><a href="#" class="text-gray-600 hover:text-indigo-600 font-medium">About</a></li>
+                    <li><a href="#" class="text-gray-300 hover:text-indigo-400 font-medium">Live Signals</a></li>
                 </ul>
             </nav>
         </div>
@@ -101,138 +36,118 @@
 
     <main class="container mx-auto px-4 py-8">
         <section class="mb-8">
-            <h2 class="text-3xl font-semibold text-center mb-6 text-indigo-800">Live Trading Signals</h2>
+            <h2 class="text-3xl font-semibold text-center mb-6 text-indigo-300">Live Trading Signals</h2>
             <div class="flex flex-col sm:flex-row justify-center items-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
-                <input type="text" id="symbolInput" placeholder="Enter Symbol (e.g., AAPL, EUR/USD)" 
-                       class="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 w-full sm:max-w-md text-lg">
-                <select id="timeframeSelect" 
-                        class="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-lg">
-                    <option value="1min">1 Minute</option>
-                    <option value="5min">5 Minutes</option>
-                    <option value="15min">15 Minutes</option>
-                    <option value="30min">30 Minutes</option>
-                    <option value="1hr">1 Hour</option>
-                    <option value="4hr">4 Hours</option>
-                    <option value="1day">1 Day</option>
-                </select>
-                <button id="fetchSignalBtn" 
-                        class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 
-                               focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150 text-lg">
+                <input type="text" id="symbolInput" placeholder="Enter Symbol (e.g., AAPL, EUR/USD)" class="p-3 border border-gray-600 bg-gray-700 text-white rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 w-full sm:max-w-md text-lg">
+                <button id="fetchSignalBtn" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150 text-lg">
                     Fetch Signal
                 </button>
             </div>
-            <div id="signal-dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- Initial placeholder card -->
-                <div class="signal-card">
-                    <h3 class="text-xl font-semibold mb-2 text-gray-700">Welcome to ScalpMaster AI!</h3>
-                    <p class="text-gray-500">Enter a trading symbol (e.g., AAPL for stocks, EUR/USD for forex) and select a timeframe above to get real-time AI-powered signals.</p>
-                    <p class="text-gray-500 mt-2">Our advanced AI analyzes market data to provide actionable insights.</p>
+            <!-- *** چارٹ اور سگنل کے لیے نیا لے آؤٹ *** -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- چارٹ کنٹینر -->
+                <div id="chart-container" class="lg:col-span-2"></div>
+                <!-- سگنل کارڈ -->
+                <div id="signal-card-container">
+                    <div class="signal-card">
+                        <h3 class="text-xl font-semibold mb-2 text-gray-400">Welcome to ScalpMaster AI!</h3>
+                        <p class="text-gray-400">Enter a symbol to get real-time AI-powered signals and charts.</p>
+                    </div>
                 </div>
             </div>
-        </section>
-
-        <section class="text-center text-gray-600 mt-12 py-4 border-t border-gray-200">
-            <p>&copy; 2025 ScalpMaster AI. All rights reserved.</p>
-            <p class="text-sm mt-1">Disclaimer: Trading involves significant risk. Do your own research.</p>
         </section>
     </main>
 
     <script>
-        const API_BASE_URL = "https://fastapi-signal-api-1.onrender.com"; // Your Render API URL
+        const API_BASE_URL = ""; // Render پر یہ خالی رہے گا
         const symbolInput = document.getElementById('symbolInput');
-        const timeframeSelect = document.getElementById('timeframeSelect'); // New element
         const fetchSignalBtn = document.getElementById('fetchSignalBtn');
-        const signalDashboard = document.getElementById('signal-dashboard');
+        const signalCardContainer = document.getElementById('signal-card-container');
+        const chartContainer = document.getElementById('chart-container');
+        let chart = null; // چارٹ آبجیکٹ کو اسٹور کرنے کے لیے
 
-        async function fetchAndDisplaySignal(symbol, timeframe) { // Added timeframe parameter
-            if (!symbol) {
-                alert("Please enter a symbol!");
-                return;
+        // *** چارٹ بنانے کا فنکشن ***
+        function createChart(data) {
+            if (chart) {
+                chart.remove(); // پرانا چارٹ ہٹائیں
             }
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: chartContainer.clientHeight,
+                layout: { backgroundColor: '#1f2937', textColor: 'rgba(255, 255, 255, 0.9)' },
+                grid: { vertLines: { color: '#2a313d' }, horzLines: { color: '#2a313d' } },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                timeScale: { timeVisible: true, secondsVisible: false },
+            });
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#10B981', downColor: '#EF4444', borderDownColor: '#EF4444', borderUpColor: '#10B981',
+                wickDownColor: '#EF4444', wickUpColor: '#10B981',
+            });
+            
+            const formattedData = data.map(d => ({
+                time: new Date(d.datetime).getTime() / 1000,
+                open: d.open, high: d.high, low: d.low, close: d.close
+            }));
+            candleSeries.setData(formattedData);
+            chart.timeScale().fitContent();
+        }
 
-            signalDashboard.innerHTML = `<div class="signal-card">
-                                            <h3 class="text-xl font-semibold mb-2 text-indigo-600">Analyzing ${symbol.toUpperCase()} (${timeframe})...</h3>
-                                            <p class="text-gray-500">Please wait while our sentient AI processes the data.</p>
-                                        </div>`;
-
+        async function fetchAndDisplaySignal(symbol) {
+            if (!symbol) return;
+            signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-indigo-400">Analyzing ${symbol.toUpperCase()}...</h3></div>`;
             try {
-                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`); // Pass timeframe
+                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`); // 5min timeframe for better view
                 const data = await response.json();
-
                 if (!response.ok) {
-                    signalDashboard.innerHTML = `<div class="signal-card error">
-                                                    <h3 class="text-xl font-semibold text-red-600 mb-2">API Error!</h3>
-                                                    <p class="text-gray-700">${data.detail || 'An unknown error occurred with the API.'}</p>
-                                                    <p class="text-gray-500 mt-2">Please check the symbol, timeframe, API key, or try again later.</p>
-                                                </div>`;
+                    signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">API Error!</h3><p>${data.detail || 'Unknown error'}</p></div>`;
                     return;
                 }
-
                 displaySignal(data);
-
+                if (data.candles && data.candles.length > 0) {
+                    createChart(data.candles); // چارٹ بنائیں
+                }
             } catch (error) {
-                console.error("Error fetching signal:", error);
-                signalDashboard.innerHTML = `<div class="signal-card error">
-                                                <h3 class="text-xl font-semibold text-red-600 mb-2">Network Error!</h3>
-                                                <p class="text-gray-700">Could not connect to the AI backend. Please check your internet connection or try again later.</p>
-                                            </div>`;
+                signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">Network Error!</h3><p>Could not connect to the AI backend.</p></div>`;
             }
         }
 
         function displaySignal(signalData) {
-            const statusClass = signalData.status === 'ok' ? signalData.signal : signalData.status;
+            const statusClass = signalData.status === 'ok' ? signalData.signal.toLowerCase() : signalData.status;
             const signalText = signalData.signal ? signalData.signal.toUpperCase() : 'N/A';
-            const confidence = signalData.confidence ? `${signalData.confidence.toFixed(2)}%` : 'N/A'; // Format to 2 decimal places
-            const tier = signalData.tier || 'N/A';
-            const reason = signalData.reason || 'No specific reason provided.';
-            const pattern = signalData.pattern || 'No Specific Pattern';
-            const risk = signalData.risk || 'N/A';
-            const news = signalData.news || 'N/A';
-            const timeframe = signalData.timeframe || 'N/A'; // Get timeframe
-            const price = signalData.price ? signalData.price.toFixed(5) : 'N/A'; // Get price and format
-            const tp = signalData.tp ? signalData.tp.toFixed(5) : 'N/A'; // Get TP and format
-            const sl = signalData.sl ? signalData.sl.toFixed(5) : 'N/A'; // Get SL and format
+            const confidence = signalData.confidence ? `${signalData.confidence.toFixed(2)}%` : 'N/A';
+            const price = signalData.price ? `Price: ${signalData.price.toFixed(5)}` : '';
+            const tp = signalData.tp ? `TP: ${signalData.tp.toFixed(5)}` : '';
+            const sl = signalData.sl ? `SL: ${signalData.sl.toFixed(5)}` : '';
 
             let content = `
                 <div class="signal-card ${statusClass}">
-                    <div class="flex items-center justify-center mb-2">
-                        <span class="status-indicator ${statusClass}"></span>
-                        <h3 class="text-2xl font-bold text-${statusClass === 'buy' ? 'green' : statusClass === 'sell' ? 'red' : statusClass === 'wait' ? 'amber' : 'gray'}-600">${signalText}</h3>
-                    </div>
-                    <p class="text-lg font-semibold text-gray-800 mb-1">${signalData.symbol.toUpperCase()} (${timeframe})</p>
-                    <p class="text-gray-600 mb-2">Current Price: ${price}</p>
-                    <div class="text-left mt-4">
-                        <p class="text-gray-700 mb-1"><strong>Confidence:</strong> ${confidence}</p>
-                        <p class="text-gray-700 mb-1"><strong>Tier:</strong> ${tier}</p>
-                        <p class="text-gray-700 mb-1"><strong>Pattern:</strong> ${pattern}</p>
-                        <p class="text-gray-700 mb-1"><strong>Risk:</strong> ${risk}</p>
-                        <p class="text-gray-700 mb-1"><strong>News:</strong> ${news}</p>
-                        ${tp !== 'N/A' ? `<p class="text-gray-700 mb-1"><strong>Take Profit (TP):</strong> ${tp}</p>` : ''}
-                        ${sl !== 'N/A' ? `<p class="text-gray-700 mb-1"><strong>Stop Loss (SL):</strong> ${sl}</p>` : ''}
-                        <p class="text-gray-700 mt-2"><strong>Reason:</strong> <span class="reason-text">${reason}</span></p>
+                    <h3 class="text-2xl font-bold text-center mb-2">${signalText}</h3>
+                    <p class="text-lg font-semibold text-center text-gray-300 mb-3">${signalData.symbol.toUpperCase()}</p>
+                    <div class="text-left mt-4 space-y-1">
+                        <p><strong>Confidence:</strong> ${confidence}</p>
+                        <p><strong>Tier:</strong> ${signalData.tier || 'N/A'}</p>
+                        <p><strong>Pattern:</strong> ${signalData.pattern || 'N/A'}</p>
+                        <p><strong>Risk:</strong> ${signalData.risk || 'N/A'}</p>
+                        <p class="mt-2"><strong>Reason:</strong> <span class="reason-text">${signalData.reason || 'N/A'}</span></p>
+                        ${price ? `<p class="mt-3 pt-2 border-t border-gray-700"><strong>${price}</strong></p>` : ''}
+                        ${tp ? `<p><strong>${tp}</strong></p>` : ''}
+                        ${sl ? `<p><strong>${sl}</strong></p>` : ''}
                     </div>
                 </div>
             `;
-            signalDashboard.innerHTML = content;
+            signalCardContainer.innerHTML = content;
         }
 
-        // Event Listeners
-        fetchSignalBtn.addEventListener('click', () => {
-            const symbol = symbolInput.value.trim();
-            const timeframe = timeframeSelect.value; // Get selected timeframe
-            fetchAndDisplaySignal(symbol, timeframe);
-        });
-
-        symbolInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const symbol = symbolInput.value.trim();
-                const timeframe = timeframeSelect.value;
-                fetchAndDisplaySignal(symbol, timeframe);
+        fetchSignalBtn.addEventListener('click', () => fetchAndDisplaySignal(symbolInput.value.trim()));
+        symbolInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') fetchAndDisplaySignal(symbolInput.value.trim()); });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (chart) {
+                chart.applyOptions({ width: chartContainer.clientWidth });
             }
         });
 
-        // Optional: Fetch a default signal on page load
-        // fetchAndDisplaySignal('AAPL', '1min'); 
     </script>
 </body>
 </html>
