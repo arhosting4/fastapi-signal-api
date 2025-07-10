@@ -63,10 +63,13 @@
         let chart = null;
 
         function createChart(data) {
+            chartContainer.innerHTML = ''; // Clear any "Loading..." text
             if (chart) {
                 chart.remove();
             }
-            chart = LightweightCharts.createChart(chartContainer, {
+            
+            // *** اہم تبدیلی: createChart کو ID دیں، عنصر نہیں ***
+            chart = LightweightCharts.createChart('chart-container', {
                 width: chartContainer.clientWidth,
                 height: chartContainer.clientHeight,
                 layout: { backgroundColor: '#1f2937', textColor: 'rgba(255, 255, 255, 0.9)' },
@@ -74,12 +77,12 @@
                 crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
                 timeScale: { timeVisible: true, secondsVisible: false },
             });
+
             const candleSeries = chart.addCandlestickSeries({
                 upColor: '#10B981', downColor: '#EF4444', borderDownColor: '#EF4444', borderUpColor: '#10B981',
                 wickDownColor: '#EF4444', wickUpColor: '#10B981',
             });
             
-            // *** اہم تبدیلی: تاریخ کو UTC کے طور پر پڑھیں ***
             const formattedData = data.map(d => ({
                 time: (new Date(d.datetime + 'Z').getTime()) / 1000,
                 open: d.open, high: d.high, low: d.low, close: d.close
@@ -97,13 +100,14 @@
                 const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=5min`);
                 const data = await response.json();
                 
-                chartContainer.innerHTML = '';
-
                 if (!response.ok) {
                     signalCardContainer.innerHTML = `<div class="signal-card"><h3 class="text-xl text-red-400">API Error!</h3><p>${data.detail || 'Unknown error'}</p></div>`;
+                    chartContainer.innerHTML = '';
                     return;
                 }
+                
                 displaySignal(data);
+
                 if (data.candles && data.candles.length > 0) {
                     createChart(data.candles);
                 } else {
