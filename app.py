@@ -1,11 +1,8 @@
-import sys
-sys.path.append('.') # Add the root directory to the Python path
-
 from fastapi import FastAPI, HTTPException, Query
-from src.agents.fusion_engine import generate_final_signal
-from src.agents.logger import log_signal
-from feedback_checker import check_signals # Import the checker function
-from apscheduler.schedulers.asyncio import AsyncIOScheduler # Import the scheduler
+from fusion_engine import generate_final_signal
+from logger import log_signal
+from feedback_checker import check_signals
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 import httpx
 import traceback
@@ -18,214 +15,110 @@ scheduler = AsyncIOScheduler()
 
 @app.on_event("startup")
 async def startup_event():
-    """
-    This function runs when the FastAPI application starts.
-    It schedules the check_signals function to run every 15 minutes.
-    """
-    # Schedule the job
     scheduler.add_job(check_signals, 'interval', minutes=15)
-    # Start the scheduler
     scheduler.start()
     print("APScheduler started. Feedback checker is scheduled to run every 15 minutes.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """
-    This function runs when the FastAPI application shuts down.
-    It stops the scheduler.
-    """
     scheduler.shutdown()
     print("APScheduler shut down.")
 
-
-# Telegram credentials from environment
+# Environment Variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-# Twelve Data API Key
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 def send_telegram_message(message: str):
-    """Sends a message to the configured Telegram chat."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ Telegram credentials not set. Skipping message send.")
         return
-
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         response = httpx.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"})
-        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         print("✅ Telegram response:", response.status_code, response.text)
-    except httpx.RequestError as e: # Changed exception type
+    except httpx.RequestError as e:
         print(f"⚠️ Telegram Send Failed: {e}")
     except Exception as e:
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
-
-async def fetch_real_ohlc_data(symbol: str, interval: str) -> list: # Added 'interval' parameter
-    """
-    Fetches real OHLCV data from Twelve Data API.
-    Returns a list of dictionaries, each representing a candle.
-    """
+async def fetch_real_ohlc_data(symbol: str, interval: str) -> list:
     if not TWELVE_DATA_API_KEY:
         raise ValueError("TWELVE_DATA_API_KEY is not set in environment variables.")
-
-    # Twelve Data API endpoint for time series
-    # Using the provided 'interval' and outputsize=100 for sufficient data for TA-Lib
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
-        
-    print(f"DEBUG: Trying Twelve Data API URL: {url}") # Log the URL being used
-
+    print(f"DEBUG: Trying Twelve Data API URL: {url}")
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=10)
-        
-        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         data = response.json()
-
-        # Check for API errors in the response
         if "status" in data and data["status"] == "error":
-            error_message = data.get("message", "Unknown error from Twelve Data API.")
-            print(f"⚠️ Twelve Data API Error for {symbol}: {error_message}")
-            raise HTTPException(status_code=500, detail=f"Twelve Data API Error: {error_message}")
-            
+            raise HTTPException(status_code=500, detail=f"Twelve Data API Error: {data.get('message', 'Unknown error')}")
         if "values" not in data or not data["values"]:
-            print(f"DEBUG: No 'values' found in Twelve Data response for {symbol}. Response: {data}")
-            raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}. Check symbol, API key, or market hours.")
-
-        # Twelve Data returns data in reverse chronological order (newest first)
-        # We need to reverse it for TA-Lib/pandas_ta which expects oldest first
+            raise HTTPException(status_code=404, detail=f"No OHLC data found for {symbol}.")
         ohlc_data = []
         for entry in reversed(data["values"]):
             try:
                 ohlc_data.append({
-                    "datetime": entry["datetime"],
-                    "open": float(entry["open"]),
-                    "high": float(entry["high"]),
-                    "low": float(entry["low"]),
-                    "close": float(entry["close"]),
-                    "volume": float(entry.get("volume", 0)) # Use .get() with default for safety
+                    "datetime": entry["datetime"], "open": float(entry["open"]), "high": float(entry["high"]),
+                    "low": float(entry["low"]), "close": float(entry["close"]), "volume": float(entry.get("volume", 0))
                 })
             except ValueError as ve:
                 print(f"⚠️ Data conversion error for {symbol} entry {entry}: {ve}")
-                continue # Skip this entry if conversion fails
-            
+                continue
         if not ohlc_data:
             raise HTTPException(status_code=404, detail=f"No valid OHLC data could be parsed for {symbol}.")
-
         return ohlc_data
-
     except httpx.TimeoutException:
-        print(f"⚠️ Twelve Data API request timed out for {symbol}.")
         raise HTTPException(status_code=504, detail=f"Twelve Data API request timed out for {symbol}.")
     except httpx.RequestError as e:
-        print(f"⚠️ Network or API connection error for {symbol}: {e}")
         raise HTTPException(status_code=503, detail=f"Network or API connection error: {e}")
     except json.JSONDecodeError as e:
-        print(f"⚠️ JSON decoding error from Twelve Data for {symbol}: {e}. Response text: {response.text}")
         raise HTTPException(status_code=500, detail=f"Error parsing Twelve Data response: {e}")
     except Exception as e:
-        print(f"⚠️ An unexpected error occurred while fetching from Twelve Data for {symbol}: {e}")
-        traceback.print_exc() # Print full traceback for unexpected errors
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred with Twelve Data: {e}")
-
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
 
 @app.get("/")
 def root():
-    """Root endpoint for the API."""
     return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
 
-
 @app.get("/signal")
-async def get_signal(
-    symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)"),
-    timeframe: str = Query("1min", description="Candle interval (e.g., 1min, 5min, 15min, 1hr, 4hr, 1day)") # New parameter
-):
-    """
-    Generates a trading signal for the given symbol and timeframe using the AI fusion engine.
-    """
-    print(f"DEBUG: Received symbol: {symbol}, timeframe: {timeframe}") # Log timeframe
-        
+async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)"), timeframe: str = Query("1min", description="Candle interval")):
+    print(f"DEBUG: Received symbol: {symbol}, timeframe: {timeframe}")
     try:
-        # Fetch real OHLC data using the specified timeframe
         candles = await fetch_real_ohlc_data(symbol, timeframe)
-            
-        # Pass candles and timeframe to the fusion engine
         signal_result = generate_final_signal(symbol, candles, timeframe)
-
-        # Log the signal
         log_signal(symbol, signal_result, candles)
-
-        # Safely get values for Telegram message, providing defaults if keys are missing
-        symbol_upper = signal_result.get('symbol', symbol).upper()
+        
         signal_type = signal_result.get('signal', 'N/A').upper()
-        confidence = signal_result.get('confidence', 0.0)
-        tier = signal_result.get('tier', 'N/A')
-        pattern = signal_result.get('pattern', 'N/A')
-        reason = signal_result.get('reason', 'No specific reason provided.')
-        risk = signal_result.get('risk', 'N/A')
-        news = signal_result.get('news', 'N/A')
-        signal_timeframe = signal_result.get('timeframe', timeframe)
-        current_price = signal_result.get('price') # Get current price
-        tp = signal_result.get('tp') # Get TP
-        sl = signal_result.get('sl') # Get SL
-
-
-        # Format TP/SL for message
-        tp_sl_info = ""
-        if tp is not None and sl is not None:
-            tp_sl_info = f"\n\n🎯 TP: *{tp:.5f}* | 🛑 SL: *{sl:.5f}*" # Format to 5 decimal places
-        elif tp is not None:
-            tp_sl_info = f"\n\n🎯 TP: *{tp:.5f}*"
-        elif sl is not None:
-            tp_sl_info = f"\n\n🛑 SL: *{sl:.5f}*"
-
-
-        # Send Telegram message based on status
         if signal_result.get("status") == "ok" and signal_type in ["BUY", "SELL"]:
+            tp = signal_result.get('tp')
+            sl = signal_result.get('sl')
+            tp_sl_info = ""
+            if tp is not None and sl is not None:
+                tp_sl_info = f"\n\n🎯 TP: *{tp:.5f}* | 🛑 SL: *{sl:.5f}*"
             message = (
                 f"📈 ScalpMaster AI Signal Alert 📈\n\n"
-                f"Symbol: *{symbol_upper}*\n"
-                f"Timeframe: *{signal_timeframe}*\n"
+                f"Symbol: *{signal_result.get('symbol', symbol).upper()}*\n"
+                f"Timeframe: *{signal_result.get('timeframe', timeframe)}*\n"
                 f"Signal: *{signal_type}*\n"
-                f"Price: *{current_price:.5f}*\n" # Added current price
-                f"Confidence: *{confidence:.2f}%*\n"
-                f"Tier: *{tier}*\n"
-                f"Pattern: *{pattern}*\n"
-                f"Reason: _{reason}_"
-                f"{tp_sl_info}\n\n" # Added TP/SL info
-                f"Risk: {risk} | News: {news}"
+                f"Price: *{signal_result.get('price'):.5f}*\n"
+                f"Confidence: *{signal_result.get('confidence', 0.0):.2f}%*\n"
+                f"Tier: *{signal_result.get('tier', 'N/A')}*\n"
+                f"Pattern: *{signal_result.get('pattern', 'N/A')}*\n"
+                f"Reason: _{signal_result.get('reason', 'N/A')}_"
+                f"{tp_sl_info}\n\n"
+                f"Risk: {signal_result.get('risk', 'N/A')} | News: {signal_result.get('news', 'N/A')}"
             )
             send_telegram_message(message)
-        elif signal_result.get("status") == "blocked":
-            message = (
-                f"🚫 ScalpMaster AI Alert 🚫\n\n"
-                f"Symbol: *{symbol_upper}*\n"
-                f"Timeframe: *{signal_timeframe}*\n"
-                f"Status: *BLOCKED*\n"
-                f"Reason: _{signal_result.get('error', 'Unknown reason.')}_"
-            )
-            send_telegram_message(message)
-        elif signal_result.get("status") == "no-signal":
-            message = (
-                f" neutral ScalpMaster AI Alert neutral \n\n"
-                f"Symbol: *{symbol_upper}*\n"
-                f"Timeframe: *{signal_timeframe}*\n"
-                f"Status: *NO SIGNAL*\n"
-                f"Reason: _{reason}_"
-            )
-            send_telegram_message(message)
-
-
+        
         return signal_result
-
     except HTTPException as e:
         raise e
     except Exception as e:
-        print(f"CRITICAL ERROR in app.py for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
-        
+                
