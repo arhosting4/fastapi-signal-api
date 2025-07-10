@@ -121,10 +121,10 @@ async def get_signal(
         
     try:
         # Fetch real OHLC data using the specified timeframe
-        candles = await fetch_real_ohlc_data(symbol, timeframe) # Pass timeframe to fetch_real_ohlc_data
+        candles = await fetch_real_ohlc_data(symbol, timeframe)
             
         # Pass candles and timeframe to the fusion engine
-        signal_result = generate_final_signal(symbol, candles, timeframe) # Pass timeframe to generate_final_signal
+        signal_result = generate_final_signal(symbol, candles, timeframe)
 
         # Log the signal
         log_signal(symbol, signal_result, candles)
@@ -138,8 +138,20 @@ async def get_signal(
         reason = signal_result.get('reason', 'No specific reason provided.')
         risk = signal_result.get('risk', 'N/A')
         news = signal_result.get('news', 'N/A')
-        # Add timeframe to the Telegram message
         signal_timeframe = signal_result.get('timeframe', timeframe)
+        current_price = signal_result.get('price') # Get current price
+        tp = signal_result.get('tp') # Get TP
+        sl = signal_result.get('sl') # Get SL
+
+
+        # Format TP/SL for message
+        tp_sl_info = ""
+        if tp is not None and sl is not None:
+            tp_sl_info = f"\n\n🎯 TP: *{tp:.5f}* | 🛑 SL: *{sl:.5f}*" # Format to 5 decimal places
+        elif tp is not None:
+            tp_sl_info = f"\n\n🎯 TP: *{tp:.5f}*"
+        elif sl is not None:
+            tp_sl_info = f"\n\n🛑 SL: *{sl:.5f}*"
 
 
         # Send Telegram message based on status
@@ -147,12 +159,14 @@ async def get_signal(
             message = (
                 f"📈 ScalpMaster AI Signal Alert 📈\n\n"
                 f"Symbol: *{symbol_upper}*\n"
-                f"Timeframe: *{signal_timeframe}*\n" # Added timeframe
+                f"Timeframe: *{signal_timeframe}*\n"
                 f"Signal: *{signal_type}*\n"
+                f"Price: *{current_price:.5f}*\n" # Added current price
                 f"Confidence: *{confidence:.2f}%*\n"
                 f"Tier: *{tier}*\n"
                 f"Pattern: *{pattern}*\n"
-                f"Reason: _{reason}_\n\n"
+                f"Reason: _{reason}_"
+                f"{tp_sl_info}\n\n" # Added TP/SL info
                 f"Risk: {risk} | News: {news}"
             )
             send_telegram_message(message)
@@ -160,7 +174,7 @@ async def get_signal(
             message = (
                 f"🚫 ScalpMaster AI Alert 🚫\n\n"
                 f"Symbol: *{symbol_upper}*\n"
-                f"Timeframe: *{signal_timeframe}*\n" # Added timeframe
+                f"Timeframe: *{signal_timeframe}*\n"
                 f"Status: *BLOCKED*\n"
                 f"Reason: _{signal_result.get('error', 'Unknown reason.')}_"
             )
@@ -169,7 +183,7 @@ async def get_signal(
             message = (
                 f" neutral ScalpMaster AI Alert neutral \n\n"
                 f"Symbol: *{symbol_upper}*\n"
-                f"Timeframe: *{signal_timeframe}*\n" # Added timeframe
+                f"Timeframe: *{signal_timeframe}*\n"
                 f"Status: *NO SIGNAL*\n"
                 f"Reason: _{reason}_"
             )
@@ -185,4 +199,3 @@ async def get_signal(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
 
-                    
