@@ -105,6 +105,16 @@
             <div class="flex flex-col sm:flex-row justify-center items-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
                 <input type="text" id="symbolInput" placeholder="Enter Symbol (e.g., AAPL, EUR/USD)" 
                        class="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 w-full sm:max-w-md text-lg">
+                <select id="timeframeSelect" 
+                        class="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-lg">
+                    <option value="1min">1 Minute</option>
+                    <option value="5min">5 Minutes</option>
+                    <option value="15min">15 Minutes</option>
+                    <option value="30min">30 Minutes</option>
+                    <option value="1hr">1 Hour</option>
+                    <option value="4hr">4 Hours</option>
+                    <option value="1day">1 Day</option>
+                </select>
                 <button id="fetchSignalBtn" 
                         class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 
                                focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150 text-lg">
@@ -115,7 +125,7 @@
                 <!-- Initial placeholder card -->
                 <div class="signal-card">
                     <h3 class="text-xl font-semibold mb-2 text-gray-700">Welcome to ScalpMaster AI!</h3>
-                    <p class="text-gray-500">Enter a trading symbol (e.g., AAPL for stocks, EUR/USD for forex) above to get real-time AI-powered signals.</p>
+                    <p class="text-gray-500">Enter a trading symbol (e.g., AAPL for stocks, EUR/USD for forex) and select a timeframe above to get real-time AI-powered signals.</p>
                     <p class="text-gray-500 mt-2">Our advanced AI analyzes market data to provide actionable insights.</p>
                 </div>
             </div>
@@ -130,29 +140,30 @@
     <script>
         const API_BASE_URL = "https://fastapi-signal-api-1.onrender.com"; // Your Render API URL
         const symbolInput = document.getElementById('symbolInput');
+        const timeframeSelect = document.getElementById('timeframeSelect'); // New element
         const fetchSignalBtn = document.getElementById('fetchSignalBtn');
         const signalDashboard = document.getElementById('signal-dashboard');
 
-        async function fetchAndDisplaySignal(symbol) {
+        async function fetchAndDisplaySignal(symbol, timeframe) { // Added timeframe parameter
             if (!symbol) {
                 alert("Please enter a symbol!");
                 return;
             }
 
             signalDashboard.innerHTML = `<div class="signal-card">
-                                            <h3 class="text-xl font-semibold mb-2 text-indigo-600">Analyzing ${symbol.toUpperCase()}...</h3>
+                                            <h3 class="text-xl font-semibold mb-2 text-indigo-600">Analyzing ${symbol.toUpperCase()} (${timeframe})...</h3>
                                             <p class="text-gray-500">Please wait while our sentient AI processes the data.</p>
                                         </div>`;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}`);
+                const response = await fetch(`${API_BASE_URL}/signal?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`); // Pass timeframe
                 const data = await response.json();
 
                 if (!response.ok) {
                     signalDashboard.innerHTML = `<div class="signal-card error">
                                                     <h3 class="text-xl font-semibold text-red-600 mb-2">API Error!</h3>
                                                     <p class="text-gray-700">${data.detail || 'An unknown error occurred with the API.'}</p>
-                                                    <p class="text-gray-500 mt-2">Please check the symbol or try again later.</p>
+                                                    <p class="text-gray-500 mt-2">Please check the symbol, timeframe, API key, or try again later.</p>
                                                 </div>`;
                     return;
                 }
@@ -177,7 +188,10 @@
             const pattern = signalData.pattern || 'No Specific Pattern';
             const risk = signalData.risk || 'N/A';
             const news = signalData.news || 'N/A';
-            const price = signalData.price ? `Current Price: ${signalData.price}` : ''; 
+            const timeframe = signalData.timeframe || 'N/A'; // Get timeframe
+            const price = signalData.price ? signalData.price.toFixed(5) : 'N/A'; // Get price and format
+            const tp = signalData.tp ? signalData.tp.toFixed(5) : 'N/A'; // Get TP and format
+            const sl = signalData.sl ? signalData.sl.toFixed(5) : 'N/A'; // Get SL and format
 
             let content = `
                 <div class="signal-card ${statusClass}">
@@ -185,14 +199,16 @@
                         <span class="status-indicator ${statusClass}"></span>
                         <h3 class="text-2xl font-bold text-${statusClass === 'buy' ? 'green' : statusClass === 'sell' ? 'red' : statusClass === 'wait' ? 'amber' : 'gray'}-600">${signalText}</h3>
                     </div>
-                    <p class="text-lg font-semibold text-gray-800 mb-1">${signalData.symbol.toUpperCase()}</p>
-                    ${price ? `<p class="text-gray-600 mb-2">Price: ${price}</p>` : ''}
+                    <p class="text-lg font-semibold text-gray-800 mb-1">${signalData.symbol.toUpperCase()} (${timeframe})</p>
+                    <p class="text-gray-600 mb-2">Current Price: ${price}</p>
                     <div class="text-left mt-4">
                         <p class="text-gray-700 mb-1"><strong>Confidence:</strong> ${confidence}</p>
                         <p class="text-gray-700 mb-1"><strong>Tier:</strong> ${tier}</p>
                         <p class="text-gray-700 mb-1"><strong>Pattern:</strong> ${pattern}</p>
                         <p class="text-gray-700 mb-1"><strong>Risk:</strong> ${risk}</p>
                         <p class="text-gray-700 mb-1"><strong>News:</strong> ${news}</p>
+                        ${tp !== 'N/A' ? `<p class="text-gray-700 mb-1"><strong>Take Profit (TP):</strong> ${tp}</p>` : ''}
+                        ${sl !== 'N/A' ? `<p class="text-gray-700 mb-1"><strong>Stop Loss (SL):</strong> ${sl}</p>` : ''}
                         <p class="text-gray-700 mt-2"><strong>Reason:</strong> <span class="reason-text">${reason}</span></p>
                     </div>
                 </div>
@@ -202,18 +218,21 @@
 
         // Event Listeners
         fetchSignalBtn.addEventListener('click', () => {
-            fetchAndDisplaySignal(symbolInput.value.trim()); // Trim whitespace
+            const symbol = symbolInput.value.trim();
+            const timeframe = timeframeSelect.value; // Get selected timeframe
+            fetchAndDisplaySignal(symbol, timeframe);
         });
 
         symbolInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                fetchAndDisplaySignal(symbolInput.value.trim()); // Trim whitespace
+                const symbol = symbolInput.value.trim();
+                const timeframe = timeframeSelect.value;
+                fetchAndDisplaySignal(symbol, timeframe);
             }
         });
 
         // Optional: Fetch a default signal on page load
-        // fetchAndDisplaySignal('AAPL'); 
+        // fetchAndDisplaySignal('AAPL', '1min'); 
     </script>
 </body>
-            </html>
-            
+</html>
