@@ -1,10 +1,11 @@
-from agents.strategybot import generate_core_signal, calculate_tp_sl # Import calculate_tp_sl
+from agents.strategybot import generate_core_signal, calculate_tp_sl
 from agents.patternai import detect_patterns
 from agents.riskguardian import check_risk
 from agents.sentinel import check_news
 from agents.reasonbot import generate_reason
 from agents.trainerai import get_confidence
 from agents.tierbot import get_tier
+from agents.signal_tracker import add_active_signal # Import add_active_signal
 import traceback # For detailed error logging
 
 # Added 'timeframe' parameter
@@ -21,8 +22,6 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
         dict: Final AI signal output with full intelligence context.
     """
     try:
-        # tf = "1min" # Timeframe is now passed as a parameter
-        
         # Extract necessary data for calculations
         closes = [float(c["close"]) for c in candles]
         highs = [float(c["high"]) for c in candles]
@@ -45,7 +44,9 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
                 "confidence": 50.0,
                 "tier": "Tier 5 – Weak",
                 "timeframe": timeframe,
-                "price": current_price # Include current price
+                "price": current_price, # Include current price
+                "tp": None,
+                "sl": None
             }
 
         # ✅ Step 2: Detect chart pattern
@@ -70,7 +71,9 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
                 "confidence": 0.0, # No confidence if blocked
                 "tier": "Tier 5 – Weak",
                 "timeframe": timeframe,
-                "price": current_price # Include current price
+                "price": current_price, # Include current price
+                "tp": None,
+                "sl": None
             }
 
         # ✅ Step 4: News filter (Placeholder for now)
@@ -104,7 +107,7 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
 
 
         # ✅ Step 9: Final signal result
-        return {
+        final_result = {
             "status": "ok", # Or "no-signal" if core_signal is "wait"
             "symbol": symbol,
             "signal": core_signal,
@@ -120,10 +123,16 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
             "sl": tp_sl_levels["sl"]  # Include SL
         }
 
+        # ✅ Step 10: Add to signal tracker if it's a trade signal
+        if final_result["signal"] in ["buy", "sell"] and final_result["tp"] is not None and final_result["sl"] is not None:
+            add_active_signal(final_result)
+
+        return final_result
+
     except Exception as e:
         # Log the full traceback for debugging
         print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
         traceback.print_exc()
         # Re-raise the exception to be caught by app.py's global handler
         raise Exception(f"Error in AI fusion for {symbol}: {e}")
-
+        
