@@ -135,3 +135,57 @@ def generate_core_signal(symbol: str, tf: str, closes: list) -> str:
     else:
         return "wait"
 
+
+def calculate_tp_sl(signal: str, current_price: float, high_prices: list, low_prices: list) -> dict:
+    """
+    Calculates Take Profit (TP) and Stop Loss (SL) levels based on ATR.
+
+    Parameters:
+        signal (str): The trading signal ("buy", "sell", "wait").
+        current_price (float): The current closing price.
+        high_prices (list): List of high prices (oldest to newest).
+        low_prices (list): List of low prices (oldest to newest).
+
+    Returns:
+        dict: Dictionary containing 'tp' and 'sl' levels, or None if not applicable.
+    """
+    if signal == "wait" or len(high_prices) < 14 or len(low_prices) < 14: # ATR needs at least 14 periods
+        return {"tp": None, "sl": None}
+
+    # Create pandas Series for high, low, and close (current_price is the last close)
+    # We need a series for close to calculate ATR
+    close_series_for_atr = pd.Series(high_prices) # Just using high_prices as a base for length, will replace last value
+    close_series_for_atr.iloc[-1] = current_price # Ensure the last value is the current price
+
+    # Calculate ATR
+    atr = ta.atr(pd.Series(high_prices), pd.Series(low_prices), close_series_for_atr, length=14)
+    
+    if atr.empty or pd.isna(atr.iloc[-1]):
+        return {"tp": None, "sl": None}
+
+    current_atr = atr.iloc[-1]
+
+    # ATR Multipliers (can be tuned)
+    # Common practice: 1.5 to 2.0 times ATR for SL, 2.0 to 3.0 times ATR for TP
+    sl_multiplier = 1.5
+    tp_multiplier = 2.5
+
+    tp = None
+    sl = None
+
+    if signal == "buy":
+        tp = current_price + (current_atr * tp_multiplier)
+        sl = current_price - (current_atr * sl_multiplier)
+    elif signal == "sell":
+        tp = current_price - (current_atr * tp_multiplier)
+        sl = current_price + (current_atr * sl_multiplier)
+    
+    # Round to a reasonable number of decimal places for currency pairs (e.g., 4 or 5)
+    # You might need to adjust this based on the specific symbol (e.g., crypto needs more decimals)
+    if tp is not None:
+        tp = round(tp, 5)
+    if sl is not None:
+        sl = round(sl, 5)
+
+    return {"tp": tp, "sl": sl}
+
