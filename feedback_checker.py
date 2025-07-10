@@ -1,3 +1,6 @@
+import sys
+sys.path.append('.') # Add the root directory to the Python path
+
 import os
 import httpx
 import asyncio
@@ -93,5 +96,4 @@ async def check_signals():
             update_signal_status(signal_id, new_status)
 
     print(f"[{datetime.now()}] --- Feedback Checker Finished (Background Task) ---")
-
-# The if __name__ == "__main__": block has been removed.
+        
