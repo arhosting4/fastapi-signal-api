@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fusion_engine import generate_final_signal
 from logger import log_signal
 from feedback_checker import check_signals
@@ -10,17 +12,29 @@ import json
 
 app = FastAPI()
 
+# Mount the 'frontend' directory to serve static files like CSS, JS, or images if any.
+# This also makes the directory accessible.
+app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+
 # Initialize the scheduler
 scheduler = AsyncIOScheduler()
 
 @app.on_event("startup")
 async def startup_event():
+    """
+    This function runs when the FastAPI application starts.
+    It schedules the check_signals function to run every 15 minutes.
+    """
     scheduler.add_job(check_signals, 'interval', minutes=15)
     scheduler.start()
     print("APScheduler started. Feedback checker is scheduled to run every 15 minutes.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    """
+    This function runs when the FastAPI application shuts down.
+    It stops the scheduler.
+    """
     scheduler.shutdown()
     print("APScheduler shut down.")
 
@@ -30,6 +44,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 def send_telegram_message(message: str):
+    """Sends a message to the configured Telegram chat."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ Telegram credentials not set. Skipping message send.")
         return
@@ -44,6 +59,7 @@ def send_telegram_message(message: str):
         print(f"⚠️ An unexpected error occurred during Telegram send: {e}")
 
 async def fetch_real_ohlc_data(symbol: str, interval: str) -> list:
+    """Fetches real OHLCV data from Twelve Data API."""
     if not TWELVE_DATA_API_KEY:
         raise ValueError("TWELVE_DATA_API_KEY is not set in environment variables.")
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
@@ -82,11 +98,13 @@ async def fetch_real_ohlc_data(symbol: str, interval: str) -> list:
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
 
 @app.get("/")
-def root():
-    return {"message": "ScalpMasterAi API is running. Visit /docs for API documentation."}
+async def read_index():
+    """Root endpoint to serve the index.html file."""
+    return FileResponse('frontend/index.html')
 
 @app.get("/signal")
 async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)"), timeframe: str = Query("1min", description="Candle interval")):
+    """Generates a trading signal for the given symbol and timeframe using the AI fusion engine."""
     print(f"DEBUG: Received symbol: {symbol}, timeframe: {timeframe}")
     try:
         candles = await fetch_real_ohlc_data(symbol, timeframe)
@@ -100,12 +118,16 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
             tp_sl_info = ""
             if tp is not None and sl is not None:
                 tp_sl_info = f"\n\n🎯 TP: *{tp:.5f}* | 🛑 SL: *{sl:.5f}*"
+            
+            current_price = signal_result.get('price')
+            price_info = f"Price: *{current_price:.5f}*\n" if current_price is not None else ""
+
             message = (
                 f"📈 ScalpMaster AI Signal Alert 📈\n\n"
                 f"Symbol: *{signal_result.get('symbol', symbol).upper()}*\n"
                 f"Timeframe: *{signal_result.get('timeframe', timeframe)}*\n"
                 f"Signal: *{signal_type}*\n"
-                f"Price: *{signal_result.get('price'):.5f}*\n"
+                f"{price_info}"
                 f"Confidence: *{signal_result.get('confidence', 0.0):.2f}%*\n"
                 f"Tier: *{signal_result.get('tier', 'N/A')}*\n"
                 f"Pattern: *{signal_result.get('pattern', 'N/A')}*\n"
@@ -121,4 +143,4 @@ async def get_signal(symbol: str = Query(..., description="Trading symbol (e.g.,
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
-                
+    
