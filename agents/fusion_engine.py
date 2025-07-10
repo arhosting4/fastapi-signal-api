@@ -1,4 +1,4 @@
-from agents.strategybot import generate_core_signal
+from agents.strategybot import generate_core_signal, calculate_tp_sl # Import calculate_tp_sl
 from agents.patternai import detect_patterns
 from agents.riskguardian import check_risk
 from agents.sentinel import check_news
@@ -23,10 +23,13 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
     try:
         # tf = "1min" # Timeframe is now passed as a parameter
         
-        # ✅ Step 1: Core AI strategy signal
-        # strategybot now directly takes closes
+        # Extract necessary data for calculations
         closes = [float(c["close"]) for c in candles]
-        # Pass timeframe to generate_core_signal
+        highs = [float(c["high"]) for c in candles]
+        lows = [float(c["low"]) for c in candles]
+        current_price = closes[-1] if closes else None # Get the last closing price
+
+        # ✅ Step 1: Core AI strategy signal
         core_signal = generate_core_signal(symbol, timeframe, closes)
             
         # If core_signal is 'wait' due to insufficient data, return early
@@ -41,17 +44,16 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
                 "reason": "Insufficient historical data for a reliable signal.",
                 "confidence": 50.0,
                 "tier": "Tier 5 – Weak",
-                "timeframe": timeframe # Include timeframe in the result
+                "timeframe": timeframe,
+                "price": current_price # Include current price
             }
 
         # ✅ Step 2: Detect chart pattern
-        # patternai now takes full candles DataFrame
         pattern_data = detect_patterns(candles)
         pattern_name = pattern_data.get("pattern", "No Specific Pattern")
         pattern_type = pattern_data.get("type", "neutral") # bullish, bearish, neutral
 
         # ✅ Step 3: Risk check
-        # riskguardian now takes full candles DataFrame
         risk_assessment = check_risk(candles)
         risk_status = risk_assessment.get("status", "Normal")
         risk_reason = risk_assessment.get("reason", "Market risk appears normal.")
@@ -67,35 +69,15 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
                 "reason": f"Trading BLOCKED: {risk_reason}",
                 "confidence": 0.0, # No confidence if blocked
                 "tier": "Tier 5 – Weak",
-                "timeframe": timeframe # Include timeframe in the result
+                "timeframe": timeframe,
+                "price": current_price # Include current price
             }
 
         # ✅ Step 4: News filter (Placeholder for now)
-        # In a real scenario, this would fetch live news data
-        # For now, we'll simulate a "Clear" news impact
         news_impact = "Clear" # Default to clear for now
         news_reason = "No significant news events anticipated."
             
-        # Example of how you might integrate check_news if you had real data
-        # high_impact_events = [] # Populate this from a news API
-        # if check_news(symbol, high_impact_events):
-        #     news_impact = "High"
-        #     news_reason = "Red news event detected. Trading might be volatile."
-        #     return {
-        #         "status": "blocked",
-        #         "symbol": symbol,
-        #         "signal": "wait",
-        #         "pattern": pattern_name,
-        #         "risk": risk_status,
-        #         "news": news_impact,
-        #         "reason": f"Trading BLOCKED: {news_reason}",
-        #         "confidence": 0.0,
-        #         "tier": "Tier 5 – Weak"
-        #     }
-
-
         # ✅ Step 5: Confidence
-        # trainerai now takes more parameters
         confidence = get_confidence(
             core_signal,
             pattern_type, # Pass pattern_type (bullish, bearish, neutral)
@@ -107,7 +89,6 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
         tier = get_tier(confidence)
 
         # ✅ Step 7: Reasoning
-        # reasonbot now takes more parameters
         reason = generate_reason(
             core_signal,
             pattern_data, # Pass pattern_data dict
@@ -116,7 +97,13 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
             confidence
         )
 
-        # ✅ Step 8: Final signal result
+        # ✅ Step 8: Calculate TP/SL
+        tp_sl_levels = {"tp": None, "sl": None}
+        if current_price is not None: # Only calculate if we have a current price
+            tp_sl_levels = calculate_tp_sl(core_signal, current_price, highs, lows)
+
+
+        # ✅ Step 9: Final signal result
         return {
             "status": "ok", # Or "no-signal" if core_signal is "wait"
             "symbol": symbol,
@@ -127,7 +114,10 @@ def generate_final_signal(symbol: str, candles: list, timeframe: str):
             "reason": reason,
             "confidence": round(confidence, 2),
             "tier": tier,
-            "timeframe": timeframe # Include timeframe in the result
+            "timeframe": timeframe,
+            "price": current_price, # Include current price
+            "tp": tp_sl_levels["tp"], # Include TP
+            "sl": tp_sl_levels["sl"]  # Include SL
         }
 
     except Exception as e:
