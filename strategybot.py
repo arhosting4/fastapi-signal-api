@@ -40,7 +40,10 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
     macd_data = ta.macd(close_series, fast=12, slow=26, signal=9)
     bbands_data = ta.bbands(close_series, length=20, std=2.0)
     stoch_data = ta.stoch(high=high_series, low=low_series, close=close_series, k=14, d=3, smooth_k=3)
+    
     stoch_k = stoch_data.iloc[:, 0] if stoch_data is not None and not stoch_data.empty else None
+    macd_line = macd_data.iloc[:, 0] if macd_data is not None and not macd_data.empty else None
+    macd_signal = macd_data.iloc[:, 1] if macd_data is not None and not macd_data.empty else None
 
     buy_signals = 0
     sell_signals = 0
@@ -56,9 +59,7 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
             buy_signals += 1
         elif rsi.iloc[-1] > 70:
             sell_signals += 1
-    if macd_data is not None and not macd_data.empty:
-        macd_line = macd_data.iloc[:, 0]
-        macd_signal = macd_data.iloc[:, 1]
+    if macd_line is not None and macd_signal is not None:
         if macd_line.iloc[-1] > macd_signal.iloc[-1] and macd_line.iloc[-2] <= macd_signal.iloc[-2]:
             buy_signals += 1
         elif macd_line.iloc[-1] < macd_signal.iloc[-1] and macd_line.iloc[-2] >= macd_signal.iloc[-2]:
@@ -76,15 +77,19 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
         elif stoch_k.iloc[-1] > 80:
             sell_signals += 1
 
-    # --- اہم ترین تبدیلی: سگنل کی شرط کو نرم کریں ---
+    # --- حتمی فیصلہ سازی کی منطق ---
     signal = "wait"
-    # اگر buy سگنلز sell سے زیادہ ہیں، تو buy
     if buy_signals > sell_signals:
         signal = "buy"
-    # اگر sell سگنلز buy سے زیادہ ہیں، تو sell
     elif sell_signals > buy_signals:
         signal = "sell"
-    # اگر دونوں برابر ہیں (مثلاً 0-0 یا 1-1)، تو wait
-    
+    # --- اہم ترین تبدیلی: ٹائی بریکر منطق ---
+    elif macd_line is not None and macd_signal is not None:
+        # اگر سگنل برابر ہیں، تو MACD کے رجحان کو دیکھو
+        if macd_line.iloc[-1] > macd_signal.iloc[-1]:
+            signal = "buy" # MACD مثبت رجحان دکھا رہا ہے
+        else:
+            signal = "sell" # MACD منفی رجحان دکھا رہا ہے
+            
     return {"signal": signal}
-    
+        
