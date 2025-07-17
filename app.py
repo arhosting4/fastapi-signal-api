@@ -45,7 +45,8 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
             tickers=yfinance_symbol,
             period=period,
             interval=timeframe,
-            progress=False
+            progress=False,
+            auto_adjust=False # <--- یہ یقینی بناتا ہے کہ ہمیں OHLCV کالم ملیں
         )
 
         if data.empty:
@@ -53,14 +54,17 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
 
         data.reset_index(inplace=True)
         
-        data.rename(columns={"Datetime": "dt"}, inplace=True)
-        data['dt'] = pd.to_datetime(data['dt'], utc=True)
-
+        # --- کالم کے ناموں کو چھوٹے حروف میں تبدیل کریں ---
         data.rename(columns={
-            "dt": "datetime", "Open": "open", "High": "high",
+            "Datetime": "datetime", "Open": "open", "High": "high",
             "Low": "low", "Close": "close", "Volume": "volume"
         }, inplace=True)
 
+        # یہ یقینی بنائیں کہ 'datetime' کالم موجود ہے
+        if 'datetime' not in data.columns:
+             data.rename(columns={"index": "datetime"}, inplace=True)
+
+        data['datetime'] = pd.to_datetime(data['datetime'], utc=True)
         data['datetime'] = data['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
         candles = data.to_dict('records')
@@ -73,8 +77,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         raise
 
 # --- API اینڈ پوائنٹس ---
-
-# app.mount("/static", StaticFiles(directory="frontend/static"), name="static") # <--- اس لائن کو ہٹا دیا گیا ہے
 
 @app.get("/")
 async def read_root():
@@ -95,7 +97,7 @@ async def get_signal(
         if not candles:
             raise HTTPException(status_code=404, detail="Could not fetch candle data.")
 
-        current_price = candles[-1]['close']
+        current_price = candles[-1]['close'] # <--- اب یہ صحیح طریقے سے کام کرے گا
         signal_result = await generate_final_signal(symbol, candles, timeframe)
 
         signal_result['price'] = current_price
@@ -133,4 +135,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-        
+    
