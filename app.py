@@ -51,12 +51,24 @@ async def read_root():
     return FileResponse('frontend/index.html')
 
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
+    # *** اہم ترین تبدیلی: پراکسی کا استعمال ***
+    # ہم اپنی API کال کو ایک پراکسی کے ذریعے بھیجیں گے تاکہ IP بلاکنگ سے بچا جا سکے
+    proxy_url = "https://cors-anywhere.herokuapp.com/"
+    target_url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
+    
+    # پراکسی کے لیے ایک خاص ہیڈر کی ضرورت ہوتی ہے
+    headers = {
+        'User-Agent': 'Mozilla/5.0',
+        'X-Requested-With': 'XMLHttpRequest' # یہ ہیڈر CORS Anywhere کے لیے ضروری ہے
+    }
+    
+    print(f"DEBUG: Fetching via proxy: {proxy_url}{target_url}")
+
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = await client.get(url, headers=headers, timeout=20)
+        response = await client.get(f"{proxy_url}{target_url}", headers=headers, timeout=30) # ٹائم آؤٹ کو بڑھا دیا گیا ہے
         response.raise_for_status()
         data = response.json()
+        
         if "status" in data and data["status"] == "error":
             raise HTTPException(status_code=400, detail=f"API Error: {data.get('message', 'Unknown error')}")
         if "values" not in data or not data["values"]:
@@ -73,10 +85,10 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
             except (ValueError, KeyError): continue
         return ohlc_data
     except httpx.ReadTimeout:
-        raise HTTPException(status_code=504, detail="API request timed out. Please try again.")
+        raise HTTPException(status_code=504, detail="API request via proxy timed out. Please try again.")
     except Exception as e:
-        print(f"Error fetching OHLC data for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail="Could not fetch data from the provider.")
+        print(f"Error fetching OHLC data via proxy for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail="Could not fetch data from the provider via proxy.")
 
 @app.get("/signal")
 async def get_signal(
@@ -97,4 +109,4 @@ async def get_signal(
         print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-        
+                        
