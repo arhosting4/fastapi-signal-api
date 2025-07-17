@@ -51,12 +51,10 @@ app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 async def read_root():
     return FileResponse('frontend/index.html')
 
-# *** اہم ترین تبدیلی: Finnhub سے ڈیٹا حاصل کرنے کا نیا اور بہتر فنکشن ***
+# *** اہم ترین تبدیلی: Finnhub سے ڈیٹا حاصل کرنے کا نیا اور ڈیبگنگ کے لیے تیار فنکشن ***
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
     print(f"➡️ [FETCH] Attempting to fetch data for {symbol} ({timeframe}) from Finnhub...")
     
-    # *** اہم ترین تبدیلی: سمبل کو صحیح فارمیٹ میں تبدیل کریں ***
-    # XAU/USD -> OANDA:XAU_USD
     finnhub_symbol = f"OANDA:{symbol.replace('/', '_')}"
     print(f"DEBUG: Converted symbol to Finnhub format: {finnhub_symbol}")
     
@@ -66,8 +64,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
     resolution = resolution_map[timeframe]
 
     end_time = int(time.time())
-    # ہم تقریباً 200 کینڈلز کا ڈیٹا حاصل کرنے کی کوشش کریں گے
-    # 15 منٹ کے لیے: 200 * 15 * 60 = 3 دن پہلے
     start_time = end_time - (200 * int(resolution) * 60 * 3) 
 
     params = {
@@ -79,13 +75,23 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
 
     try:
         response = await client.get(base_url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("s") != "ok":
-            print(f"❌ [FETCH] Finnhub returned an error or no data: {data}")
-            raise HTTPException(status_code=404, detail="No data received from Finnhub. Check symbol or timeframe.")
         
+        # *** اہم ترین ڈیبگنگ کا مرحلہ: جواب کو چیک کریں ***
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            # اگر جواب JSON نہیں ہے (مثلاً، HTML ایرر پیج)
+            print(f"❌ [FETCH] Finnhub did not return valid JSON. Status: {response.status_code}")
+            print(f"Raw Response: {response.text}")
+            raise HTTPException(status_code=502, detail=f"Invalid response from data provider: {response.text[:200]}")
+
+        # اگر جواب JSON ہے، تو اسے چیک کریں
+        if response.status_code != 200 or data.get("s") != "ok":
+            print(f"❌ [FETCH] Finnhub returned an error. Status: {response.status_code}, Data: {data}")
+            # **ایرر کو براہ راست فرنٹ اینڈ پر بھیجیں**
+            error_message = data.get('error', f"Unknown error from Finnhub. Status: {response.status_code}")
+            raise HTTPException(status_code=502, detail=f"Finnhub API Error: {error_message}")
+
         print(f"✅ [FETCH] Successfully fetched {len(data.get('c', []))} candles for {symbol}.")
         
         ohlc_data = []
@@ -97,13 +103,21 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
                 "volume": float(data.get('v', [0]*len(data['c']))[i])
             })
         return ohlc_data
-    except httpx.HTTPStatusError as e:
-        print(f"❌ [FETCH] HTTP Status Error: {e.response.status_code} - {e.response.text}")
-        raise HTTPException(status_code=e.response.status_code, detail="Could not connect to the data provider.")
+
+    except httpx.TimeoutException:
+        print("❌ [FETCH] Request to Finnhub timed out.")
+        raise HTTPException(status_code=504, detail="Connection to data provider timed out.")
+    except httpx.RequestError as e:
+        print(f"❌ [FETCH] A network request error occurred: {e}")
+        raise HTTPException(status_code=503, detail=f"Could not connect to the data provider. Network issue.")
     except Exception as e:
-        print(f"❌ [FETCH] An unexpected error occurred: {e}")
+        print(f"❌ [FETCH] An unexpected error occurred in fetch_real_ohlc_data: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Could not process data: {str(e)}")
+        # اگر یہ HTTPException ہے، تو اسے دوبارہ بھیجیں، ورنہ ایک نیا بنائیں
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
+
 
 @app.get("/signal")
 async def get_signal(
@@ -134,4 +148,4 @@ async def get_signal(
         print(f"❌ [SIGNAL] CRITICAL ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-                                    
+                                                                           
