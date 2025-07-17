@@ -5,7 +5,6 @@ import asyncio
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-# --- APScheduler کے ورژن 3 کے لیے صحیح امپورٹ ---
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import yfinance as yf
@@ -14,12 +13,12 @@ import pandas as pd
 # --- AI اور ہیلپر ماڈیولز کو امپورٹ کریں ---
 from fusion_engine import generate_final_signal
 from logger import log_signal
-from feedback_checker import check_signals_and_give_feedback
+# --- فنکشن کا صحیح نام امپورٹ کریں ---
+from feedback_checker import check_signals 
 from signal_tracker import add_active_signal
 
 # --- FastAPI ایپ اور شیڈولر کی شروعات ---
 app = FastAPI()
-# ورژن 3 کے لیے BackgroundScheduler کا استعمال کریں
 scheduler = BackgroundScheduler()
 
 # --- ہیلپر فنکشنز ---
@@ -118,18 +117,17 @@ async def get_signal(
 
 
 # --- بیک گراؤنڈ ٹاسک ---
-# ورژن 3 کے لیے، ہمیں async فنکشن کو ایک ریپر میں ڈالنا ہو گا
 def feedback_task_wrapper():
     """async فنکشن کو چلانے کے لیے ایک ریپر۔"""
     print("SCHEDULER: فیڈ بیک چیکر چل رہا ہے...")
-    asyncio.run(check_signals_and_give_feedback())
+    # --- فنکشن کا صحیح نام استعمال کریں ---
+    asyncio.run(check_signals()) 
 
 # --- ایپ کے شروع اور بند ہونے پر ---
 @app.on_event("startup")
 def startup_event():
     """ایپ کے شروع ہونے پر شیڈولر کو شروع کرتا ہے۔"""
     print("STARTUP: ایپلیکیشن شروع ہو رہی ہے...")
-    # ورژن 3 کے لیے، ہم اس طرح جاب کو شامل کرتے ہیں
     scheduler.add_job(feedback_task_wrapper, IntervalTrigger(minutes=15))
     scheduler.start()
 
@@ -138,3 +136,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
+    
