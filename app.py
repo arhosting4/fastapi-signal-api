@@ -53,20 +53,24 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
 
         # --- فول پروف ڈیٹا کلیننگ (حتمی ورژن) ---
         
-        # اگر کالم MultiIndex ہیں (ٹپلز کی شکل میں)، تو انہیں سادہ ناموں میں تبدیل کریں
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = ['_'.join(col).strip() for col in data.columns.values]
 
         data.reset_index(inplace=True)
-        
-        # تمام کالم کے ناموں کو چھوٹے حروف میں تبدیل کریں
         data.columns = [str(col).lower() for col in data.columns]
         
-        # 'date' یا 'datetime' کو 'datetime' میں تبدیل کریں
-        if 'date' in data.columns:
-            data.rename(columns={'date': 'datetime'}, inplace=True)
-        elif 'index' in data.columns:
-             data.rename(columns={'index': 'datetime'}, inplace=True)
+        # --- کالم کے ناموں کو حتمی شکل دیں ---
+        rename_dict = {
+            'date': 'datetime',
+            'index': 'datetime',
+            f'open_{yfinance_symbol.lower()}': 'open',
+            f'high_{yfinance_symbol.lower()}': 'high',
+            f'low_{yfinance_symbol.lower()}': 'low',
+            f'close_{yfinance_symbol.lower()}': 'close',
+            f'volume_{yfinance_symbol.lower()}': 'volume'
+        }
+        # صرف موجودہ کالموں کو ہی تبدیل کریں
+        data.rename(columns={k: v for k, v in rename_dict.items() if k in data.columns}, inplace=True)
 
         required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         for col in required_columns:
