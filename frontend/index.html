@@ -3,160 +3,233 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI - The Gold Standard</title>
+    <title>ScalpMaster AI - Gold Standard</title>
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Lightweight Charts CDN -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #000000; color: #e5e7eb; }
-        .btn-timeframe { background-color: #374151; color: #e5e7eb; padding: 0.5rem 1rem; border-radius: 0.375rem; transition: all 0.2s; border: 1px solid #4b5563; }
-        .btn-timeframe:hover { background-color: #4b5563; }
-        .btn-timeframe.active { background-color: #4f46e5; border-color: #4f46e5; color: white; }
-        .loader { border: 4px solid #374151; border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .buy { color: #22c55e; }
-        .sell { color: #ef4444; }
-        .wait { color: #f59e0b; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark background */
+            color: #d1d5db; /* Light gray text */
+        }
+        .signal-card {
+            background-color: #1f2937;
+            border-radius: 0.75rem;
+            border: 1px solid #374151;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        .signal-card.buy { border-left: 6px solid #10B981; }
+        .signal-card.sell { border-left: 6px solid #EF4444; }
+        .signal-card.wait { border-left: 6px solid #F59E0B; }
+        .signal-card.error { border-left: 6px solid #DC2626; }
+        .timeframe-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .timeframe-btn.active {
+            background-color: #4f46e5;
+            color: white;
+            font-weight: 600;
+        }
+        #chart-container {
+            width: 100%;
+            height: 500px;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
     </style>
 </head>
-<body class="flex items-center justify-center min-h-screen">
-    <div class="w-full max-w-6xl mx-auto p-4">
-        <header class="text-center mb-6">
+<body class="antialiased">
+    <main class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
             <h1 class="text-4xl font-bold text-amber-400">ScalpMaster AI</h1>
-            <p class="text-lg text-gray-400">The Gold Standard in Trading Signals</p>
+            <p class="text-lg text-gray-400 mt-2">The Gold Standard in Trading Signals</p>
         </header>
 
-        <main class="bg-gray-900/50 backdrop-blur-sm p-6 rounded-xl shadow-2xl border border-gray-700">
-            <div class="flex justify-center items-center mb-4 space-x-2">
-                <p class="text-lg font-medium">Timeframe:</p>
-                <button class="btn-timeframe active" data-timeframe="1min">1 Min</button>
-                <button class="btn-timeframe" data-timeframe="5min">5 Min</button>
-                <button class="btn-timeframe" data-timeframe="15min">15 Min</button>
+        <section id="dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel: Controls and Signal -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Timeframe Selection -->
+                <div class="bg-gray-800 p-4 rounded-lg">
+                    <h2 class="text-xl font-semibold mb-3 text-white">Timeframe:</h2>
+                    <div id="timeframe-selector" class="flex space-x-2">
+                        <button data-timeframe="1m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600">1 Min</button>
+                        <button data-timeframe="5m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600 active">5 Min</button>
+                        <button data-timeframe="15m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600">15 Min</button>
+                    </div>
+                </div>
+                <!-- Signal Display -->
+                <div id="signal-display" class="signal-card">
+                    <h3 class="text-xl font-semibold mb-2 text-gray-400">Initializing...</h3>
+                    <p class="text-gray-500">Please wait while the AI analyzes the market.</p>
+                </div>
             </div>
 
-            <div id="content-area" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Chart Panel -->
-                <div id="chart-container" class="lg:col-span-2 w-full h-96 lg:h-[500px] bg-gray-800/50 rounded-lg p-2">
-                    <!-- Chart will be rendered here -->
-                </div>
-
-                <!-- Signal Panel -->
-                <div id="signal-panel" class="w-full h-96 lg:h-[500px] bg-gray-800/50 rounded-lg p-6 flex flex-col justify-center">
-                    <!-- Signal details will be rendered here -->
-                </div>
+            <!-- Right Panel: Chart -->
+            <div class="lg:col-span-2 bg-gray-800 p-4 rounded-lg">
+                <h2 id="chart-title" class="text-xl font-semibold mb-3 text-white">XAU/USD Chart</h2>
+                <div id="chart-container"></div>
             </div>
-        </main>
-    </div>
+        </section>
+
+        <footer class="text-center text-gray-500 mt-12 py-4 border-t border-gray-700">
+            <p>&copy; 2025 ScalpMaster AI. All rights reserved.</p>
+            <p class="text-sm mt-1">Disclaimer: Trading involves significant risk. Do your own research.</p>
+        </footer>
+    </main>
 
     <script>
+        const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
-        const signalPanel = document.getElementById('signal-panel');
-        const timeframeButtons = document.querySelectorAll('.btn-timeframe');
-        
+        const timeframeSelector = document.getElementById('timeframe-selector');
+        const chartTitle = document.getElementById('chart-title');
+
         let chart = null;
         let candlestickSeries = null;
-        let activeTimeframe = '1min';
+        let currentTimeframe = '5m';
 
-        function showLoader() {
-            chartContainer.innerHTML = '<div class="flex items-center justify-center h-full"><div class="loader"></div></div>';
-            signalPanel.innerHTML = '<div class="flex items-center justify-center h-full"><div class="loader"></div></div>';
-        }
-
-        async function fetchAndDisplaySignal() {
-            showLoader();
-            if (chart) chart.remove();
-            chart = null;
-
-            try {
-                const response = await fetch(`/signal?symbol=XAU/USD&timeframe=${activeTimeframe}`);
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'An unknown error occurred');
-                }
-                const data = await response.json();
-                displayContent(data);
-            } catch (error) {
-                console.error("Error fetching signal:", error);
-                chartContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-400">Error: ${error.message}</div>`;
-                signalPanel.innerHTML = `<div class="flex items-center justify-center h-full text-red-400">Could not load signal.</div>`;
-            }
-        }
-
-        function displayContent(data) {
-            // 1. Display Chart
-            chartContainer.innerHTML = '';
-            if (data.candles && data.candles.length > 0) {
+        // Function to create or update the chart
+        function createOrUpdateChart(data) {
+            if (!chart) {
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth, height: chartContainer.clientHeight,
-                    layout: { backgroundColor: 'transparent', textColor: '#e5e7eb' },
-                    grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
-                    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#4b5563' },
-                    rightPriceScale: { borderColor: '#4b5563' }
+                    layout: {
+                        background: { color: '#1f2937' },
+                        textColor: '#d1d5db',
+                    },
+                    grid: {
+                        vertLines: { color: '#374151' },
+                        horzLines: { color: '#374151' },
+                    },
+                    timeScale: {
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
                 });
                 candlestickSeries = chart.addCandlestickSeries({
-                    upColor: '#22c55e', wickUpColor: '#22c55e',
-                    downColor: '#ef4444', wickDownColor: '#ef4444',
-                    borderVisible: false
+                    upColor: '#10B981',
+                    downColor: '#EF4444',
+                    borderDownColor: '#EF4444',
+                    borderUpColor: '#10B981',
+                    wickDownColor: '#EF4444',
+                    wickUpColor: '#10B981',
                 });
-                
-                const formattedCandles = data.candles.map(c => ({
-                    time: new Date(c.datetime).getTime() / 1000,
-                    open: c.open, high: c.high, low: c.low, close: c.close
-                }));
-                candlestickSeries.setData(formattedCandles);
-
-                if (data.tp) candlestickSeries.createPriceLine({ price: data.tp, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TP' }).applyOptions({});
-                if (data.sl) candlestickSeries.createPriceLine({ price: data.sl, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'SL' }).applyOptions({});
-                
-                if (data.signal === 'buy' || data.signal === 'sell') {
-                    const lastCandle = formattedCandles[formattedCandles.length - 1];
-                    candlestickSeries.setMarkers([{
-                        time: lastCandle.time,
-                        position: data.signal === 'buy' ? 'belowBar' : 'aboveBar',
-                        color: data.signal === 'buy' ? '#22c55e' : '#ef4444',
-                        shape: data.signal === 'buy' ? 'arrowUp' : 'arrowDown',
-                        size: 1.5
-                    }]);
-                }
-                chart.timeScale().fitContent();
-            } else {
-                 chartContainer.innerHTML = `<div class="flex items-center justify-center h-full text-gray-500">No chart data available.</div>`;
             }
 
-            // 2. Display Signal Details
-            const signalClass = data.signal || 'wait';
-            signalPanel.innerHTML = `
-                <div class="text-center">
-                    <h3 class="text-5xl font-extrabold ${signalClass} mb-2">${data.signal.toUpperCase()}</h3>
-                    <p class="text-xl font-semibold text-amber-400">XAU/USD (${data.timeframe})</p>
-                    <div class="space-y-3 mt-6 text-left">
-                        <p><strong>Confidence:</strong> <span class="font-mono">${data.confidence}%</span></p>
-                        <p><strong>Price:</strong> <span class="font-mono">${data.price}</span></p>
-                        <p class="buy"><strong>Take Profit:</strong> <span class="font-mono">${data.tp || 'N/A'}</span></p>
-                        <p class="sell"><strong>Stop Loss:</strong> <span class="font-mono">${data.sl || 'N/A'}</span></p>
-                        <p><strong>Pattern:</strong> <span class="font-mono">${data.pattern}</span></p>
-                    </div>
-                    <p class="mt-4 text-xs text-gray-400 text-left"><strong>AI Reason:</strong> ${data.reason}</p>
-                </div>
-            `;
+            const formattedData = data.map(candle => ({
+                time: new Date(candle.datetime).getTime() / 1000,
+                open: candle.open,
+                high: candle.high,
+                low: candle.low,
+                close: candle.close,
+            }));
+
+            candlestickSeries.setData(formattedData);
+            chart.timeScale().fitContent();
+        }
+        
+        // Function to add signal markers
+        function addSignalMarker(signalData) {
+            if (!candlestickSeries || !signalData.candles || signalData.candles.length === 0) return;
+
+            const lastCandle = signalData.candles[signalData.candles.length - 1];
+            const markers = [];
+            
+            if (signalData.signal === 'buy') {
+                markers.push({
+                    time: new Date(lastCandle.datetime).getTime() / 1000,
+                    position: 'belowBar',
+                    color: '#10B981',
+                    shape: 'arrowUp',
+                    text: 'BUY'
+                });
+            } else if (signalData.signal === 'sell') {
+                markers.push({
+                    time: new Date(lastCandle.datetime).getTime() / 1000,
+                    position: 'aboveBar',
+                    color: '#EF4444',
+                    shape: 'arrowDown',
+                    text: 'SELL'
+                });
+            }
+            candlestickSeries.setMarkers(markers);
         }
 
-        timeframeButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                timeframeButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                activeTimeframe = button.dataset.timeframe;
-                fetchAndDisplaySignal();
-            });
+        // Function to fetch and display the signal
+        async function fetchSignal(timeframe) {
+            signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe} timeframe.</p>`;
+            chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
+
+            try {
+                const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Could not fetch data from the provider.');
+                }
+                const data = await response.json();
+                
+                // Display Signal
+                const statusClass = data.signal || 'wait';
+                const signalText = data.signal ? data.signal.toUpperCase() : 'N/A';
+                const confidence = data.confidence ? `${data.confidence.toFixed(2)}%` : 'N/A';
+                const tier = data.tier || 'N/A';
+                const reason = data.reason || 'No specific reason provided.';
+                const price = data.price ? data.price.toFixed(5) : 'N/A';
+                const tp = data.tp ? data.tp.toFixed(5) : 'N/A';
+                const sl = data.sl ? data.sl.toFixed(5) : 'N/A';
+
+                let content = `
+                    <div class="signal-card ${statusClass}">
+                        <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signalText}</h3>
+                        <p class="text-lg font-semibold text-gray-200 mt-1">XAU/USD @ ${price}</p>
+                        <div class="text-left mt-4 space-y-1 text-sm">
+                            <p><strong>Confidence:</strong> ${confidence}</p>
+                            <p><strong>Tier:</strong> ${tier}</p>
+                            <p><strong>Reason:</strong> <em class="text-gray-400">${reason}</em></p>
+                            ${data.signal !== 'wait' ? `<p><strong>TP:</strong> ${tp}</p><p><strong>SL:</strong> ${sl}</p>` : ''}
+                        </div>
+                    </div>
+                `;
+                signalDisplay.innerHTML = content;
+
+                // Update Chart
+                if (data.candles && data.candles.length > 0) {
+                    createOrUpdateChart(data.candles);
+                    addSignalMarker(data);
+                } else {
+                    chartContainer.innerHTML = '<p class="text-center text-gray-500">Could not load chart data.</p>';
+                }
+
+            } catch (error) {
+                console.error("Fetch error:", error);
+                signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
+                chartContainer.innerHTML = '<p class="text-center text-gray-500">Could not load chart.</p>';
+            }
+        }
+
+        // Event listener for timeframe buttons
+        timeframeSelector.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const newTimeframe = e.target.dataset.timeframe;
+                if (newTimeframe !== currentTimeframe) {
+                    currentTimeframe = newTimeframe;
+                    // Update active button style
+                    document.querySelectorAll('#timeframe-selector button').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    e.target.classList.add('active');
+                    // Fetch new signal
+                    fetchSignal(currentTimeframe);
+                }
+            }
         });
 
-        window.onload = fetchAndDisplaySignal;
-        
-        window.onresize = () => {
-            if(chart) {
-                chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
-            }
-        };
+        // Initial fetch on page load
+        fetchSignal(currentTimeframe);
     </script>
 </body>
 </html>
