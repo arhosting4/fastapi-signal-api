@@ -6,7 +6,10 @@
     <title>ScalpMaster AI - Live Trading Cockpit</title>
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    
+    <!-- *** اہم ترین تبدیلی: لائبریری کے صحیح ورژن کا استعمال *** -->
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    
     <!-- Toastify.js for notifications -->
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
@@ -128,7 +131,6 @@
 
         // Fetch and display signal manually when a user clicks
         async function fetchAndDisplayManualSignal(symbol, timeframe) {
-            // Highlight active item
             document.querySelectorAll('.market-watch-item').forEach(el => el.classList.remove('active'));
             document.getElementById(`watch-${symbol}-${timeframe}`).classList.add('active');
 
@@ -138,25 +140,28 @@
 
             try {
                 const response = await fetch(`/signal?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`);
-                const data = await response.json();
-
                 if (!response.ok) {
-                    throw new Error(data.detail || 'Failed to fetch signal');
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to fetch signal');
                 }
-                
+                const data = await response.json();
                 displaySignal(data);
 
             } catch (error) {
                 console.error("Error fetching manual signal:", error);
                 signalDetails.innerHTML = `<div class="text-center p-8 text-red-400">Error: ${error.message}</div>`;
+                if(chart) chart.remove();
+                chart = null;
             }
         }
 
         // Display signal data in the right panel
         function displaySignal(data) {
-            // 1. Display Chart
+            if (chart) chart.remove();
+            chart = null;
+            chartContainer.innerHTML = ''; // Clear previous chart/error messages
+
             if (data.candles && data.candles.length > 0) {
-                if (chart) chart.remove();
                 chart = LightweightCharts.createChart(chartContainer, {
                     width: chartContainer.clientWidth,
                     height: chartContainer.clientHeight,
@@ -176,17 +181,9 @@
                 }));
                 candlestickSeries.setData(formattedCandles);
 
-                // Add TP/SL lines if they exist
-                if (data.tp || data.sl) {
-                    const lineData = [];
-                    if(data.tp) lineData.push({ time: formattedCandles[formattedCandles.length - 1].time, value: data.tp });
-                    if(data.sl) lineData.push({ time: formattedCandles[formattedCandles.length - 1].time, value: data.sl });
-
-                    if(data.tp) candlestickSeries.createPriceLine({ price: data.tp, color: '#10b981', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TP' });
-                    if(data.sl) candlestickSeries.createPriceLine({ price: data.sl, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'SL' });
-                }
+                if (data.tp) candlestickSeries.createPriceLine({ price: data.tp, color: '#10b981', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TP' }).applyOptions({});
+                if (data.sl) candlestickSeries.createPriceLine({ price: data.sl, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'SL' }).applyOptions({});
                 
-                // Add signal marker
                 if (data.signal === 'buy' || data.signal === 'sell') {
                     const lastCandle = formattedCandles[formattedCandles.length - 1];
                     candlestickSeries.setMarkers([{
@@ -197,11 +194,11 @@
                         text: data.signal.toUpperCase()
                     }]);
                 }
-
                 chart.timeScale().fitContent();
+            } else {
+                 chartContainer.innerHTML = `<div class="text-center p-8 text-gray-500">No chart data available.</div>`;
             }
 
-            // 2. Display Signal Details
             const signalClass = data.signal || 'wait';
             signalDetails.innerHTML = `
                 <div class="p-4">
@@ -221,7 +218,6 @@
             `;
         }
         
-        // Update Market Watch item status
         function updateMarketWatchStatus(data) {
             const key = `${data.symbol}-${data.timeframe}`;
             const statusEl = document.getElementById(`status-${key}`);
@@ -229,12 +225,9 @@
 
             if (data.status === 'ok') {
                 statusEl.innerHTML = `<span class="live-badge">LIVE</span>`;
-            } else {
-                // You can add other statuses here if needed
             }
         }
 
-        // WebSocket Connection
         function connectWebSocket() {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
@@ -260,7 +253,6 @@
                     }).showToast();
                     updateMarketWatchStatus(data);
                 }
-                // Add logic for 'signal_closed' here later
             };
 
             ws.onclose = () => {
@@ -275,7 +267,6 @@
             };
         }
 
-        // Initial setup
         window.onload = () => {
             initializeMarketWatch();
             connectWebSocket();
@@ -286,7 +277,6 @@
                 chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
             }
         };
-
     </script>
 </body>
 </html>
