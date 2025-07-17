@@ -51,15 +51,12 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         if data.empty:
             raise ValueError(f"'{yfinance_symbol}' کے لیے کوئی ڈیٹا نہیں ملا۔")
 
-        # --- فول پروف ڈیٹا کلیننگ (حتمی ورژن) ---
-        
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = ['_'.join(col).strip() for col in data.columns.values]
 
         data.reset_index(inplace=True)
         data.columns = [str(col).lower() for col in data.columns]
         
-        # --- کالم کے ناموں کو حتمی شکل دیں ---
         rename_dict = {
             'date': 'datetime',
             'index': 'datetime',
@@ -69,7 +66,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
             f'close_{yfinance_symbol.lower()}': 'close',
             f'volume_{yfinance_symbol.lower()}': 'volume'
         }
-        # صرف موجودہ کالموں کو ہی تبدیل کریں
         data.rename(columns={k: v for k, v in rename_dict.items() if k in data.columns}, inplace=True)
 
         required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
@@ -93,6 +89,7 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
 
 @app.get("/")
 async def read_root():
+    # --- یہ لائن اپ ڈیٹ کی گئی ہے ---
     return FileResponse('frontend/index.html')
 
 @app.get("/health")
@@ -148,4 +145,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-    
+        
