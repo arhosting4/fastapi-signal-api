@@ -1,12 +1,12 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim-buster
+# Use a more modern and stable Python runtime as a parent image
+FROM python:3.9-slim-bookworm
 
 # Set the working directory in the container
 WORKDIR /app
 
 # --- TA-Lib C Library Installation ---
 # 1. Install necessary build tools and dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     wget \
     unzip \
@@ -27,7 +27,6 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
 COPY requirements.txt .
 
 # Install the Python dependencies
-# TA-Lib پائتھون ریپر اب یہاں انسٹال ہو جائے گا
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code into the container
