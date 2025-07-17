@@ -50,7 +50,6 @@ async def startup_event():
 async def health_check():
     """
     Render ہیلتھ چیک کے لیے ایک سادہ اور تیز اینڈ پوائنٹ۔
-    یہ صرف اس بات کی تصدیق کرتا ہے کہ ایپلیکیشن چل رہی ہے۔
     """
     return {"status": "ok"}
 
@@ -65,7 +64,7 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        response = await client.get(url, headers=headers, timeout=15) # تھوڑا سا ٹائم آؤٹ بڑھایا گیا
+        response = await client.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         data = response.json()
         if "status" in data and data["status"] == "error":
@@ -101,24 +100,18 @@ async def get_signal(
     print(f"DEBUG: Received signal request for {symbol} on {timeframe}")
     try:
         async with httpx.AsyncClient() as client:
-            # API کالز کو ایک ساتھ چلائیں
-            candles_task = fetch_real_ohlc_data(symbol, timeframe, client)
-            
-            # یہاں ہم نے generate_final_signal کو await نہیں کیا کیونکہ وہ async نہیں ہے
-            # لیکن اگر مستقبل میں وہ async ہو جائے تو اسے بھی await کرنا ہو گا
-            candles = await candles_task
-            
-        # اب جب کہ ہمارے پاس ڈیٹا ہے، ہم سگنل پیدا کر سکتے ہیں
-        signal_result = generate_final_signal(symbol, candles, timeframe)
+            candles = await fetch_real_ohlc_data(symbol, timeframe, client)
+        
+        # --- یہ ہے وہ تبدیلی جو پچھلے ایرر کو ٹھیک کرتی ہے ---
+        signal_result = await generate_final_signal(symbol, candles, timeframe)
         
         log_signal(symbol, signal_result, candles)
         return signal_result
     except HTTPException as e:
-        # معلوم ایررز کو دوبارہ بھیجیں
         raise e
     except Exception as e:
-        # نامعلوم ایررز کو لاگ کریں اور ایک عمومی ایرر بھیجیں
         print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
 
+                                
