@@ -4,34 +4,13 @@ FROM python:3.9-slim-bookworm
 # Set the working directory in the container
 WORKDIR /app
 
-# --- TA-Lib C Library Installation ---
-# 1. Install necessary build tools and dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    wget \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
+# --- کوئی TA-Lib انسٹالیشن کی ضرورت نہیں ---
 
-# 2. Download, build, and install TA-Lib C library from source
-RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
-    tar -xvzf ta-lib-0.4.0-src.tar.gz && \
-    cd ta-lib/ && \
-    ./configure --prefix=/usr && \
-    make && \
-    make install && \
-    cd .. && \
-    rm -rf ta-lib-0.4.0-src.tar.gz ta-lib/
-
-# --- Python Dependencies ---
 # Copy the requirements file into the container
 COPY requirements.txt .
 
-# *** اہم ترین تبدیلی: TA-Lib کو الگ سے انسٹال کریں ***
-# پہلے باقی تمام لائبریریاں انسٹال کریں
+# Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-
-# اب TA-Lib پائتھون ریپر کو دستی طور پر انسٹال کریں
-RUN pip install --no-cache-dir TA-Lib
 
 # Copy the rest of the application code into the container
 COPY . .
