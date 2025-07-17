@@ -5,7 +5,6 @@ import json
 import asyncio
 import httpx
 from typing import List, Dict, Any
-from urllib.parse import quote # URL کو انکوڈ کرنے کا بہتر طریقہ
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
@@ -16,10 +15,8 @@ from feedback_checker import check_signals
 
 # --- API کیز کو شروع میں ہی چیک کریں ---
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
-MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
-
-if not TWELVE_DATA_API_KEY or not MARKETAUX_API_TOKEN:
-    print("--- CRITICAL: Missing required environment variables. ---")
+if not TWELVE_DATA_API_KEY:
+    print("--- CRITICAL: TWELVE_DATA_API_KEY environment variable is not set. ---")
     sys.exit(1)
 
 app = FastAPI()
@@ -56,41 +53,33 @@ async def read_root():
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
     print(f"➡️ [FETCH] Attempting to fetch data for {symbol} ({timeframe})...")
     
-    # *** اہم ترین تبدیلی: API کی کو ہیڈرز میں بھیجیں ***
-    base_url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&outputsize=100"
+    # *** حتمی اور فول پروف حل: API کی کو براہ راست URL میں شامل کریں ***
+    # ہم تمام پراکسی اور ہیڈرز کو ہٹا رہے ہیں اور سب سے سادہ طریقہ استعمال کر رہے ہیں
+    base_url = "https://api.twelvedata.com/time_series"
     
-    # پراکسی کا استعمال جاری رکھیں گے
-    # ہم صرف ٹارگٹ URL کو انکوڈ کریں گے
-    encoded_url = quote(base_url, safe='/:?=&')
-    proxy_url = f"https://api.allorigins.win/get?url={encoded_url}"
-    
-    # API کی کو ہیڈرز میں شامل کریں
-    headers = {
-        'User-Agent': 'Mozilla/5.0',
-        'Authorization': f'apikey {TWELVE_DATA_API_KEY}' # یہ سب سے اہم تبدیلی ہے
+    # پیرامیٹرز کو ایک ڈکشنری میں بنائیں
+    params = {
+        "symbol": symbol,
+        "interval": timeframe,
+        "apikey": TWELVE_DATA_API_KEY, # API کی کو یہاں شامل کریں
+        "outputsize": 100
     }
     
-    print(f"DEBUG: Fetching via proxy with API key in headers.")
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    print(f"DEBUG: Making a direct call to Twelve Data with params.")
 
     try:
-        # اب ہم پراکسی کو کال کریں گے، لیکن ہیڈرز میں API کی بھیجیں گے
-        # allorigins پراکسی ہیڈرز کو آگے نہیں بھیجتی، اس لیے ہمیں براہ راست کال کرنی پڑے گی
-        # آئیے پراکسی کو عارضی طور پر ہٹا کر دیکھتے ہیں
-        
-        direct_headers = {
-            'User-Agent': 'Mozilla/5.0',
-            'Authorization': f'apikey {TWELVE_DATA_API_KEY}'
-        }
-        
-        print("DEBUG: Trying a direct call first, removing proxy.")
-        
-        response = await client.get(base_url, headers=direct_headers, timeout=30)
+        # httpx کو پیرامیٹرز کی ڈکشنری دیں، وہ خود ہی اسے صحیح طریقے سے URL میں شامل کر دے گا
+        response = await client.get(base_url, params=params, headers=headers, timeout=30)
         response.raise_for_status()
         data = response.json()
 
         if "status" in data and data["status"] == "error":
+            # یہ وہی ایرر ہے جو ہمیں مل رہا تھا
             print(f"❌ [FETCH] API provider returned an error: {data.get('message')}")
             raise HTTPException(status_code=400, detail=f"API Error: {data.get('message', 'Unknown error')}")
+        
         if "values" not in data or not data["values"]:
             print(f"❌ [FETCH] No 'values' in data for {symbol}.")
             raise HTTPException(status_code=404, detail="No data found for this symbol/timeframe.")
@@ -108,9 +97,8 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
             except (ValueError, KeyError): continue
         return ohlc_data
     except httpx.HTTPStatusError as e:
-        # اگر براہ راست کال ناکام ہوتی ہے، تو اس کا مطلب ہے کہ IP بلاک ہے
-        print(f"❌ [FETCH] Direct call failed (likely IP block): {e}. We need a better proxy.")
-        raise HTTPException(status_code=503, detail="Service is temporarily unavailable due to provider restrictions.")
+        print(f"❌ [FETCH] HTTP Status Error (likely IP block or server issue): {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail="Could not connect to the data provider.")
     except Exception as e:
         print(f"❌ [FETCH] An unexpected error occurred: {e}")
         if isinstance(e, HTTPException): raise e
