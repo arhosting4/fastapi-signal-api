@@ -51,27 +51,27 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         if data.empty:
             raise ValueError(f"'{yfinance_symbol}' کے لیے کوئی ڈیٹا نہیں ملا۔")
 
-        # --- فول پروف ڈیٹا کلیننگ ---
-        print(f"DEBUG: yfinance سے حاصل کردہ اصل کالم: {data.columns.to_list()}")
+        # --- فول پروف ڈیٹا کلیننگ (حتمی ورژن) ---
+        
+        # اگر کالم MultiIndex ہیں (ٹپلز کی شکل میں)، تو انہیں سادہ ناموں میں تبدیل کریں
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = ['_'.join(col).strip() for col in data.columns.values]
 
         data.reset_index(inplace=True)
         
-        # کالم کے ناموں کو چھوٹے حروف میں تبدیل کریں
-        data.columns = [col.lower() for col in data.columns]
+        # تمام کالم کے ناموں کو چھوٹے حروف میں تبدیل کریں
+        data.columns = [str(col).lower() for col in data.columns]
         
-        print(f"DEBUG: چھوٹے حروف میں تبدیل کرنے کے بعد کالم: {data.columns.to_list()}")
-
         # 'date' یا 'datetime' کو 'datetime' میں تبدیل کریں
         if 'date' in data.columns:
             data.rename(columns={'date': 'datetime'}, inplace=True)
         elif 'index' in data.columns:
              data.rename(columns={'index': 'datetime'}, inplace=True)
 
-        # یہ یقینی بنائیں کہ تمام ضروری کالم موجود ہیں
         required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         for col in required_columns:
             if col not in data.columns:
-                raise ValueError(f"ڈیٹا میں ضروری کالم '{col}' موجود نہیں ہے۔")
+                raise ValueError(f"ڈیٹا میں ضروری کالم '{col}' موجود نہیں ہے۔ موجودہ کالم: {data.columns.to_list()}")
 
         data['datetime'] = pd.to_datetime(data['datetime'], utc=True)
         data['datetime'] = data['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -144,4 +144,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-        
+    
