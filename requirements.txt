@@ -5,6 +5,5 @@ python-dotenv==1.0.1
 requests==2.32.3
 pandas==2.2.2
 pandas_ta
-TA-Lib
+TA-Lib  # <-- یقینی بنائیں کہ یہ لائن موجود ہے
 httpx
-# apscheduler اور asyncio-dispatch کو ہٹا دیا گیا ہے
