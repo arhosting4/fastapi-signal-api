@@ -3,6 +3,7 @@ import traceback
 import asyncio
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles # --- یہ لائن شامل کریں ---
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import yfinance as yf
@@ -16,8 +17,13 @@ from signal_tracker import add_active_signal
 
 # --- FastAPI ایپ اور شیڈولر کی شروعات ---
 app = FastAPI()
+
+# --- اسٹیٹک فائلوں کے لیے فولڈر کو ماؤنٹ کریں ---
+app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+
 scheduler = BackgroundScheduler()
 
+# ... (باقی تمام ہیلپر فنکشنز اور API اینڈ پوائنٹس ویسے ہی رہیں گے) ...
 # --- ہیلپر فنکشنز ---
 
 def get_yfinance_symbol(symbol: str) -> str:
@@ -89,7 +95,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
 
 @app.get("/")
 async def read_root():
-    # --- یہ لائن اپ ڈیٹ کی گئی ہے ---
     return FileResponse('frontend/index.html')
 
 @app.get("/health")
@@ -145,4 +150,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-        
+    
