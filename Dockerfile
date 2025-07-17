@@ -1,4 +1,4 @@
-# Use a more modern and stable Python runtime as a parent image
+# Use a modern and stable Python runtime as a parent image
 FROM python:3.9-slim-bookworm
 
 # Set the working directory in the container
@@ -21,6 +21,9 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     make install && \
     cd .. && \
     rm -rf ta-lib-0.4.0-src.tar.gz ta-lib/
+
+# *** اہم تبدیلی: کمپائلر کو لائبریری کا راستہ بتائیں ***
+ENV LD_LIBRARY_PATH=/usr/lib
 
 # --- Python Dependencies ---
 # Copy the requirements file into the container
