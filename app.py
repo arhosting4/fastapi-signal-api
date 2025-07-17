@@ -1,11 +1,12 @@
 import os
 import httpx
 import traceback
-import asyncio  # <--- صرف ایک بار اوپر امپورٹ کریں
+import asyncio
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# --- APScheduler کے ورژن 3 کے لیے صحیح امپورٹ ---
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import yfinance as yf
 import pandas as pd
@@ -18,7 +19,8 @@ from signal_tracker import add_active_signal
 
 # --- FastAPI ایپ اور شیڈولر کی شروعات ---
 app = FastAPI()
-scheduler = AsyncIOScheduler()
+# ورژن 3 کے لیے BackgroundScheduler کا استعمال کریں
+scheduler = BackgroundScheduler()
 
 # --- ہیلپر فنکشنز ---
 
@@ -54,8 +56,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
 
         data.reset_index(inplace=True)
         
-        # 'Datetime' کالم کو 'dt' میں تبدیل کریں تاکہ یہ یقینی بنایا جا سکے کہ کوئی نام کا تصادم نہ ہو
-        # اور اسے UTC میں تبدیل کریں
         data.rename(columns={"Datetime": "dt"}, inplace=True)
         data['dt'] = pd.to_datetime(data['dt'], utc=True)
 
@@ -118,20 +118,23 @@ async def get_signal(
 
 
 # --- بیک گراؤنڈ ٹاسک ---
-@scheduler.scheduled_job(IntervalTrigger(minutes=15))
-async def scheduled_feedback_task():
+# ورژن 3 کے لیے، ہمیں async فنکشن کو ایک ریپر میں ڈالنا ہو گا
+def feedback_task_wrapper():
+    """async فنکشن کو چلانے کے لیے ایک ریپر۔"""
     print("SCHEDULER: فیڈ بیک چیکر چل رہا ہے...")
-    await check_signals_and_give_feedback()
-
+    asyncio.run(check_signals_and_give_feedback())
 
 # --- ایپ کے شروع اور بند ہونے پر ---
 @app.on_event("startup")
-async def startup_event():
+def startup_event():
+    """ایپ کے شروع ہونے پر شیڈولر کو شروع کرتا ہے۔"""
     print("STARTUP: ایپلیکیشن شروع ہو رہی ہے...")
+    # ورژن 3 کے لیے، ہم اس طرح جاب کو شامل کرتے ہیں
+    scheduler.add_job(feedback_task_wrapper, IntervalTrigger(minutes=15))
     scheduler.start()
 
 @app.on_event("shutdown")
 def shutdown_event():
+    """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-
