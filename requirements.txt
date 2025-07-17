@@ -7,5 +7,4 @@ pandas==2.2.2
 pandas_ta
 TA-Lib
 httpx
-apscheduler==4.0.0a2  # <-- ورژن 4 میں اپ گریڈ کریں
-asyncio-dispatch    # <-- یہ نئی لائبریری شامل کریں
+# apscheduler اور asyncio-dispatch کو ہٹا دیا گیا ہے
