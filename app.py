@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from apscheduler.schedulers.asyncio import AsyncIOScheduler # <-- اسے تبدیل کریں
 from feedback_checker import check_signals
 import httpx
 import traceback
@@ -13,12 +12,39 @@ import asyncio # <-- asyncio کو امپورٹ کریں
 
 app = FastAPI()
 
-# Twelve Data API Key
+# تمام انوائرمنٹ ویری ایبلز
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
 
+# --- اہم تبدیلی: اپنا خود کا بیک گراؤنڈ ٹاسک بنائیں ---
+async def run_feedback_checker_periodically():
+    """
+    یہ فنکشن ہمیشہ چلتا رہے گا اور ہر 15 منٹ بعد check_signals کو چلائے گا۔
+    """
+    while True:
+        print("Running Feedback Checker (Background Task)...")
+        try:
+            await check_signals()
+            print("Feedback check finished.")
+        except Exception as e:
+            print(f"Error during scheduled feedback check: {e}")
+            traceback.print_exc()
+        
+        # 15 منٹ (900 سیکنڈ) انتظار کریں
+        await asyncio.sleep(900)
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    ایپلیکیشن کے شروع ہونے پر ہمارا بیک گراؤنڈ ٹاسک شروع کریں۔
+    """
+    print("✅ Application starting up. Scheduling background task.")
+    asyncio.create_task(run_feedback_checker_periodically())
+
+
+# --- باقی تمام کوڈ ویسے ہی رہے گا ---
+
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
-    # ... (یہ فنکشن ویسے ہی رہے گا، کوئی تبدیلی نہیں) ...
     if not TWELVE_DATA_API_KEY:
         raise ValueError("TWELVE_DATA_API_KEY is not set in environment variables.")
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
@@ -52,21 +78,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Error parsing Twelve Data response.")
 
-# --- اہم تبدیلی: شیڈولر کو async بنائیں ---
-@app.on_event("startup")
-async def startup_event():
-    """
-    ایپلیکیشن کے شروع ہونے پر شیڈولر کو چلائیں
-    """
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_signals, 'interval', minutes=15)
-    scheduler.start()
-    print("✅ Async Background scheduler started.")
-    # اس بات کو یقینی بنائیں کہ شیڈولر پس منظر میں چلتا رہے
-    asyncio.create_task(scheduler._main_loop())
-
-
-# فرنٹ اینڈ فائلوں کو پیش کریں
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 
 @app.get("/")
@@ -78,7 +89,6 @@ async def get_signal(
     symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)"),
     timeframe: str = Query("5min", description="Timeframe (e.g., 1min, 5min, 1h)")
 ):
-    # ... (یہ فنکشن ویسے ہی رہے گا، کوئی تبدیلی نہیں) ...
     print(f"DEBUG: Received symbol: {symbol}, Timeframe: {timeframe}")
     try:
         async with httpx.AsyncClient() as client:
@@ -92,4 +102,4 @@ async def get_signal(
         print(f"CRITICAL ERROR in app.py for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-        
+                                
