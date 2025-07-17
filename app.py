@@ -46,23 +46,31 @@ manager = ConnectionManager()
 # --- مارکیٹ اسکینر ---
 async def market_scanner():
     # ان پیئرز اور ٹائم فریمز کو اسکین کریں
-    pairs_to_scan = ["XAU/USD", "EUR/USD", "GBP/USD"]
-    timeframes_to_scan = ["1min", "5min"]
+    pairs_to_scan = ["XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY"]
+    timeframes_to_scan = ["5min", "15min"] # چھوٹے ٹائم فریمز کو کم کریں
     
+    await asyncio.sleep(15) # ایپلیکیشن کے شروع ہونے کے 15 سیکنڈ بعد اسکینر شروع کریں
+
     while True:
         print("🤖 Running Market Scanner...")
         for symbol in pairs_to_scan:
             for timeframe in timeframes_to_scan:
                 try:
+                    # ہر API کال کے درمیان وقفہ بڑھائیں تاکہ ریٹ لمٹ سے بچا جا سکے
+                    # 8 کالز فی منٹ سے کم رہنے کے لیے (8 * 8 = 64 سیکنڈ)
+                    await asyncio.sleep(8) 
+
                     async with httpx.AsyncClient() as client:
                         candles = await fetch_real_ohlc_data(symbol, timeframe, client)
                     
+                    if not candles:
+                        print(f"ℹ️ No candle data for {symbol} on {timeframe}, skipping.")
+                        continue # اگر ڈیٹا نہ ملے تو اگلی آئٹم پر جائیں
+
                     signal_result = await generate_final_signal(symbol, candles, timeframe)
                     
-                    # صرف نئے "BUY" یا "SELL" سگنلز کو براڈکاسٹ کریں
                     if signal_result.get("status") == "ok":
                         print(f"📢 New Signal Found: {symbol} ({timeframe}) - {signal_result.get('signal')}")
-                        # پیغام کو JSON سٹرنگ میں تبدیل کریں
                         message = json.dumps({
                             "type": "new_signal",
                             "data": signal_result
@@ -71,10 +79,8 @@ async def market_scanner():
                         
                 except Exception as e:
                     print(f"⚠️ Error scanning {symbol} on {timeframe}: {e}")
-                
-                await asyncio.sleep(5) # ہر API کال کے درمیان تھوڑا وقفہ
         
-        print("✅ Market Scanner finished a cycle. Waiting for next run...")
+        print("✅ Market Scanner finished a cycle. Waiting for 1 minute before next cycle.")
         await asyncio.sleep(60) # ہر مکمل اسکین کے بعد 1 منٹ انتظار کریں
 
 # --- بیک گراؤنڈ ٹاسک ---
@@ -107,7 +113,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # فرنٹ اینڈ سے آنے والے پیغامات کو سنیں (اگر ضرورت ہو)
             data = await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -126,7 +131,6 @@ async def read_root():
     return FileResponse('frontend/index.html')
 
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
-    # ... (یہ فنکشن ویسے ہی رہے گا) ...
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -134,9 +138,11 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
         response.raise_for_status()
         data = response.json()
         if "status" in data and data["status"] == "error":
-            raise HTTPException(status_code=500, detail=f"Twelve Data API Error: {data.get('message', 'Unknown error')}")
+            # اس ایرر کو لاگ کریں لیکن کریش نہ ہوں
+            print(f"API Error from Twelve Data for {symbol}: {data.get('message', 'Unknown error')}")
+            return []
         if "values" not in data or not data["values"]:
-            return [] # خالی لسٹ واپس کریں تاکہ کریش نہ ہو
+            return []
         ohlc_data = []
         for entry in reversed(data["values"]):
             try:
@@ -150,21 +156,20 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
         return ohlc_data
     except Exception as e:
         print(f"Error fetching OHLC data for {symbol}: {e}")
-        return [] # ایرر کی صورت میں بھی خالی لسٹ واپس کریں
+        return []
 
 @app.get("/signal")
 async def get_signal(
     symbol: str = Query(..., description="Trading symbol"),
     timeframe: str = Query("5min", description="Timeframe")
 ):
-    # یہ اینڈ پوائنٹ اب صرف دستی (manual) سگنل حاصل کرنے کے لیے ہے
     print(f"DEBUG: Manual signal request for {symbol} on {timeframe}")
     try:
         async with httpx.AsyncClient() as client:
             candles = await fetch_real_ohlc_data(symbol, timeframe, client)
         
         if not candles:
-            raise HTTPException(status_code=404, detail="Could not fetch candle data.")
+            raise HTTPException(status_code=404, detail="Could not fetch candle data. The API limit may have been reached or the symbol is invalid.")
             
         signal_result = await generate_final_signal(symbol, candles, timeframe)
         log_signal(symbol, signal_result, candles)
@@ -175,3 +180,4 @@ async def get_signal(
         print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
+    
