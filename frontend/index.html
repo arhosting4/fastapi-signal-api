@@ -9,8 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lightweight Charts CDN -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- مقامی Lightweight Charts لائبریری -->
+    <script src="/frontend/lightweight-charts.standalone.production.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -93,10 +93,8 @@
         let candlestickSeries = null;
         let currentTimeframe = '5m';
 
-        // --- فول پروف چارٹ بنانے کا فنکشن ---
         function initializeChart() {
             try {
-                // پرانے چارٹ کو صاف کریں (اگر موجود ہو)
                 chartContainer.innerHTML = '';
                 
                 chart = LightweightCharts.createChart(chartContainer, {
@@ -110,21 +108,16 @@
                     borderDownColor: '#EF4444', borderUpColor: '#10B981',
                     wickDownColor: '#EF4444', wickUpColor: '#10B981'
                 });
-                console.log("SUCCESS: Chart and series initialized successfully.");
             } catch (e) {
                 console.error("FATAL: Could not create chart.", e);
                 chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library.</p>`;
             }
         }
 
-        // --- ڈیٹا کو اپ ڈیٹ کرنے کا فنکشن ---
         function updateChart(signalData) {
             if (!chart || !candlestickSeries) {
-                console.error("ERROR: Chart or series not available for update.");
                 return;
             }
-
-            // کینڈل ڈیٹا کو فارمیٹ کریں
             const formattedCandles = signalData.candles.map(candle => ({
                 time: new Date(candle.datetime).getTime() / 1000,
                 open: candle.open,
@@ -134,7 +127,6 @@
             }));
             candlestickSeries.setData(formattedCandles);
 
-            // سگنل مارکر شامل کریں
             const lastCandle = formattedCandles[formattedCandles.length - 1];
             const markers = [];
             if (signalData.signal === 'buy') {
@@ -147,7 +139,6 @@
             chart.timeScale().fitContent();
         }
 
-        // --- سگنل حاصل کریں اور ڈسپلے کریں ---
         async function fetchAndDisplaySignal(timeframe) {
             signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe}.</p>`;
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
@@ -160,7 +151,6 @@
                 }
                 const data = await response.json();
                 
-                // سگنل ڈسپلے کریں
                 const statusClass = data.signal || 'wait';
                 const signalText = data.signal ? data.signal.toUpperCase() : 'N/A';
                 const confidence = data.confidence ? `${data.confidence.toFixed(2)}%` : 'N/A';
@@ -184,7 +174,6 @@
                 `;
                 signalDisplay.innerHTML = content;
 
-                // چارٹ اپ ڈیٹ کریں
                 if (data.candles && data.candles.length > 0) {
                     updateChart(data);
                 } else {
@@ -197,7 +186,6 @@
             }
         }
 
-        // --- ایونٹ لسنر اور شروعات ---
         timeframeSelector.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON') {
                 const newTimeframe = e.target.dataset.timeframe;
@@ -210,7 +198,6 @@
             }
         });
 
-        // --- صفحہ لوڈ ہونے پر چارٹ بنائیں اور پہلا سگنل حاصل کریں ---
         document.addEventListener('DOMContentLoaded', () => {
             initializeChart();
             fetchAndDisplaySignal(currentTimeframe);
