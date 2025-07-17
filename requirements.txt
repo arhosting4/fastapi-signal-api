@@ -9,7 +9,7 @@ httpx==0.28.1
 numpy==1.26.4
 pandas==2.2.2
 pandas_ta
-yfinance  # <--- نیا اضافہ!
+yfinance
 
 # Scheduling and Background Tasks
-apscheduler==4.0.0a2
+apscheduler==3.10.4  # <--- مستحکم ورژن 3 میں تبدیل کر دیا گیا
