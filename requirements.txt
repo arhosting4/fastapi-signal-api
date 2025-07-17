@@ -5,5 +5,5 @@ python-dotenv==1.0.1
 requests==2.32.3
 pandas==2.2.2
 pandas_ta
-TA-Lib  # <-- یقینی بنائیں کہ یہ لائن موجود ہے
+# TA-Lib والی لائن یہاں سے ہٹا دی گئی ہے
 httpx
