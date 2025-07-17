@@ -1,9 +1,15 @@
+# FastAPI and Server
 fastapi==0.111.0
 uvicorn==0.30.1
 gunicorn==22.0.0
 python-dotenv==1.0.1
-requests==2.32.3
-httpx
+httpx==0.28.1
+
+# Data and AI
 numpy==1.26.4
 pandas==2.2.2
-pandas_ta==0.3.14b0
+pandas_ta
+yfinance  # <--- نیا اضافہ!
+
+# Scheduling and Background Tasks
+apscheduler==4.0.0a2
