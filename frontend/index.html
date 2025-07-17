@@ -93,32 +93,37 @@
         let candlestickSeries = null;
         let currentTimeframe = '5m';
 
-        // Function to create or update the chart
-        function createOrUpdateChart(data) {
-            if (!chart) {
-                chart = LightweightCharts.createChart(chartContainer, {
-                    layout: {
-                        background: { color: '#1f2937' },
-                        textColor: '#d1d5db',
-                    },
-                    grid: {
-                        vertLines: { color: '#374151' },
-                        horzLines: { color: '#374151' },
-                    },
-                    timeScale: {
-                        timeVisible: true,
-                        secondsVisible: false,
-                    },
-                });
-                candlestickSeries = chart.addCandlestickSeries({
-                    upColor: '#10B981',
-                    downColor: '#EF4444',
-                    borderDownColor: '#EF4444',
-                    borderUpColor: '#10B981',
-                    wickDownColor: '#EF4444',
-                    wickUpColor: '#10B981',
-                });
-            }
+        // --- چارٹ کو صرف ایک بار بنائیں ---
+        function initializeChart() {
+            if (chart) return; // اگر چارٹ پہلے سے موجود ہے تو کچھ نہ کریں
+
+            chart = LightweightCharts.createChart(chartContainer, {
+                layout: {
+                    background: { color: '#1f2937' },
+                    textColor: '#d1d5db',
+                },
+                grid: {
+                    vertLines: { color: '#374151' },
+                    horzLines: { color: '#374151' },
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#10B981',
+                downColor: '#EF4444',
+                borderDownColor: '#EF4444',
+                borderUpColor: '#10B981',
+                wickDownColor: '#EF4444',
+                wickUpColor: '#10B981',
+            });
+        }
+
+        // --- چارٹ کے ڈیٹا کو اپ ڈیٹ کریں ---
+        function updateChartData(data) {
+            if (!candlestickSeries) return; // اگر سیریز موجود نہیں ہے تو کچھ نہ کریں
 
             const formattedData = data.map(candle => ({
                 time: new Date(candle.datetime).getTime() / 1000,
@@ -132,7 +137,7 @@
             chart.timeScale().fitContent();
         }
         
-        // Function to add signal markers
+        // --- سگنل مارکر شامل کریں ---
         function addSignalMarker(signalData) {
             if (!candlestickSeries || !signalData.candles || signalData.candles.length === 0) return;
 
@@ -159,7 +164,7 @@
             candlestickSeries.setMarkers(markers);
         }
 
-        // Function to fetch and display the signal
+        // --- سگنل حاصل کریں اور ڈسپلے کریں ---
         async function fetchSignal(timeframe) {
             signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe} timeframe.</p>`;
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
@@ -172,7 +177,7 @@
                 }
                 const data = await response.json();
                 
-                // Display Signal
+                // سگنل ڈسپلے کریں
                 const statusClass = data.signal || 'wait';
                 const signalText = data.signal ? data.signal.toUpperCase() : 'N/A';
                 const confidence = data.confidence ? `${data.confidence.toFixed(2)}%` : 'N/A';
@@ -196,9 +201,9 @@
                 `;
                 signalDisplay.innerHTML = content;
 
-                // Update Chart
+                // چارٹ اپ ڈیٹ کریں
                 if (data.candles && data.candles.length > 0) {
-                    createOrUpdateChart(data.candles);
+                    updateChartData(data.candles);
                     addSignalMarker(data);
                 } else {
                     chartContainer.innerHTML = '<p class="text-center text-gray-500">Could not load chart data.</p>';
@@ -207,29 +212,30 @@
             } catch (error) {
                 console.error("Fetch error:", error);
                 signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
-                chartContainer.innerHTML = '<p class="text-center text-gray-500">Could not load chart.</p>';
+                chartContainer.innerHTML = `<p class="text-center text-gray-500">Error: ${error.message}</p>`;
             }
         }
 
-        // Event listener for timeframe buttons
+        // --- ایونٹ لسنر اور شروعات ---
         timeframeSelector.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON') {
                 const newTimeframe = e.target.dataset.timeframe;
                 if (newTimeframe !== currentTimeframe) {
                     currentTimeframe = newTimeframe;
-                    // Update active button style
                     document.querySelectorAll('#timeframe-selector button').forEach(btn => {
                         btn.classList.remove('active');
                     });
                     e.target.classList.add('active');
-                    // Fetch new signal
                     fetchSignal(currentTimeframe);
                 }
             }
         });
 
-        // Initial fetch on page load
-        fetchSignal(currentTimeframe);
+        // --- صفحہ لوڈ ہونے پر چارٹ بنائیں اور پہلا سگنل حاصل کریں ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeChart();
+            fetchSignal(currentTimeframe);
+        });
     </script>
 </body>
 </html>
