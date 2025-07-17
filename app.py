@@ -1,151 +1,169 @@
 import os
-import sys
-import traceback
-import json
-import asyncio
 import httpx
-import time
-from typing import List, Dict, Any
-
+import traceback
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import yfinance as yf
+import pandas as pd
+
+# --- AI اور ہیلپر ماڈیولز کو امپورٹ کریں ---
+# (یہ یقینی بنائیں کہ یہ تمام فائلیں آپ کی روٹ ڈائریکٹری میں موجود ہیں)
 from fusion_engine import generate_final_signal
 from logger import log_signal
-from feedback_checker import check_signals
+from feedback_checker import check_signals_and_give_feedback
+from signal_tracker import add_active_signal
 
-# --- API کی کو چیک کریں ---
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
-if not FINNHUB_API_KEY:
-    print("--- CRITICAL: FINNHUB_API_KEY environment variable is not set. ---")
-    sys.exit(1)
-
+# --- FastAPI ایپ اور شیڈولر کی شروعات ---
 app = FastAPI()
+scheduler = AsyncIOScheduler()
 
-# --- بیک گراؤنڈ ٹاسک ---
-@app.on_event("startup")
-async def startup_event():
-    print("✅ [STARTUP] Application is starting. Scheduling feedback checker.")
-    asyncio.create_task(run_feedback_checker_periodically())
+# --- ہیلپر فنکشنز ---
 
-async def run_feedback_checker_periodically():
-    while True:
-        await asyncio.sleep(300)
-        print("🔄 [BACKGROUND] Running Feedback Checker...")
-        try:
-            await check_signals()
-            print("✅ [BACKGROUND] Feedback check completed successfully.")
-        except Exception as e:
-            print(f"❌ [BACKGROUND] Error during feedback check: {e}")
+def get_yfinance_symbol(symbol: str) -> str:
+    """عام سمبل کو yfinance کے فارمیٹ میں تبدیل کرتا ہے۔"""
+    if symbol.upper() == "XAU/USD":
+        return "GC=F"  # گولڈ فیوچرز کے لیے yfinance کا سمبل
+    # مستقبل میں یہاں مزید پیئرز شامل کیے جا سکتے ہیں
+    # مثال کے طور پر:
+    # if symbol.upper() == "EUR/USD":
+    #     return "EURUSD=X"
+    return symbol # اگر کوئی خاص تبدیلی نہیں ہے تو ویسے ہی واپس بھیج دیں
 
-# --- ہیلتھ چیک ---
-@app.get("/health", status_code=200)
-async def health_check():
-    print("ጤ [HEALTH] Health check endpoint was called.")
-    return {"status": "ok"}
+async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient):
+    """yfinance کا استعمال کرتے ہوئے OHLC ڈیٹا حاصل کرتا ہے۔"""
+    yfinance_symbol = get_yfinance_symbol(symbol)
+    
+    # yfinance کے لیے ٹائم فریم اور مدت کو میپ کریں
+    # yfinance چھوٹے ٹائم فریمز کے لیے محدود مدت کی اجازت دیتا ہے
+    period_map = {
+        "1m": "2d",
+        "5m": "5d",
+        "15m": "10d",
+        "1h": "1mo",
+        "4h": "3mo",
+        "1d": "1y"
+    }
+    period = period_map.get(timeframe, "5d") # اگر ٹائم فریم نہیں ملتا تو ڈیفالٹ 5 دن
 
-# --- فرنٹ اینڈ اور سگنل اینڈ پوائنٹس ---
-app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+    print(f"YAHOO FINANCE: '{yfinance_symbol}' کا ڈیٹا ({timeframe} ٹائم فریم، {period} کی مدت) حاصل کیا جا رہا ہے...")
+
+    try:
+        # yfinance کو ایک الگ تھریڈ میں چلائیں تاکہ یہ async ایونٹ لوپ کو بلاک نہ کرے
+        data = await asyncio.to_thread(
+            yf.download,
+            tickers=yfinance_symbol,
+            period=period,
+            interval=timeframe,
+            progress=False
+        )
+
+        if data.empty:
+            raise ValueError(f"'{yfinance_symbol}' کے لیے کوئی ڈیٹا نہیں ملا۔")
+
+        # انڈیکس کو ری سیٹ کریں تاکہ 'Datetime' ایک کالم بن جائے
+        data.reset_index(inplace=True)
+        
+        # کالم کے ناموں کو ہمارے معیار کے مطابق بنائیں
+        data.rename(columns={
+            "Datetime": "datetime",
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Volume": "volume"
+        }, inplace=True)
+
+        # datetime کو سٹرنگ میں تبدیل کریں تاکہ JSON میں بھیجا جا سکے
+        data['datetime'] = data['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # ڈیٹا کو لسٹ آف ڈکشنریز میں تبدیل کریں
+        candles = data.to_dict('records')
+        print(f"YAHOO FINANCE: کامیابی سے {len(candles)} کینڈلز حاصل کی گئیں۔")
+        return candles
+
+    except Exception as e:
+        print(f"CRITICAL: yfinance سے ڈیٹا حاصل کرنے میں ناکامی: {e}")
+        traceback.print_exc()
+        raise
+
+# --- API اینڈ پوائنٹس ---
+
+# فرنٹ اینڈ کو پیش کرنے کے لیے
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
 @app.get("/")
 async def read_root():
+    """HTML فرنٹ اینڈ کو پیش کرتا ہے۔"""
     return FileResponse('frontend/index.html')
 
-# *** اہم ترین تبدیلی: Finnhub سے ڈیٹا حاصل کرنے کا نیا اور ڈیبگنگ کے لیے تیار فنکشن ***
-async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
-    print(f"➡️ [FETCH] Attempting to fetch data for {symbol} ({timeframe}) from Finnhub...")
-    
-    finnhub_symbol = f"OANDA:{symbol.replace('/', '_')}"
-    print(f"DEBUG: Converted symbol to Finnhub format: {finnhub_symbol}")
-    
-    resolution_map = {"1min": "1", "5min": "5", "15min": "15"}
-    if timeframe not in resolution_map:
-        raise HTTPException(status_code=400, detail="Unsupported timeframe for Finnhub.")
-    resolution = resolution_map[timeframe]
+@app.get("/health")
+def health_check():
+    """Render کے ہیلتھ چیک کے لیے اینڈ پوائنٹ۔"""
+    return {"status": "ok"}
 
-    end_time = int(time.time())
-    start_time = end_time - (200 * int(resolution) * 60 * 3) 
-
-    params = {
-        "symbol": finnhub_symbol, "resolution": resolution,
-        "from": start_time, "to": end_time, "token": FINNHUB_API_KEY
-    }
-    base_url = "https://finnhub.io/api/v1/forex/candle"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-
-    try:
-        response = await client.get(base_url, params=params, headers=headers, timeout=30)
-        
-        # *** اہم ترین ڈیبگنگ کا مرحلہ: جواب کو چیک کریں ***
-        try:
-            data = response.json()
-        except json.JSONDecodeError:
-            # اگر جواب JSON نہیں ہے (مثلاً، HTML ایرر پیج)
-            print(f"❌ [FETCH] Finnhub did not return valid JSON. Status: {response.status_code}")
-            print(f"Raw Response: {response.text}")
-            raise HTTPException(status_code=502, detail=f"Invalid response from data provider: {response.text[:200]}")
-
-        # اگر جواب JSON ہے، تو اسے چیک کریں
-        if response.status_code != 200 or data.get("s") != "ok":
-            print(f"❌ [FETCH] Finnhub returned an error. Status: {response.status_code}, Data: {data}")
-            # **ایرر کو براہ راست فرنٹ اینڈ پر بھیجیں**
-            error_message = data.get('error', f"Unknown error from Finnhub. Status: {response.status_code}")
-            raise HTTPException(status_code=502, detail=f"Finnhub API Error: {error_message}")
-
-        print(f"✅ [FETCH] Successfully fetched {len(data.get('c', []))} candles for {symbol}.")
-        
-        ohlc_data = []
-        for i in range(len(data['c'])):
-            ohlc_data.append({
-                "datetime": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(data['t'][i])),
-                "open": float(data['o'][i]), "high": float(data['h'][i]),
-                "low": float(data['l'][i]), "close": float(data['c'][i]),
-                "volume": float(data.get('v', [0]*len(data['c']))[i])
-            })
-        return ohlc_data
-
-    except httpx.TimeoutException:
-        print("❌ [FETCH] Request to Finnhub timed out.")
-        raise HTTPException(status_code=504, detail="Connection to data provider timed out.")
-    except httpx.RequestError as e:
-        print(f"❌ [FETCH] A network request error occurred: {e}")
-        raise HTTPException(status_code=503, detail=f"Could not connect to the data provider. Network issue.")
-    except Exception as e:
-        print(f"❌ [FETCH] An unexpected error occurred in fetch_real_ohlc_data: {e}")
-        traceback.print_exc()
-        # اگر یہ HTTPException ہے، تو اسے دوبارہ بھیجیں، ورنہ ایک نیا بنائیں
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
-
-
-@app.get("/signal")
+@app.get("/api/signal")
 async def get_signal(
-    symbol: str = Query("XAU/USD", description="Trading symbol"),
-    timeframe: str = Query("5min", description="Timeframe")
+    symbol: str = Query("XAU/USD", description="Trading symbol (e.g., XAU/USD)"),
+    timeframe: str = Query("5m", description="Chart timeframe (e.g., 1m, 5m, 15m)")
 ):
-    print(f"🚀 [SIGNAL] Received request for {symbol} on {timeframe}.")
+    """AI سگنل، قیمت، اور چارٹ ڈیٹا فراہم کرتا ہے۔"""
     try:
         async with httpx.AsyncClient() as client:
             candles = await fetch_real_ohlc_data(symbol, timeframe, client)
-        
-        if not candles:
-             raise HTTPException(status_code=404, detail="Could not fetch any candle data.")
+            
+            if not candles:
+                raise HTTPException(status_code=404, detail="Could not fetch candle data.")
 
-        print(f"🧠 [AI] Generating signal for {symbol}...")
-        signal_result = await generate_final_signal(symbol, candles, timeframe)
-        print(f"📄 [AI] Signal generated: {signal_result.get('signal')}")
-        
-        print(f"💾 [LOG] Logging signal for {symbol}...")
-        log_signal(symbol, signal_result, candles)
-        
-        print(f"✅ [SIGNAL] Successfully processed request for {symbol}.")
-        return signal_result
-    except HTTPException as e:
-        print(f"❌ [SIGNAL] HTTP Exception occurred: {e.detail}")
-        raise e
+            # آخری کینڈل سے موجودہ قیمت حاصل کریں
+            current_price = candles[-1]['close']
+
+            # AI انجن سے سگنل حاصل کریں
+            signal_result = await generate_final_signal(symbol, candles, timeframe)
+
+            # نتیجے میں قیمت اور کینڈلز شامل کریں
+            signal_result['price'] = current_price
+            signal_result['candles'] = candles
+            
+            # سگنل کو لاگ کریں
+            log_signal(symbol, signal_result, candles)
+
+            # اگر سگنل buy/sell ہے تو اسے ٹریکر میں شامل کریں
+            if signal_result.get("signal") in ["buy", "sell"]:
+                add_active_signal(signal_result)
+
+            return signal_result
+
     except Exception as e:
-        print(f"❌ [SIGNAL] CRITICAL ERROR in get_signal for {symbol}: {e}")
+        print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-                                                                           
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
+
+
+# --- بیک گراؤنڈ ٹاسک ---
+@scheduler.scheduled_job(IntervalTrigger(minutes=15))
+async def scheduled_feedback_task():
+    """ہر 15 منٹ بعد چلنے والا فیڈ بیک چیکر۔"""
+    print("SCHEDULER: فیڈ بیک چیکر چل رہا ہے (بیک گراؤنڈ ٹاسک)...")
+    await check_signals_and_give_feedback()
+
+
+# --- ایپ کے شروع اور بند ہونے پر ---
+import asyncio
+
+@app.on_event("startup")
+async def startup_event():
+    """ایپ کے شروع ہونے پر شیڈولر کو شروع کرتا ہے۔"""
+    print("STARTUP: ایپلیکیشن شروع ہو رہی ہے...")
+    scheduler.start()
+    # asyncio.create_task(market_scanner()) # مارکیٹ اسکینر کو مستقبل میں یہاں شامل کیا جائے گا
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
+    print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
+    scheduler.shutdown()
+
+                                    
