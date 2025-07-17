@@ -3,7 +3,6 @@ import httpx
 import traceback
 import asyncio
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -75,7 +74,7 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
 
 # --- API اینڈ پوائنٹس ---
 
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+# app.mount("/static", StaticFiles(directory="frontend/static"), name="static") # <--- اس لائن کو ہٹا دیا گیا ہے
 
 @app.get("/")
 async def read_root():
@@ -134,4 +133,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-    
+        
