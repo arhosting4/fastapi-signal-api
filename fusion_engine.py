@@ -11,11 +11,7 @@ import httpx
 
 async def generate_final_signal(symbol: str, candles: list, timeframe: str):
     try:
-        # --- اہم تبدیلی: یہاں سے closes کی لسٹ بنانا ہٹا دیں ---
-        # closes = [float(c["close"]) for c in candles] # <-- اس لائن کو ہٹا دیں
-
-        # --- اہم تبدیلی: generate_core_signal کو پوری candles کی لسٹ بھیجیں ---
-        core_signal_data = generate_core_signal(symbol, timeframe, candles) # <-- یہاں candles بھیجیں
+        core_signal_data = generate_core_signal(symbol, timeframe, candles)
         core_signal = core_signal_data["signal"]
         
         if core_signal == "wait" and len(candles) < 34:
@@ -74,8 +70,9 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str):
             "candles": candles
         }
 
+        # --- اہم ترین تبدیلی: یہاں صرف ایک پیرامیٹر بھیجیں ---
         if final_result["status"] == "ok" and tp is not None and sl is not None:
-            add_active_signal(symbol, final_result)
+            add_active_signal(final_result) # <-- یہاں سے symbol ہٹا دیا گیا ہے
 
         return final_result
 
