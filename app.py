@@ -4,7 +4,7 @@ import traceback
 import json
 import asyncio
 import httpx
-import time # Finnhub کے لیے ٹائم اسٹیمپ بنانے کے لیے
+import time
 from typing import List, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Query
@@ -14,7 +14,7 @@ from fusion_engine import generate_final_signal
 from logger import log_signal
 from feedback_checker import check_signals
 
-# --- نئی API کی کو چیک کریں ---
+# --- API کی کو چیک کریں ---
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 if not FINNHUB_API_KEY:
     print("--- CRITICAL: FINNHUB_API_KEY environment variable is not set. ---")
@@ -22,7 +22,7 @@ if not FINNHUB_API_KEY:
 
 app = FastAPI()
 
-# --- بیک گراؤنڈ ٹاسک (کوئی تبدیلی نہیں) ---
+# --- بیک گراؤنڈ ٹاسک ---
 @app.on_event("startup")
 async def startup_event():
     print("✅ [STARTUP] Application is starting. Scheduling feedback checker.")
@@ -38,7 +38,7 @@ async def run_feedback_checker_periodically():
         except Exception as e:
             print(f"❌ [BACKGROUND] Error during feedback check: {e}")
 
-# --- ہیلتھ چیک (کوئی تبدیلی نہیں) ---
+# --- ہیلتھ چیک ---
 @app.get("/health", status_code=200)
 async def health_check():
     print("ጤ [HEALTH] Health check endpoint was called.")
@@ -51,34 +51,28 @@ app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 async def read_root():
     return FileResponse('frontend/index.html')
 
-# *** اہم ترین تبدیلی: Finnhub سے ڈیٹا حاصل کرنے کا نیا فنکشن ***
+# *** اہم ترین تبدیلی: Finnhub سے ڈیٹا حاصل کرنے کا نیا اور بہتر فنکشن ***
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
     print(f"➡️ [FETCH] Attempting to fetch data for {symbol} ({timeframe}) from Finnhub...")
     
-    # Finnhub کے لیے سمبل اور ٹائم فریم کو فارمیٹ کریں
-    finnhub_symbol = f"OANDA:{symbol.replace('/', '_')}" # XAU/USD -> OANDA:XAU_USD
+    # *** اہم ترین تبدیلی: سمبل کو صحیح فارمیٹ میں تبدیل کریں ***
+    # XAU/USD -> OANDA:XAU_USD
+    finnhub_symbol = f"OANDA:{symbol.replace('/', '_')}"
+    print(f"DEBUG: Converted symbol to Finnhub format: {finnhub_symbol}")
     
-    # Finnhub کے لیے ٹائم فریم میپنگ
-    resolution_map = {
-        "1min": "1", "5min": "5", "15min": "15"
-    }
+    resolution_map = {"1min": "1", "5min": "5", "15min": "15"}
     if timeframe not in resolution_map:
         raise HTTPException(status_code=400, detail="Unsupported timeframe for Finnhub.")
     resolution = resolution_map[timeframe]
 
-    # Finnhub کو 'from' اور 'to' ٹائم اسٹیمپ کی ضرورت ہوتی ہے
     end_time = int(time.time())
     # ہم تقریباً 200 کینڈلز کا ڈیٹا حاصل کرنے کی کوشش کریں گے
     # 15 منٹ کے لیے: 200 * 15 * 60 = 3 دن پہلے
     start_time = end_time - (200 * int(resolution) * 60 * 3) 
 
-    # Finnhub API کا URL
     params = {
-        "symbol": finnhub_symbol,
-        "resolution": resolution,
-        "from": start_time,
-        "to": end_time,
-        "token": FINNHUB_API_KEY
+        "symbol": finnhub_symbol, "resolution": resolution,
+        "from": start_time, "to": end_time, "token": FINNHUB_API_KEY
     }
     base_url = "https://finnhub.io/api/v1/forex/candle"
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -94,17 +88,13 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncC
         
         print(f"✅ [FETCH] Successfully fetched {len(data.get('c', []))} candles for {symbol}.")
         
-        # Finnhub کا ڈیٹا فارمیٹ مختلف ہے، اسے اپنے فارمیٹ میں تبدیل کریں
         ohlc_data = []
-        # Finnhub تمام قیمتوں کو الگ الگ فہرستوں میں بھیجتا ہے
         for i in range(len(data['c'])):
             ohlc_data.append({
                 "datetime": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(data['t'][i])),
-                "open": float(data['o'][i]),
-                "high": float(data['h'][i]),
-                "low": float(data['l'][i]),
-                "close": float(data['c'][i]),
-                "volume": float(data.get('v', [0]*len(data['c']))[i]) # حجم (volume)
+                "open": float(data['o'][i]), "high": float(data['h'][i]),
+                "low": float(data['l'][i]), "close": float(data['c'][i]),
+                "volume": float(data.get('v', [0]*len(data['c']))[i])
             })
         return ohlc_data
     except httpx.HTTPStatusError as e:
@@ -144,4 +134,4 @@ async def get_signal(
         print(f"❌ [SIGNAL] CRITICAL ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-        
+                                    
