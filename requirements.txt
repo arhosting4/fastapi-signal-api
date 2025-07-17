@@ -1,11 +1,11 @@
 fastapi==0.111.0
 uvicorn==0.30.1
-requests==2.32.3
-python-dotenv==1.0.1
 gunicorn==22.0.0
-numpy==1.26.4
+python-dotenv==1.0.1
+requests==2.32.3
 pandas==2.2.2
-pandas_ta # یا pandas_ta==0.3.14b0 کو برقرار رکھیں اگر آپ کو یقین ہے کہ یہ کام کرنا چاہیے
-httpx # اگر آپ async requests کے لیے اسے استعمال کرنا چاہتے ہیں
-TA-Lib==0.4.24 # یا جو بھی تازہ ترین مستحکم ورژن ہ
-APScheduler==3.10.4
+pandas_ta
+TA-Lib
+httpx
+apscheduler==4.0.0a2  # <-- ورژن 4 میں اپ گریڈ کریں
+asyncio-dispatch    # <-- یہ نئی لائبریری شامل کریں
