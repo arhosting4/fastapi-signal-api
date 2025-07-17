@@ -3,119 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI - Live Trading Cockpit</title>
+    <title>ScalpMaster AI - The Gold Standard</title>
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
-        .cockpit-grid { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; height: calc(100vh - 60px); }
-        .panel { background-color: #1f2937; border-radius: 0.5rem; padding: 1rem; }
-        .market-watch-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-radius: 0.375rem; cursor: pointer; transition: background-color 0.2s; }
-        .market-watch-item:hover, .market-watch-item.active { background-color: #374151; }
-        .live-badge { background-color: #ef4444; color: white; font-size: 0.7rem; font-weight: bold; padding: 2px 6px; border-radius: 9999px; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        .buy { color: #10b981; }
+        body { font-family: 'Inter', sans-serif; background-color: #000000; color: #e5e7eb; }
+        .btn-timeframe { background-color: #374151; color: #e5e7eb; padding: 0.5rem 1rem; border-radius: 0.375rem; transition: all 0.2s; border: 1px solid #4b5563; }
+        .btn-timeframe:hover { background-color: #4b5563; }
+        .btn-timeframe.active { background-color: #4f46e5; border-color: #4f46e5; color: white; }
+        .loader { border: 4px solid #374151; border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .buy { color: #22c55e; }
         .sell { color: #ef4444; }
         .wait { color: #f59e0b; }
     </style>
 </head>
-<body>
-    <header class="bg-gray-900 shadow-md py-2">
-        <div class="container mx-auto px-4 flex items-center">
-            <h1 class="text-xl font-bold text-indigo-400">ScalpMaster AI Cockpit</h1>
-        </div>
-    </header>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-6xl mx-auto p-4">
+        <header class="text-center mb-6">
+            <h1 class="text-4xl font-bold text-amber-400">ScalpMaster AI</h1>
+            <p class="text-lg text-gray-400">The Gold Standard in Trading Signals</p>
+        </header>
 
-    <main class="container mx-auto px-4 py-4">
-        <div class="cockpit-grid">
-            <div id="market-watch-panel" class="panel flex flex-col">
-                <h2 class="text-lg font-semibold mb-4 border-b border-gray-600 pb-2">Market Watch</h2>
-                <div id="market-watch-list" class="space-y-2 overflow-y-auto"></div>
+        <main class="bg-gray-900/50 backdrop-blur-sm p-6 rounded-xl shadow-2xl border border-gray-700">
+            <div class="flex justify-center items-center mb-4 space-x-2">
+                <p class="text-lg font-medium">Timeframe:</p>
+                <button class="btn-timeframe active" data-timeframe="1min">1 Min</button>
+                <button class="btn-timeframe" data-timeframe="5min">5 Min</button>
+                <button class="btn-timeframe" data-timeframe="15min">15 Min</button>
             </div>
-            <div id="analysis-panel" class="panel flex flex-col">
-                <div id="chart-container" class="w-full h-2/3 relative"></div>
-                <div id="signal-details" class="w-full h-1/3 pt-4 overflow-y-auto">
-                     <div class="text-center p-8 text-gray-500">
-                        <p>Select a pair from the Market Watch to see detailed analysis.</p>
-                        <p class="text-sm mt-2">The system is scanning markets in the background...</p>
-                    </div>
+
+            <div id="content-area" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Chart Panel -->
+                <div id="chart-container" class="lg:col-span-2 w-full h-96 lg:h-[500px] bg-gray-800/50 rounded-lg p-2">
+                    <!-- Chart will be rendered here -->
+                </div>
+
+                <!-- Signal Panel -->
+                <div id="signal-panel" class="w-full h-96 lg:h-[500px] bg-gray-800/50 rounded-lg p-6 flex flex-col justify-center">
+                    <!-- Signal details will be rendered here -->
                 </div>
             </div>
-        </div>
-    </main>
+        </main>
+    </div>
 
     <script>
-        const marketWatchList = document.getElementById('market-watch-list');
         const chartContainer = document.getElementById('chart-container');
-        const signalDetails = document.getElementById('signal-details');
+        const signalPanel = document.getElementById('signal-panel');
+        const timeframeButtons = document.querySelectorAll('.btn-timeframe');
         
         let chart = null;
         let candlestickSeries = null;
-        
-        const pairsToScan = ["XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY"];
-        const timeframesToScan = ["5min", "15min"];
-        let marketState = {};
+        let activeTimeframe = '1min';
 
-        function initializeMarketWatch() {
-            marketWatchList.innerHTML = '';
-            pairsToScan.forEach(symbol => {
-                timeframesToScan.forEach(timeframe => {
-                    const key = `${symbol}-${timeframe}`;
-                    marketState[key] = { symbol, timeframe, signal: 'Scanning...', isReady: false };
-                    
-                    const item = document.createElement('div');
-                    item.className = 'market-watch-item';
-                    item.id = `watch-${key}`;
-                    item.innerHTML = `
-                        <div>
-                            <span class="font-bold">${symbol}</span>
-                            <span class="text-xs text-gray-400">${timeframe}</span>
-                        </div>
-                        <span id="status-${key}" class="text-sm text-gray-500">Scanning...</span>
-                    `;
-                    item.onclick = () => handleWatchItemClick(key);
-                    marketWatchList.appendChild(item);
-                });
-            });
+        function showLoader() {
+            chartContainer.innerHTML = '<div class="flex items-center justify-center h-full"><div class="loader"></div></div>';
+            signalPanel.innerHTML = '<div class="flex items-center justify-center h-full"><div class="loader"></div></div>';
         }
 
-        // --- اہم ترین تبدیلی: کلک کو ہینڈل کرنے کا نیا طریقہ ---
-        function handleWatchItemClick(key) {
-            const state = marketState[key];
-            if (state && state.isReady) {
-                // اگر ڈیٹا تیار ہے، تو اسے دکھائیں
-                document.querySelectorAll('.market-watch-item').forEach(el => el.classList.remove('active'));
-                document.getElementById(`watch-${key}`).classList.add('active');
-                displaySignal(state.data);
-            } else {
-                // اگر ڈیٹا تیار نہیں ہے، تو صارف کو بتائیں
-                Toastify({
-                    text: `Data for ${state.symbol} (${state.timeframe}) is still being prepared. Please wait.`,
-                    duration: 3000,
-                    gravity: "bottom",
-                    position: "right",
-                    backgroundColor: "#f59e0b"
-                }).showToast();
+        async function fetchAndDisplaySignal() {
+            showLoader();
+            if (chart) chart.remove();
+            chart = null;
+
+            try {
+                const response = await fetch(`/signal?symbol=XAU/USD&timeframe=${activeTimeframe}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'An unknown error occurred');
+                }
+                const data = await response.json();
+                displayContent(data);
+            } catch (error) {
+                console.error("Error fetching signal:", error);
+                chartContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-400">Error: ${error.message}</div>`;
+                signalPanel.innerHTML = `<div class="flex items-center justify-center h-full text-red-400">Could not load signal.</div>`;
             }
         }
 
-        function displaySignal(data) {
-            if (chart) chart.remove();
-            chart = null;
+        function displayContent(data) {
+            // 1. Display Chart
             chartContainer.innerHTML = '';
-
             if (data.candles && data.candles.length > 0) {
                 chart = LightweightCharts.createChart(chartContainer, {
                     width: chartContainer.clientWidth, height: chartContainer.clientHeight,
-                    layout: { backgroundColor: '#1f2937', textColor: '#d1d5db' },
-                    grid: { vertLines: { color: '#2a3341' }, horzLines: { color: '#2a3341' } },
-                    timeScale: { timeVisible: true, secondsVisible: false }
+                    layout: { backgroundColor: 'transparent', textColor: '#e5e7eb' },
+                    grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
+                    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#4b5563' },
+                    rightPriceScale: { borderColor: '#4b5563' }
                 });
                 candlestickSeries = chart.addCandlestickSeries({
-                    upColor: '#10b981', wickUpColor: '#10b981',
+                    upColor: '#22c55e', wickUpColor: '#22c55e',
                     downColor: '#ef4444', wickDownColor: '#ef4444',
                     borderVisible: false
                 });
@@ -126,7 +105,7 @@
                 }));
                 candlestickSeries.setData(formattedCandles);
 
-                if (data.tp) candlestickSeries.createPriceLine({ price: data.tp, color: '#10b981', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TP' }).applyOptions({});
+                if (data.tp) candlestickSeries.createPriceLine({ price: data.tp, color: '#22c55e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TP' }).applyOptions({});
                 if (data.sl) candlestickSeries.createPriceLine({ price: data.sl, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'SL' }).applyOptions({});
                 
                 if (data.signal === 'buy' || data.signal === 'sell') {
@@ -134,98 +113,44 @@
                     candlestickSeries.setMarkers([{
                         time: lastCandle.time,
                         position: data.signal === 'buy' ? 'belowBar' : 'aboveBar',
-                        color: data.signal === 'buy' ? '#10b981' : '#ef4444',
+                        color: data.signal === 'buy' ? '#22c55e' : '#ef4444',
                         shape: data.signal === 'buy' ? 'arrowUp' : 'arrowDown',
-                        text: data.signal.toUpperCase()
+                        size: 1.5
                     }]);
                 }
                 chart.timeScale().fitContent();
             } else {
-                 chartContainer.innerHTML = `<div class="text-center p-8 text-gray-500">No chart data available.</div>`;
+                 chartContainer.innerHTML = `<div class="flex items-center justify-center h-full text-gray-500">No chart data available.</div>`;
             }
 
+            // 2. Display Signal Details
             const signalClass = data.signal || 'wait';
-            signalDetails.innerHTML = `
-                <div class="p-4">
-                    <h3 class="text-2xl font-bold ${signalClass}">${data.signal.toUpperCase()}</h3>
-                    <p class="text-lg font-semibold">${data.symbol} (${data.timeframe})</p>
-                    <div class="grid grid-cols-2 gap-2 mt-4 text-sm">
-                        <p><strong>Confidence:</strong> ${data.confidence}%</p>
-                        <p><strong>Tier:</strong> ${data.tier}</p>
-                        <p><strong>Pattern:</strong> ${data.pattern}</p>
-                        <p><strong>Risk:</strong> ${data.risk}</p>
-                        <p><strong>Price:</strong> ${data.price}</p>
-                        <p class="buy"><strong>TP:</strong> ${data.tp || 'N/A'}</p>
-                        <p class="sell"><strong>SL:</strong> ${data.sl || 'N/A'}</p>
+            signalPanel.innerHTML = `
+                <div class="text-center">
+                    <h3 class="text-5xl font-extrabold ${signalClass} mb-2">${data.signal.toUpperCase()}</h3>
+                    <p class="text-xl font-semibold text-amber-400">XAU/USD (${data.timeframe})</p>
+                    <div class="space-y-3 mt-6 text-left">
+                        <p><strong>Confidence:</strong> <span class="font-mono">${data.confidence}%</span></p>
+                        <p><strong>Price:</strong> <span class="font-mono">${data.price}</span></p>
+                        <p class="buy"><strong>Take Profit:</strong> <span class="font-mono">${data.tp || 'N/A'}</span></p>
+                        <p class="sell"><strong>Stop Loss:</strong> <span class="font-mono">${data.sl || 'N/A'}</span></p>
+                        <p><strong>Pattern:</strong> <span class="font-mono">${data.pattern}</span></p>
                     </div>
-                    <p class="mt-3 text-xs text-gray-400"><strong>Reason:</strong> ${data.reason}</p>
+                    <p class="mt-4 text-xs text-gray-400 text-left"><strong>AI Reason:</strong> ${data.reason}</p>
                 </div>
             `;
         }
-        
-        function updateMarketWatchStatus(data) {
-            const key = `${data.symbol}-${data.timeframe}`;
-            const statusEl = document.getElementById(`status-${key}`);
-            if (!statusEl) return;
 
-            // مارکیٹ کی حالت کو محفوظ کریں
-            marketState[key].isReady = true;
-            marketState[key].data = data;
+        timeframeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                timeframeButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                activeTimeframe = button.dataset.timeframe;
+                fetchAndDisplaySignal();
+            });
+        });
 
-            const signal = data.signal.toUpperCase();
-            if (signal === 'BUY' || signal === 'SELL') {
-                statusEl.innerHTML = `<span class="live-badge">LIVE</span>`;
-                statusEl.className = `text-sm font-bold ${signal.toLowerCase()}`;
-            } else {
-                statusEl.innerHTML = signal;
-                statusEl.className = `text-sm font-bold ${signal.toLowerCase()}`;
-            }
-        }
-
-        function connectWebSocket() {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
-
-            ws.onopen = () => {
-                console.log("WebSocket connected");
-                Toastify({ text: "Live connection established!", duration: 3000, gravity: "top", position: "right", backgroundColor: "#10b981" }).showToast();
-            };
-
-            ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                console.log("Received message:", message);
-                const data = message.data;
-
-                if (message.type === 'new_signal') {
-                    Toastify({
-                        text: `🔥 New ${data.signal.toUpperCase()} signal on ${data.symbol} (${data.timeframe})`,
-                        duration: 5000,
-                        gravity: "bottom",
-                        position: "right",
-                        backgroundColor: data.signal === 'buy' ? "#10b981" : "#ef4444",
-                        onClick: () => handleWatchItemClick(`${data.symbol}-${data.timeframe}`)
-                    }).showToast();
-                    updateMarketWatchStatus(data);
-                } else if (message.type === 'status_update') {
-                    // 'wait' سگنلز کے لیے بھی اسٹیٹس کو اپ ڈیٹ کریں
-                    updateMarketWatchStatus(data);
-                }
-            };
-
-            ws.onclose = () => {
-                console.log("WebSocket disconnected. Reconnecting in 5 seconds...");
-                setTimeout(connectWebSocket, 5000);
-            };
-            ws.onerror = (error) => {
-                console.error("WebSocket error:", error);
-                ws.close();
-            };
-        }
-
-        window.onload = () => {
-            initializeMarketWatch();
-            connectWebSocket();
-        };
+        window.onload = fetchAndDisplaySignal;
         
         window.onresize = () => {
             if(chart) {
