@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Download and build TA-Lib from source
+# 2. Download, build, and install TA-Lib C library from source
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xvzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib/ && \
@@ -22,15 +22,16 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     cd .. && \
     rm -rf ta-lib-0.4.0-src.tar.gz ta-lib/
 
-# *** اہم تبدیلی: کمپائلر کو لائبریری کا راستہ بتائیں ***
-ENV LD_LIBRARY_PATH=/usr/lib
-
 # --- Python Dependencies ---
 # Copy the requirements file into the container
 COPY requirements.txt .
 
-# Install the Python dependencies
+# *** اہم ترین تبدیلی: TA-Lib کو الگ سے انسٹال کریں ***
+# پہلے باقی تمام لائبریریاں انسٹال کریں
 RUN pip install --no-cache-dir -r requirements.txt
+
+# اب TA-Lib پائتھون ریپر کو دستی طور پر انسٹال کریں
+RUN pip install --no-cache-dir TA-Lib
 
 # Copy the rest of the application code into the container
 COPY . .
