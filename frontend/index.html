@@ -93,80 +93,63 @@
         let candlestickSeries = null;
         let currentTimeframe = '5m';
 
-        // --- چارٹ کو صرف ایک بار بنائیں ---
+        // --- فول پروف چارٹ بنانے کا فنکشن ---
         function initializeChart() {
-            if (chart) return; // اگر چارٹ پہلے سے موجود ہے تو کچھ نہ کریں
+            try {
+                // پرانے چارٹ کو صاف کریں (اگر موجود ہو)
+                chartContainer.innerHTML = '';
+                
+                chart = LightweightCharts.createChart(chartContainer, {
+                    layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
+                    grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
+                    timeScale: { timeVisible: true, secondsVisible: false }
+                });
 
-            chart = LightweightCharts.createChart(chartContainer, {
-                layout: {
-                    background: { color: '#1f2937' },
-                    textColor: '#d1d5db',
-                },
-                grid: {
-                    vertLines: { color: '#374151' },
-                    horzLines: { color: '#374151' },
-                },
-                timeScale: {
-                    timeVisible: true,
-                    secondsVisible: false,
-                },
-            });
-            candlestickSeries = chart.addCandlestickSeries({
-                upColor: '#10B981',
-                downColor: '#EF4444',
-                borderDownColor: '#EF4444',
-                borderUpColor: '#10B981',
-                wickDownColor: '#EF4444',
-                wickUpColor: '#10B981',
-            });
+                candlestickSeries = chart.addCandlestickSeries({
+                    upColor: '#10B981', downColor: '#EF4444',
+                    borderDownColor: '#EF4444', borderUpColor: '#10B981',
+                    wickDownColor: '#EF4444', wickUpColor: '#10B981'
+                });
+                console.log("SUCCESS: Chart and series initialized successfully.");
+            } catch (e) {
+                console.error("FATAL: Could not create chart.", e);
+                chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library.</p>`;
+            }
         }
 
-        // --- چارٹ کے ڈیٹا کو اپ ڈیٹ کریں ---
-        function updateChartData(data) {
-            if (!candlestickSeries) return; // اگر سیریز موجود نہیں ہے تو کچھ نہ کریں
+        // --- ڈیٹا کو اپ ڈیٹ کرنے کا فنکشن ---
+        function updateChart(signalData) {
+            if (!chart || !candlestickSeries) {
+                console.error("ERROR: Chart or series not available for update.");
+                return;
+            }
 
-            const formattedData = data.map(candle => ({
+            // کینڈل ڈیٹا کو فارمیٹ کریں
+            const formattedCandles = signalData.candles.map(candle => ({
                 time: new Date(candle.datetime).getTime() / 1000,
                 open: candle.open,
                 high: candle.high,
                 low: candle.low,
                 close: candle.close,
             }));
+            candlestickSeries.setData(formattedCandles);
 
-            candlestickSeries.setData(formattedData);
-            chart.timeScale().fitContent();
-        }
-        
-        // --- سگنل مارکر شامل کریں ---
-        function addSignalMarker(signalData) {
-            if (!candlestickSeries || !signalData.candles || signalData.candles.length === 0) return;
-
-            const lastCandle = signalData.candles[signalData.candles.length - 1];
+            // سگنل مارکر شامل کریں
+            const lastCandle = formattedCandles[formattedCandles.length - 1];
             const markers = [];
-            
             if (signalData.signal === 'buy') {
-                markers.push({
-                    time: new Date(lastCandle.datetime).getTime() / 1000,
-                    position: 'belowBar',
-                    color: '#10B981',
-                    shape: 'arrowUp',
-                    text: 'BUY'
-                });
+                markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
             } else if (signalData.signal === 'sell') {
-                markers.push({
-                    time: new Date(lastCandle.datetime).getTime() / 1000,
-                    position: 'aboveBar',
-                    color: '#EF4444',
-                    shape: 'arrowDown',
-                    text: 'SELL'
-                });
+                markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
             }
             candlestickSeries.setMarkers(markers);
+            
+            chart.timeScale().fitContent();
         }
 
         // --- سگنل حاصل کریں اور ڈسپلے کریں ---
-        async function fetchSignal(timeframe) {
-            signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe} timeframe.</p>`;
+        async function fetchAndDisplaySignal(timeframe) {
+            signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe}.</p>`;
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
 
             try {
@@ -203,8 +186,7 @@
 
                 // چارٹ اپ ڈیٹ کریں
                 if (data.candles && data.candles.length > 0) {
-                    updateChartData(data.candles);
-                    addSignalMarker(data);
+                    updateChart(data);
                 } else {
                     chartContainer.innerHTML = '<p class="text-center text-gray-500">Could not load chart data.</p>';
                 }
@@ -212,7 +194,6 @@
             } catch (error) {
                 console.error("Fetch error:", error);
                 signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
-                chartContainer.innerHTML = `<p class="text-center text-gray-500">Error: ${error.message}</p>`;
             }
         }
 
@@ -222,11 +203,9 @@
                 const newTimeframe = e.target.dataset.timeframe;
                 if (newTimeframe !== currentTimeframe) {
                     currentTimeframe = newTimeframe;
-                    document.querySelectorAll('#timeframe-selector button').forEach(btn => {
-                        btn.classList.remove('active');
-                    });
+                    document.querySelectorAll('#timeframe-selector button').forEach(btn => btn.classList.remove('active'));
                     e.target.classList.add('active');
-                    fetchSignal(currentTimeframe);
+                    fetchAndDisplaySignal(currentTimeframe);
                 }
             }
         });
@@ -234,7 +213,7 @@
         // --- صفحہ لوڈ ہونے پر چارٹ بنائیں اور پہلا سگنل حاصل کریں ---
         document.addEventListener('DOMContentLoaded', () => {
             initializeChart();
-            fetchSignal(currentTimeframe);
+            fetchAndDisplaySignal(currentTimeframe);
         });
     </script>
 </body>
