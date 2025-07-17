@@ -13,8 +13,7 @@ import pandas as pd
 # --- AI اور ہیلپر ماڈیولز کو امپورٹ کریں ---
 from fusion_engine import generate_final_signal
 from logger import log_signal
-# --- فنکشن کا صحیح نام امپورٹ کریں ---
-from feedback_checker import check_signals 
+from feedback_checker import check_signals
 from signal_tracker import add_active_signal
 
 # --- FastAPI ایپ اور شیڈولر کی شروعات ---
@@ -120,8 +119,7 @@ async def get_signal(
 def feedback_task_wrapper():
     """async فنکشن کو چلانے کے لیے ایک ریپر۔"""
     print("SCHEDULER: فیڈ بیک چیکر چل رہا ہے...")
-    # --- فنکشن کا صحیح نام استعمال کریں ---
-    asyncio.run(check_signals()) 
+    asyncio.run(check_signals())
 
 # --- ایپ کے شروع اور بند ہونے پر ---
 @app.on_event("startup")
