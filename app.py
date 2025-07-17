@@ -8,19 +8,23 @@ import json
 import os
 from fusion_engine import generate_final_signal
 from logger import log_signal
-import asyncio # <-- asyncio کو امپورٹ کریں
+import asyncio
 
 app = FastAPI()
 
-# تمام انوائرمنٹ ویری ایبلز
+# --- اہم تبدیلی: انوائرمنٹ ویری ایبلز کو محفوظ طریقے سے لوڈ کریں ---
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
 
-# --- اہم تبدیلی: اپنا خود کا بیک گراؤنڈ ٹاسک بنائیں ---
+# ایپلیکیشن کے شروع ہوتے ہی چیک کریں
+if not TWELVE_DATA_API_KEY:
+    print("CRITICAL ERROR: TWELVE_DATA_API_KEY environment variable is not set.")
+if not MARKETAUX_API_TOKEN:
+    print("CRITICAL ERROR: MARKETAUX_API_TOKEN environment variable is not set.")
+
+# ... (باقی تمام کوڈ ویسے ہی رہے گا) ...
+
 async def run_feedback_checker_periodically():
-    """
-    یہ فنکشن ہمیشہ چلتا رہے گا اور ہر 15 منٹ بعد check_signals کو چلائے گا۔
-    """
     while True:
         print("Running Feedback Checker (Background Task)...")
         try:
@@ -29,23 +33,20 @@ async def run_feedback_checker_periodically():
         except Exception as e:
             print(f"Error during scheduled feedback check: {e}")
             traceback.print_exc()
-        
-        # 15 منٹ (900 سیکنڈ) انتظار کریں
         await asyncio.sleep(900)
 
 @app.on_event("startup")
 async def startup_event():
-    """
-    ایپلیکیشن کے شروع ہونے پر ہمارا بیک گراؤنڈ ٹاسک شروع کریں۔
-    """
     print("✅ Application starting up. Scheduling background task.")
-    asyncio.create_task(run_feedback_checker_periodically())
-
-
-# --- باقی تمام کوڈ ویسے ہی رہے گا ---
+    # یقینی بنائیں کہ ضروری ویری ایبلز موجود ہیں ورنہ ٹاسک شروع نہ کریں
+    if TWELVE_DATA_API_KEY and MARKETAUX_API_TOKEN:
+        asyncio.create_task(run_feedback_checker_periodically())
+    else:
+        print("⚠️ Background task not started due to missing environment variables.")
 
 async def fetch_real_ohlc_data(symbol: str, timeframe: str, client: httpx.AsyncClient) -> list:
     if not TWELVE_DATA_API_KEY:
+        # یہ ایرر اب بھی اہم ہے اگر کوئی اسے براہ راست کال کرے
         raise ValueError("TWELVE_DATA_API_KEY is not set in environment variables.")
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&apikey={TWELVE_DATA_API_KEY}&outputsize=100"
     try:
@@ -89,6 +90,9 @@ async def get_signal(
     symbol: str = Query(..., description="Trading symbol (e.g., AAPL, EUR/USD)"),
     timeframe: str = Query("5min", description="Timeframe (e.g., 1min, 5min, 1h)")
 ):
+    if not TWELVE_DATA_API_KEY or not MARKETAUX_API_TOKEN:
+        raise HTTPException(status_code=500, detail="Server is not configured correctly. Missing API keys.")
+    
     print(f"DEBUG: Received symbol: {symbol}, Timeframe: {timeframe}")
     try:
         async with httpx.AsyncClient() as client:
@@ -102,4 +106,4 @@ async def get_signal(
         print(f"CRITICAL ERROR in app.py for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-                                
+                            
