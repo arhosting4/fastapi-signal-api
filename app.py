@@ -1,5 +1,4 @@
 import os
-import httpx
 import traceback
 import asyncio
 from fastapi import FastAPI, HTTPException, Query
@@ -46,28 +45,38 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
             period=period,
             interval=timeframe,
             progress=False,
-            auto_adjust=False # <--- یہ یقینی بناتا ہے کہ ہمیں OHLCV کالم ملیں
+            auto_adjust=False
         )
 
         if data.empty:
             raise ValueError(f"'{yfinance_symbol}' کے لیے کوئی ڈیٹا نہیں ملا۔")
 
+        # --- فول پروف ڈیٹا کلیننگ ---
+        print(f"DEBUG: yfinance سے حاصل کردہ اصل کالم: {data.columns.to_list()}")
+
         data.reset_index(inplace=True)
         
-        # --- کالم کے ناموں کو چھوٹے حروف میں تبدیل کریں ---
-        data.rename(columns={
-            "Datetime": "datetime", "Open": "open", "High": "high",
-            "Low": "low", "Close": "close", "Volume": "volume"
-        }, inplace=True)
+        # کالم کے ناموں کو چھوٹے حروف میں تبدیل کریں
+        data.columns = [col.lower() for col in data.columns]
+        
+        print(f"DEBUG: چھوٹے حروف میں تبدیل کرنے کے بعد کالم: {data.columns.to_list()}")
 
-        # یہ یقینی بنائیں کہ 'datetime' کالم موجود ہے
-        if 'datetime' not in data.columns:
-             data.rename(columns={"index": "datetime"}, inplace=True)
+        # 'date' یا 'datetime' کو 'datetime' میں تبدیل کریں
+        if 'date' in data.columns:
+            data.rename(columns={'date': 'datetime'}, inplace=True)
+        elif 'index' in data.columns:
+             data.rename(columns={'index': 'datetime'}, inplace=True)
+
+        # یہ یقینی بنائیں کہ تمام ضروری کالم موجود ہیں
+        required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col not in data.columns:
+                raise ValueError(f"ڈیٹا میں ضروری کالم '{col}' موجود نہیں ہے۔")
 
         data['datetime'] = pd.to_datetime(data['datetime'], utc=True)
         data['datetime'] = data['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-        candles = data.to_dict('records')
+        candles = data[required_columns].to_dict('records')
         print(f"YAHOO FINANCE: کامیابی سے {len(candles)} کینڈلز حاصل کی گئیں۔")
         return candles
 
@@ -97,7 +106,7 @@ async def get_signal(
         if not candles:
             raise HTTPException(status_code=404, detail="Could not fetch candle data.")
 
-        current_price = candles[-1]['close'] # <--- اب یہ صحیح طریقے سے کام کرے گا
+        current_price = candles[-1]['close']
         signal_result = await generate_final_signal(symbol, candles, timeframe)
 
         signal_result['price'] = current_price
@@ -135,4 +144,4 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
-    
+        
