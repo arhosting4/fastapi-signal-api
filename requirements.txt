@@ -4,44 +4,6 @@ gunicorn==22.0.0
 python-dotenv==1.0.1
 requests==2.32.3
 httpx
-
-# --- اہم ترین تبدیلی: ورژن کی مطابقت کو یقینی بنائیں ---
 numpy==1.26.4
 pandas==2.2.2
-pandas_ta==0.3.14b0```
-
-**اس `requirements.txt` میں کیا تبدیلیاں کی گئی ہیں؟**
-
-1.  **`TA-Lib` کو ہٹا دیا گیا:** ہم نے اسے پہلے ہی ہٹا دیا تھا، جو کہ درست ہے۔
-2.  **ورژن کو لاک کیا گیا:** ہم نے `numpy`, `pandas`, اور `pandas_ta` کے مخصوص ورژنز بتا دیے ہیں۔
-    *   `numpy==1.26.4`: یہ `numpy` کا ایک مستحکم ورژن ہے جس میں `NaN` موجود ہے۔
-    *   `pandas==2.2.2`: یہ `numpy` کے اس ورژن کے ساتھ اچھی طرح کام کرتا ہے۔
-    *   `pandas_ta==0.3.14b0`: یہ `pandas_ta` کا وہی ورژن ہے جو ہم پہلے استعمال کر رہے تھے، لیکن اب یہ صحیح `numpy` ورژن کے ساتھ انسٹال ہو گا۔
-
----
-
-### **`Dockerfile` کو بھی چیک کریں**
-
-یقینی بنائیں کہ آپ کا `Dockerfile` وہی سادہ ورژن ہے جو ہم نے پچھلی بار بنایا تھا (جس میں `TA-Lib` کی انسٹالیشن نہیں ہے)۔
-
-```dockerfile
-# Use a modern and stable Python runtime as a parent image
-FROM python:3.9-slim-bookworm
-
-# Set the working directory in the container
-WORKDIR /app
-
-# Copy the requirements file into the container
-COPY requirements.txt .
-
-# Install the Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code into the container
-COPY . .
-
-# Expose the port the app runs on
-EXPOSE 8000
-
-# Command to run the application using Gunicorn
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:8000"]
+pandas_ta==0.3.14b0
