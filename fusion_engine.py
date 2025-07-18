@@ -6,10 +6,9 @@ import pandas_ta as ta
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
 from riskguardian import check_risk
-# --- اہم تبدیلی: sentinel سے نیا فنکشن امپورٹ کریں ---
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
-from trainerai import get_confidence
+from trainerai import get_confidence # اپ گریڈ شدہ ٹرینر
 from tierbot import get_tier
 from signal_tracker import add_active_signal
 from marketstructure import analyze_market_structure
@@ -28,30 +27,23 @@ def get_higher_timeframe_trend(candles: list) -> str:
 
 async def generate_final_signal(symbol: str, candles: list, timeframe: str, should_save_active: bool = True):
     """
-    یہ مرکزی AI انجن ہے۔ اب یہ نیوز کے لیے موثر کیشنگ سسٹم استعمال کرتا ہے۔
+    یہ مرکزی AI انجن ہے۔ اب یہ فیڈ بیک لوپ کے لیے ٹائم فریم بھی استعمال کرتا ہے۔
     """
     try:
-        # --- نیا: نیوز کا تجزیہ سب سے پہلے کریں ---
         news_data = get_news_analysis_for_symbol(symbol)
         if news_data["impact"] == "High":
-            print(f"BLOCK by News: {news_data['reason']}")
             return {"signal": "wait", "reason": news_data['reason']}
 
-        # 1. بنیادی سگنل
         core_signal_data = generate_core_signal(symbol, timeframe, candles)
         core_signal = core_signal_data["signal"]
         if core_signal == "wait":
             return {"signal": "wait", "reason": "Primary indicators suggest no clear opportunity."}
 
         current_price = candles[-1]['close']
-
-        # 2. مارکیٹ اسٹرکچر کا تجزیہ
         structure_analysis = analyze_market_structure(core_signal, current_price, candles)
         if structure_analysis["decision"] == "block":
-            print(f"BLOCK by Market Structure: {structure_analysis['reason']}")
             return {"signal": "wait", "reason": structure_analysis['reason']}
 
-        # 3. ملٹی ٹائم فریم تصدیق
         higher_timeframe_map = {"1m": "5m", "5m": "15m", "15m": "1h"}
         confirmation_tf = higher_timeframe_map.get(timeframe)
         htf_trend = "neutral"
@@ -62,11 +54,19 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str, shou
         if (core_signal == "buy" and htf_trend == "down") or (core_signal == "sell" and htf_trend == "up"):
             return {"signal": "wait", "reason": f"Signal blocked by opposing trend on {confirmation_tf}."}
 
-        # 4. باقی تجزیہ
         pattern_data = detect_patterns(candles)
         risk_assessment = check_risk(candles)
         
-        confidence = get_confidence(core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data["impact"], symbol)
+        # --- اہم تبدیلی: get_confidence کو ٹائم فریم بھی فراہم کریں ---
+        confidence = get_confidence(
+            core_signal, 
+            pattern_data.get("type"), 
+            risk_assessment.get("status"), 
+            news_data["impact"], 
+            symbol, 
+            timeframe # <-- یہ نیا ہے
+        )
+        
         confidence += structure_analysis["confidence_boost"]
         if (core_signal == "buy" and htf_trend == "up") or (core_signal == "sell" and htf_trend == "down"):
             confidence += 10
