@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI - Gold Standard</title>
+    <title>ScalpMaster AI - Hunter</title>
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -11,51 +11,29 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
         .signal-card { background-color: #1f2937; border-radius: 0.75rem; border: 1px solid #374151; padding: 1.5rem; text-align: center; transition: all 0.3s ease-in-out; }
-        .signal-card.buy { border-left: 6px solid #10B981; }
-        .signal-card.sell { border-left: 6px solid #EF4444; }
+        .signal-card.buy { border-left: 6px solid #10B981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+        .signal-card.sell { border-left: 6px solid #EF4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
         .signal-card.wait { border-left: 6px solid #F59E0B; }
-        .signal-card.error { border-left: 6px solid #DC2626; }
-        .timeframe-btn { transition: all 0.2s ease-in-out; }
-        .timeframe-btn.active { background-color: #4f46e5; color: white; font-weight: 600; }
-        #chart-container { width: 100%; height: 500px; border-radius: 0.5rem; overflow: hidden; position: relative; }
-        #last-updated { font-size: 0.8rem; color: #6b7280; transition: color 0.5s ease; }
-        #live-price-display {
-            position: absolute; top: 10px; right: 10px;
-            background-color: rgba(0, 0, 0, 0.5); color: white;
-            padding: 5px 10px; border-radius: 5px;
-            font-size: 14px; z-index: 10; pointer-events: none;
-        }
+        #chart-container { width: 100%; height: 500px; border-radius: 0.5rem; overflow: hidden; }
+        #last-updated { font-size: 0.8rem; color: #6b7280; }
     </style>
 </head>
 <body class="antialiased">
     <main class="container mx-auto px-4 py-8">
         <header class="text-center mb-8">
             <h1 class="text-4xl font-bold text-amber-400">ScalpMaster AI</h1>
-            <p class="text-lg text-gray-400 mt-2">The Gold Standard in Trading Signals</p>
+            <p class="text-lg text-gray-400 mt-2">Your Autonomous Signal Hunter</p>
         </header>
         <section id="dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-1 space-y-6">
-                <div class="bg-gray-800 p-4 rounded-lg">
-                    <div class="flex justify-between items-center mb-3">
-                        <h2 class="text-xl font-semibold text-white">Timeframe:</h2>
-                        <span id="last-updated"></span>
-                    </div>
-                    <div id="timeframe-selector" class="flex space-x-2">
-                        <button data-timeframe="1m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600">1 Min</button>
-                        <button data-timeframe="5m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600 active">5 Min</button>
-                        <button data-timeframe="15m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600">15 Min</button>
-                    </div>
-                </div>
-                <div id="signal-display" class="signal-card">
+                <div id="signal-display" class="signal-card wait">
                     <h3 class="text-xl font-semibold mb-2 text-gray-400">Initializing...</h3>
-                    <p class="text-gray-500">Please wait while the AI analyzes the market.</p>
+                    <p class="text-gray-500">Contacting the AI Hunter for the latest signal.</p>
                 </div>
             </div>
             <div class="lg:col-span-2 bg-gray-800 p-4 rounded-lg">
-                <h2 id="chart-title" class="text-xl font-semibold mb-3 text-white">XAU/USD Chart</h2>
-                <div id="chart-container">
-                    <div id="live-price-display">--.--</div>
-                </div>
+                <h2 id="chart-title" class="text-xl font-semibold mb-3 text-white">Market Chart</h2>
+                <div id="chart-container"></div>
             </div>
         </section>
         <footer class="text-center text-gray-500 mt-12 py-4 border-t border-gray-700">
@@ -65,23 +43,13 @@
     <script>
         const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
-        const timeframeSelector = document.getElementById('timeframe-selector');
         const chartTitle = document.getElementById('chart-title');
-        const lastUpdatedSpan = document.getElementById('last-updated');
-        const livePriceDisplay = document.getElementById('live-price-display');
-
         let chart = null;
         let candlestickSeries = null;
-        let lastCandle = null;
-        let currentTimeframe = '5m';
-        let signalRefreshInterval = null;
-        let priceUpdateInterval = null;
 
         function initializeChart() {
-            if (chart) return;
+            if (chart) chart.remove();
             try {
-                chartContainer.innerHTML = '';
-                chartContainer.appendChild(livePriceDisplay);
                 chart = LightweightCharts.createChart(chartContainer, {
                     width: chartContainer.clientWidth, height: chartContainer.clientHeight,
                     layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
@@ -89,129 +57,73 @@
                     timeScale: { timeVisible: true, secondsVisible: false }
                 });
                 candlestickSeries = chart.addCandlestickSeries({
-                    upColor: '#10B981', downColor: '#EF4444',
-                    borderDownColor: '#EF4444', borderUpColor: '#10B981',
-                    wickDownColor: '#EF4444', wickUpColor: '#10B981'
+                    upColor: '#10B981', downColor: '#EF4444', borderDownColor: '#EF4444', borderUpColor: '#10B981', wickDownColor: '#EF4444', wickUpColor: '#10B981'
                 });
             } catch (e) {
-                console.error("FATAL: Could not create chart.", e);
-                chartContainer.innerHTML = `<p class="text-red-500 p-4">Fatal Error: ${e.message}</p>`;
-                chart = null;
+                console.error("Chart initialization failed:", e);
+                chartContainer.innerHTML = `<p class="text-red-500 p-4">Chart Error: ${e.message}</p>`;
             }
         }
 
-        function updateChart(signalData) {
-            if (!chart || !candlestickSeries) return;
-            const formattedCandles = signalData.candles.map(c => ({
+        function updateChart(data) {
+            if (!candlestickSeries) return;
+            const candles = data.candles || [];
+            if (candles.length === 0) {
+                chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available for this signal.</p>';
+                return;
+            }
+            const formattedCandles = candles.map(c => ({
                 time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
             }));
             candlestickSeries.setData(formattedCandles);
-            lastCandle = formattedCandles[formattedCandles.length - 1] || null;
+            const lastCandle = formattedCandles[formattedCandles.length - 1];
             if (lastCandle) {
                 const markers = [];
-                if (signalData.signal.toLowerCase() === 'buy') markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
-                else if (signalData.signal.toLowerCase() === 'sell') markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
+                if (data.signal.toLowerCase() === 'buy') markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
+                else if (data.signal.toLowerCase() === 'sell') markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
                 candlestickSeries.setMarkers(markers);
             }
             chart.timeScale().fitContent();
         }
 
-        async function updateRealtimePrice() {
-            if (!candlestickSeries || !lastCandle) return;
+        async function fetchLiveSignal() {
             try {
-                const response = await fetch('/api/price?symbol=XAU/USD');
-                if (!response.ok) return;
+                const response = await fetch('/api/get_live_signal');
+                if (!response.ok) throw new Error('Failed to get response from server.');
+                
                 const data = await response.json();
-                const price = data.price;
-                livePriceDisplay.innerText = price.toFixed(5);
-                const newCandle = { ...lastCandle, high: Math.max(lastCandle.high, price), low: Math.min(lastCandle.low, price), close: price };
-                candlestickSeries.update(newCandle);
-                lastCandle = newCandle;
-            } catch (error) {
-                // خاموشی سے ناکام ہو جائیں تاکہ کنسول بھر نہ جائے
-            }
-        }
-
-        function updateLastUpdated(manual = false) {
-            const now = new Date();
-            lastUpdatedSpan.textContent = `Last updated: ${now.toLocaleTimeString()}`;
-            lastUpdatedSpan.style.color = manual ? '#f59e0b' : '#6b7280';
-            setTimeout(() => { lastUpdatedSpan.style.color = '#6b7280'; }, 2000);
-        }
-
-        async function fetchAndDisplaySignal(timeframe, isManual = false) {
-            if (isManual) {
-                signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching signal for ${timeframe}.</p>`;
-            }
-            chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
-            initializeChart();
-            try {
-                const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Could not fetch data.');
-                }
-                const data = await response.json();
-                const { signal, confidence, tier, reason, price, tp, sl, candles } = data;
+                const { symbol, signal, confidence, tier, reason, price, tp, sl, timeframe, generated_at } = data;
+                
                 const statusClass = signal.toLowerCase() || 'wait';
-                signalDisplay.innerHTML = `
-                    <div class="signal-card ${statusClass}">
-                        <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signal ? signal.toUpperCase() : 'WAIT'}</h3>
-                        <p class="text-lg font-semibold text-gray-200 mt-1">XAU/USD @ ${price ? price.toFixed(5) : 'N/A'}</p>
-                        <div class="text-left mt-4 space-y-1 text-sm">
-                            <p><strong>Confidence:</strong> ${confidence ? confidence.toFixed(2) + '%' : 'N/A'}</p>
-                            <p><strong>Tier:</strong> ${tier || 'N/A'}</p>
-                            <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'No specific reason.'}</em></p>
-                            ${signal.toLowerCase() !== 'wait' && tp && sl ? `<p><strong>TP:</strong> ${tp.toFixed(5)}</p><p><strong>SL:</strong> ${sl.toFixed(5)}</p>` : ''}
-                        </div>
-                    </div>`;
-                if (candles && candles.length > 0) {
-                    updateChart(data);
-                    startPriceUpdater();
-                } else {
-                    stopPriceUpdater();
-                    chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available.</p>';
-                }
-                updateLastUpdated(isManual);
+                signalDisplay.className = `signal-card ${statusClass}`; // کلاس کو اپ ڈیٹ کریں
+                
+                let signalHTML = `
+                    <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signal ? signal.toUpperCase() : 'WAIT'}</h3>
+                    <p class="text-lg font-semibold text-gray-200 mt-1">${symbol || 'N/A'} ${timeframe ? `(${timeframe})` : ''}</p>
+                    <div class="text-left mt-4 space-y-1 text-sm">
+                        ${confidence ? `<p><strong>Confidence:</strong> ${confidence.toFixed(2)}%</p>` : ''}
+                        ${tier ? `<p><strong>Tier:</strong> ${tier}</p>` : ''}
+                        <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'N/A'}</em></p>
+                        ${signal.toLowerCase() !== 'wait' && tp && sl ? `<p><strong>TP:</strong> ${tp.toFixed(5)}</p><p><strong>SL:</strong> ${sl.toFixed(5)}</p>` : ''}
+                    </div>
+                    ${generated_at ? `<p id="last-updated" class="mt-4">Signal found at: ${new Date(generated_at).toLocaleTimeString()}</p>` : ''}
+                `;
+                signalDisplay.innerHTML = signalHTML;
+
+                chartTitle.innerText = `${symbol || 'Market'} Chart`;
+                initializeChart();
+                updateChart(data);
+
             } catch (error) {
                 console.error("Fetch error:", error);
-                stopPriceUpdater();
-                signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
+                signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Connection Error</h3><p>${error.message}</p></div>`;
             }
         }
 
-        function startSignalRefresher() {
-            if (signalRefreshInterval) clearInterval(signalRefreshInterval);
-            signalRefreshInterval = setInterval(() => {
-                fetchAndDisplaySignal(currentTimeframe, false);
-            }, 60000);
-        }
-
-        function startPriceUpdater() {
-            stopPriceUpdater();
-            priceUpdateInterval = setInterval(updateRealtimePrice, 30000); // وقفہ 20 سیکنڈ
-        }
-        function stopPriceUpdater() {
-            if (priceUpdateInterval) clearInterval(priceUpdateInterval);
-        }
-
-        timeframeSelector.addEventListener('click', (e) => {
-            if (e.target.tagName === 'BUTTON') {
-                const newTimeframe = e.target.dataset.timeframe;
-                if (newTimeframe !== currentTimeframe) {
-                    currentTimeframe = newTimeframe;
-                    document.querySelectorAll('#timeframe-selector button').forEach(btn => btn.classList.remove('active'));
-                    e.target.classList.add('active');
-                    stopPriceUpdater();
-                    fetchAndDisplaySignal(currentTimeframe, true);
-                    startSignalRefresher();
-                }
-            }
-        });
-
+        // صفحہ لوڈ ہونے پر اور پھر ہر 60 سیکنڈ بعد سگنل حاصل کریں
         window.addEventListener('load', () => {
-            fetchAndDisplaySignal(currentTimeframe, true);
-            startSignalRefresher();
+            fetchLiveSignal();
+            setInterval(fetchLiveSignal, 60000); // ہر منٹ بعد خود بخود تازہ ترین سگنل چیک کریں
         });
     </script>
 </body>
