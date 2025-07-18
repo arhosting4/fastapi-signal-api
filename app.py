@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pandas as pd
+from datetime import datetime, timedelta # وقت کے لیے timedelta امپورٹ کریں
 
 # ہمارے اپنے ماڈیولز
 from feedback_checker import check_active_signals_job
@@ -15,6 +16,12 @@ from signal_tracker import get_active_signal_for_timeframe, add_active_signal
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 app = FastAPI(title="ScalpMaster AI API")
+
+# --- ذہین کیشنگ سسٹم ---
+# یہ ڈکشنری قیمتوں کو سرور کی میموری میں محفوظ کرے گی
+# {'SYMBOL': (price, timestamp)}
+price_cache = {}
+CACHE_DURATION_SECONDS = 20 # 20 سیکنڈ کے لیے قیمت کو کیش کریں
 
 scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -32,6 +39,7 @@ async def shutdown_event():
     print("APScheduler has been shut down.")
 
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100):
+    # ... (یہ فنکشن ویسے ہی رہے گا) ...
     if not TWELVE_DATA_API_KEY:
         raise HTTPException(status_code=500, detail="API key for data provider is not configured.")
     interval_map = {"1m": "1min", "5m": "5min", "15m": "15min"}
@@ -63,10 +71,21 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int =
 async def health_check():
     return {"status": "ok", "message": "ScalpMaster AI is running."}
 
-# --- نیا، ہلکا پھلکا اینڈ پوائنٹ ---
+# --- نیا، کیشنگ کے ساتھ اپ ڈیٹ شدہ /api/price اینڈ پوائنٹ ---
 @app.get("/api/price", tags=["Real-time Data"])
 async def get_realtime_price(symbol: str = Query("XAU/USD")):
-    """صرف ایک علامت کے لیے تازہ ترین قیمت تیزی سے حاصل کرتا ہے۔"""
+    """تازہ ترین قیمت حاصل کرتا ہے، اور API کالز بچانے کے لیے کیشنگ کا استعمال کرتا ہے۔"""
+    now = datetime.utcnow()
+
+    # 1. کیشے چیک کریں
+    if symbol in price_cache:
+        cached_price, cache_time = price_cache[symbol]
+        if now - cache_time < timedelta(seconds=CACHE_DURATION_SECONDS):
+            print(f"CACHE HIT: Returning cached price for {symbol}: {cached_price}")
+            return {"symbol": symbol, "price": cached_price, "source": "cache"}
+
+    # 2. اگر کیشے پرانی ہے یا موجود نہیں، تو API کال کریں
+    print(f"CACHE MISS: Fetching new price for {symbol} from Twelve Data.")
     if not TWELVE_DATA_API_KEY:
         raise HTTPException(status_code=500, detail="API key is not configured.")
     
@@ -77,16 +96,18 @@ async def get_realtime_price(symbol: str = Query("XAU/USD")):
         response.raise_for_status()
         data = response.json()
         if "price" in data:
-            return {"symbol": symbol, "price": float(data["price"])}
+            new_price = float(data["price"])
+            # 3. نئی قیمت کو کیشے میں محفوظ کریں
+            price_cache[symbol] = (new_price, now)
+            return {"symbol": symbol, "price": new_price, "source": "api"}
         else:
-            # اگر قیمت دستیاب نہ ہو تو ایک مناسب ایرر بھیجیں
             raise HTTPException(status_code=404, detail="Price not available for the symbol.")
     except Exception as e:
-        # عام ایرر کو بھی ایک مناسب HTTP ایرر میں تبدیل کریں
         raise HTTPException(status_code=502, detail=f"Failed to fetch real-time price: {str(e)}")
 
 @app.get("/api/signal", tags=["AI Signals"])
 async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m")):
+    # ... (یہ فنکشن ویسے ہی رہے گا) ...
     try:
         active_signal = get_active_signal_for_timeframe(symbol, timeframe)
         if active_signal:
@@ -112,4 +133,4 @@ async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m"
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-        
+    
