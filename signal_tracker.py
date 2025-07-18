@@ -3,92 +3,73 @@ import os
 from datetime import datetime
 
 TRACKER_FILE = "signal_tracker.json"
-TRACKER_DIR = "data" # Directory to store tracker data
+TRACKER_DIR = "data"
 
-# Ensure the tracker directory exists
 os.makedirs(TRACKER_DIR, exist_ok=True)
 TRACKER_FILE_PATH = os.path.join(TRACKER_DIR, TRACKER_FILE)
 
-# Initialize tracker file if not exist
+# فائل کو شروع میں خالی لسٹ کے ساتھ بنائیں
 if not os.path.exists(TRACKER_FILE_PATH):
-    try:
-        with open(TRACKER_FILE_PATH, "w") as f:
-            json.dump([], f) # Initialize with an empty list
-        print(f"✅ Created empty signal tracker file: {TRACKER_FILE_PATH}")
-    except Exception as e:
-        print(f"⚠️ Error creating signal tracker file: {e}")
+    with open(TRACKER_FILE_PATH, "w") as f:
+        json.dump([], f)
 
-def add_active_signal(signal_data: dict):
-    """
-    Adds a new active signal to the tracker.
-
-    Parameters:
-        signal_data (dict): The dictionary containing the signal result from fusion_engine.
-    """
-    try:
-        with open(TRACKER_FILE_PATH, "r") as f:
-            active_signals = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        active_signals = []
-        print(f"⚠️ Signal tracker file {TRACKER_FILE_PATH} was empty or corrupted, re-initializing.")
-
-    # Add a unique ID and timestamp to the signal
-    signal_id = f"{signal_data['symbol'].replace('/', '_')}_{datetime.utcnow().timestamp()}"
-    signal_data['id'] = signal_id
-    signal_data['status'] = 'active' # Set initial status to active
-    signal_data['timestamp'] = datetime.utcnow().isoformat()
-
-    active_signals.append(signal_data)
-
-    try:
-        with open(TRACKER_FILE_PATH, "w") as f:
-            json.dump(active_signals, f, indent=2)
-        print(f"✅ New active signal added to tracker: {signal_id}")
-    except Exception as e:
-        print(f"⚠️ Error saving active signal: {e}")
-
-def get_active_signals() -> list:
-    """
-    Retrieves all active signals from the tracker.
-
-    Returns:
-        list: A list of active signal dictionaries.
-    """
+def get_all_signals() -> list:
+    """ ٹریکر سے تمام سگنلز (فعال اور غیر فعال) حاصل کرتا ہے۔ """
     try:
         with open(TRACKER_FILE_PATH, "r") as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
         return []
 
-def update_signal_status(signal_id: str, new_status: str):
-    """
-    Updates the status of a signal in the tracker (e.g., to 'correct', 'incorrect', 'expired').
-
-    Parameters:
-        signal_id (str): The unique ID of the signal.
-        new_status (str): The new status of the signal.
-    """
+def save_all_signals(signals: list):
+    """ تمام سگنلز کی فہرست کو فائل میں محفوظ کرتا ہے۔ """
     try:
-        with open(TRACKER_FILE_PATH, "r") as f:
-            active_signals = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        return
+        with open(TRACKER_FILE_PATH, "w") as f:
+            json.dump(signals, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving signals: {e}")
 
-    # Find the signal and update its status
+# --- نیا فنکشن ---
+def get_active_signal_for_timeframe(symbol: str, timeframe: str):
+    """
+    ایک مخصوص علامت اور ٹائم فریم کے لیے فعال سگنل تلاش کرتا ہے۔
+    اگر مل جائے تو سگنل ڈکشنری واپس کرتا ہے، ورنہ None۔
+    """
+    signals = get_all_signals()
+    for signal in signals:
+        if (signal.get('status') == 'active' and
+            signal.get('symbol') == symbol and
+            signal.get('timeframe') == timeframe):
+            print(f"✅ Found active signal {signal.get('id')} for {symbol} on {timeframe}.")
+            return signal
+    return None
+
+def add_active_signal(signal_data: dict):
+    """ ایک نئے فعال سگنل کو ٹریکر میں شامل کرتا ہے۔ """
+    signals = get_all_signals()
+    
+    signal_id = f"{signal_data['symbol'].replace('/', '_')}_{datetime.utcnow().timestamp()}"
+    signal_data['id'] = signal_id
+    signal_data['status'] = 'active'
+    signal_data['timestamp'] = datetime.utcnow().isoformat()
+
+    signals.append(signal_data)
+    save_all_signals(signals)
+    print(f"✅ New active signal added to tracker: {signal_id}")
+
+def update_signal_status(signal_id: str, new_status: str, outcome_price: float):
+    """ سگنل کی حیثیت کو اپ ڈیٹ کرتا ہے اور اسے غیر فعال کرتا ہے۔ """
+    signals = get_all_signals()
     signal_found = False
-    for signal in active_signals:
+    for signal in signals:
         if signal.get('id') == signal_id:
             signal['status'] = new_status
+            signal['outcome_price'] = outcome_price
+            signal['closed_at'] = datetime.utcnow().isoformat()
             signal_found = True
             break
     
-    # Remove non-active signals from the tracker
-    updated_signals = [s for s in active_signals if s.get('status') == 'active']
-
     if signal_found:
-        try:
-            with open(TRACKER_FILE_PATH, "w") as f:
-                json.dump(updated_signals, f, indent=2)
-            print(f"✅ Signal {signal_id} status updated to {new_status} and removed from active list.")
-        except Exception as e:
-            print(f"⚠️ Error updating signal status: {e}")
+        save_all_signals(signals)
+        print(f"✅ Signal {signal_id} status updated to {new_status}.")
+
