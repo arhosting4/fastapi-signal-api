@@ -1,119 +1,130 @@
-import os
 import traceback
-import asyncio
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
-import yfinance as yf
-import pandas as pd
+import httpx
+from strategybot import generate_core_signal, calculate_tp_sl
+from patternai import detect_patterns
+from riskguardian import check_risk
+from sentinel import check_news
+from reasonbot import generate_reason
+from trainerai import get_confidence
+from tierbot import get_tier
+# signal_tracker کو ابھی استعمال نہیں کر رہے، لیکن مستقبل کے لیے رکھ سکتے ہیں
+# from signal_tracker import add_active_signal
 
-# --- اہم: اصل فیوژن انجن کو امپورٹ کریں ---
-from fusion_engine import generate_final_signal
-
-# --- FastAPI ایپ کی شروعات ---
-app = FastAPI(title="ScalpMaster AI API")
-
-# --- ہیلپر فنکشنز ---
-def get_yfinance_symbol(symbol: str) -> str:
-    """ 'XAU/USD' جیسے علامات کو yfinance کے لیے 'GC=F' میں تبدیل کرتا ہے۔ """
-    if symbol.upper() == "XAU/USD":
-        return "GC=F"
-    # مستقبل میں دیگر علامات کے لیے بھی یہاں منطق شامل کی جا سکتی ہے
-    return symbol
-
-async def fetch_real_ohlc_data(symbol: str, timeframe: str):
-    """Yahoo Finance سے OHLCV ڈیٹا حاصل کرتا ہے۔"""
-    yfinance_symbol = get_yfinance_symbol(symbol)
-    
-    # yfinance کے لیے ٹائم فریم اور پیریڈ میپنگ
-    period_map = {"1m": "2d", "5m": "5d", "15m": "10d", "1h": "1mo", "4h": "3mo", "1d": "1y"}
-    period = period_map.get(timeframe)
-    if not period:
-        raise ValueError(f"Unsupported timeframe: {timeframe}")
-
-    print(f"YAHOO FINANCE: Fetching data for '{yfinance_symbol}' (Timeframe: {timeframe}, Period: {period})...")
-    
-    try:
-        # yfinance.download ایک بلاکنگ I/O آپریشن ہے، اسے تھریڈ میں چلائیں
-        data = await asyncio.to_thread(
-            yf.download,
-            tickers=yfinance_symbol,
-            period=period,
-            interval=timeframe,
-            progress=False,
-            auto_adjust=False
-        )
-        
-        if data.empty:
-            raise ValueError(f"No data returned from yfinance for '{yfinance_symbol}'. It might be a holiday or an invalid symbol.")
-        
-        # ملٹی انڈیکس کالمز کو ہینڈل کریں (اگر ہوں)
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        data.reset_index(inplace=True)
-        # کالم کے ناموں کو لوئر کیس کریں
-        data.columns = [str(col).lower().strip() for col in data.columns]
-        
-        # 'Date' یا 'Datetime' کو 'datetime' میں تبدیل کریں
-        rename_dict = {'date': 'datetime', 'index': 'datetime'}
-        data.rename(columns=rename_dict, inplace=True)
-        
-        # یقینی بنائیں کہ تمام ضروری کالمز موجود ہیں
-        required_cols = ['datetime', 'open', 'high', 'low', 'close', 'volume']
-        for col in required_cols:
-            if col not in data.columns:
-                raise ValueError(f"Missing required column '{col}'. Available columns: {data.columns.to_list()}")
-        
-        # تاریخ کو UTC میں تبدیل کریں اور سٹرنگ فارمیٹ میں لائیں
-        data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_convert('UTC').dt.strftime('%Y-%m-%d %H:%M:%S')
-        
-        candles = data[required_cols].to_dict('records')
-        print(f"YAHOO FINANCE: Successfully fetched and processed {len(candles)} candles.")
-        return candles
-        
-    except Exception as e:
-        print(f"CRITICAL: Failed to fetch or process data from yfinance: {e}")
-        traceback.print_exc()
-        # ایرر کو آگے بھیجیں تاکہ API کالر کو پتہ چلے
-        raise
-
-# --- API اینڈ پوائنٹس ---
-
-@app.get("/health", status_code=200, tags=["System"])
-async def health_check():
-    """ Render.com جیسی سروسز کے لیے ہیلتھ چیک اینڈ پوائنٹ۔ """
-    return {"status": "ok", "message": "ScalpMaster AI is running."}
-
-@app.get("/api/signal", tags=["AI Signals"])
-async def get_signal(symbol: str = Query("XAU/USD", description="Trading Symbol"), timeframe: str = Query("5m", description="Chart Timeframe (e.g., 1m, 5m, 15m)")):
+async def generate_final_signal(symbol: str, candles: list, timeframe: str):
     """
-    ایک مخصوص علامت اور ٹائم فریم کے لیے AI ٹریڈنگ سگنل تیار کرتا ہے۔
+    تمام AI ایجنٹس سے ڈیٹا اکٹھا کرکے ایک حتمی، جامع ٹریڈنگ سگنل تیار کرتا ہے۔
     """
     try:
-        # 1. مارکیٹ ڈیٹا حاصل کریں
-        candles = await fetch_real_ohlc_data(symbol, timeframe)
-        if not candles or len(candles) < 20: # AI کو کم از کم 20 کینڈلز کی ضرورت ہے
-            raise HTTPException(status_code=404, detail="Not enough historical data to generate a reliable signal.")
+        # 1. بنیادی تکنیکی تجزیہ سے سگنل حاصل کریں
+        core_signal_data = generate_core_signal(symbol, timeframe, candles)
+        core_signal = core_signal_data["signal"]
         
-        # 2. اصل AI انجن کو کال کریں
-        print(f"Invoking AI Fusion Engine for {symbol} on {timeframe} timeframe...")
-        signal_result = await generate_final_signal(symbol, candles, timeframe)
-        print(f"AI Engine returned signal: {signal_result.get('signal')}")
-        
-        # 3. نتیجہ واپس بھیجیں
-        return signal_result
-        
-    except ValueError as ve:
-        # ڈیٹا حاصل کرنے یا ٹائم فریم کے مسائل کے لیے
-        print(f"VALUE ERROR in get_signal: {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        # دیگر تمام غیر متوقع ایررز کے لیے
-        print(f"CRITICAL SERVER ERROR in get_signal for {symbol}: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred in the AI Engine: {str(e)}")
+        # اگر ڈیٹا بہت کم ہے تو فوری طور پر انتظار کا سگنل دیں
+        if core_signal == "wait" and len(candles) < 34:
+            return {
+                "signal": "wait",
+                "reason": "Insufficient historical data for a reliable analysis.",
+                "confidence": 30.0,
+                "tier": "Tier 5 – Weak",
+                "price": candles[-1]['close'] if candles else None,
+                "tp": None,
+                "sl": None,
+                "candles": candles,
+                "pattern": "Insufficient Data",
+                "risk": "Unknown",
+                "news": "Unknown"
+            }
 
-# --- اسٹیٹک فائلیں اور روٹ پیج ---
-# یہ 'frontend' فولڈر کو پیش کرتا ہے اور index.html کو روٹ پر دکھاتا ہے
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-                     
+        # 2. کینڈل اسٹک پیٹرن کا پتہ لگائیں
+        pattern_data = detect_patterns(candles)
+        pattern_name = pattern_data.get("pattern", "No Specific Pattern")
+        pattern_type = pattern_data.get("type", "neutral")
+
+        # 3. مارکیٹ کے رسک کا اندازہ لگائیں
+        risk_assessment = check_risk(candles)
+        risk_status = risk_assessment.get("status", "Normal")
+        risk_reason = risk_assessment.get("reason", "Market risk appears normal.")
+
+        # 4. اہم خبروں کی جانچ کریں (غیر مطابقت پذیر طریقے سے)
+        async with httpx.AsyncClient() as client:
+            news_data = await check_news(symbol, client)
+        news_impact = news_data.get("impact", "Clear")
+        news_reason = news_data.get("reason", "News analysis complete.")
+
+        # 5. اگر رسک یا خبریں بہت زیادہ ہیں تو ٹریڈنگ کو بلاک کریں
+        if risk_status == "High" or news_impact == "High":
+            block_reason = f"Trading Blocked: {risk_reason}" if risk_status == "High" else f"Trading Blocked: {news_reason}"
+            return {
+                "signal": "wait",
+                "reason": block_reason,
+                "confidence": 10.0,
+                "tier": "Tier 5 – Weak",
+                "price": candles[-1]['close'] if candles else None,
+                "tp": None,
+                "sl": None,
+                "candles": candles,
+                "pattern": pattern_name,
+                "risk": risk_status,
+                "news": news_impact
+            }
+
+        # 6. تمام معلومات کی بنیاد پر اعتماد کا سکور حاصل کریں
+        confidence = get_confidence(core_signal, pattern_type, risk_status, news_impact, symbol)
+        
+        # 7. اعتماد کی بنیاد پر ٹئیر (درجہ) حاصل کریں
+        tier = get_tier(confidence)
+        
+        # 8. سگنل کی وجہ واضح اور جامع الفاظ میں بنائیں
+        reason = generate_reason(core_signal, pattern_data, risk_status, news_impact, confidence)
+
+        # 9. ٹیک پرافٹ (TP) اور اسٹاپ لاس (SL) کا حساب لگائیں
+        tp_sl_buy, tp_sl_sell = calculate_tp_sl(candles)
+        tp = None
+        sl = None
+
+        if core_signal == "buy" and tp_sl_buy:
+            tp, sl = tp_sl_buy
+        elif core_signal == "sell" and tp_sl_sell:
+            tp, sl = tp_sl_sell
+
+        # 10. حتمی نتیجہ تیار کریں
+        final_result = {
+            "signal": core_signal,
+            "price": candles[-1]['close'] if candles else None,
+            "tp": round(tp, 5) if tp is not None else None,
+            "sl": round(sl, 5) if sl is not None else None,
+            "confidence": round(confidence, 2),
+            "tier": tier,
+            "reason": reason,
+            "pattern": pattern_name,
+            "risk": risk_status,
+            "news": news_impact,
+            "timeframe": timeframe,
+            "symbol": symbol,
+            "candles": candles
+        }
+
+        # اگر سگنل درست ہے تو اسے ٹریکر میں شامل کریں (مستقبل کے لیے)
+        # if final_result["signal"] != "wait" and tp is not None and sl is not None:
+        #     add_active_signal(final_result)
+
+        return final_result
+
+    except Exception as e:
+        print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
+        traceback.print_exc()
+        # ایک محفوظ ایرر میسج واپس بھیجیں
+        return {
+            "signal": "wait",
+            "reason": f"An internal AI error occurred: {e}",
+            "confidence": 0.0,
+            "tier": "Error",
+            "price": candles[-1]['close'] if candles else None,
+            "tp": None,
+            "sl": None,
+            "candles": candles,
+            "pattern": "Error",
+            "risk": "Error",
+            "news": "Error"
+        }
+        
