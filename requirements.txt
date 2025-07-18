@@ -3,13 +3,12 @@ fastapi==0.111.0
 uvicorn==0.30.1
 gunicorn==22.0.0
 python-dotenv==1.0.1
-httpx==0.28.1
 
 # Data and AI
 numpy==1.26.4
 pandas==2.2.2
 pandas_ta
-yfinance
 
-# Scheduling and Background Tasks
-apscheduler==3.10.4  # <--- مستحکم ورژن 3 میں تبدیل کر دیا گیا
+# API Calls and Background Tasks
+httpx==0.27.0
+apscheduler==3.10.4
