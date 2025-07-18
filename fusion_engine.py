@@ -1,83 +1,88 @@
-from strategybot import generate_core_signal, calculate_tp_sl
-from patternai import detect_patterns
-from riskguardian import check_risk
-from sentinel import check_news
-from reasonbot import generate_reason
-from trainerai import get_confidence
-from tierbot import get_tier
-from signal_tracker import add_active_signal
+import os
 import traceback
-import httpx
+import asyncio
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+import yfinance as yf
+import pandas as pd
 
-async def generate_final_signal(symbol: str, candles: list, timeframe: str):
+# --- اہم تبدیلی: اصل فیوژن انجن کو امپورٹ کریں ---
+from fusion_engine import generate_final_signal
+
+# --- FastAPI ایپ کی شروعات ---
+app = FastAPI()
+
+# --- ہیلپر فنکشنز ---
+def get_yfinance_symbol(symbol: str) -> str:
+    if symbol.upper() == "XAU/USD": return "GC=F"
+    return symbol
+
+async def fetch_real_ohlc_data(symbol: str, timeframe: str):
+    yfinance_symbol = get_yfinance_symbol(symbol)
+    period_map = {"1m":"2d", "5m":"5d", "15m":"10d", "1h":"1mo", "4h":"3mo", "1d":"1y"}
+    period = period_map.get(timeframe, "5d")
+    print(f"YAHOO FINANCE: Fetching data for '{yfinance_symbol}' ({timeframe}, {period})...")
     try:
-        core_signal_data = generate_core_signal(symbol, timeframe, candles)
-        core_signal = core_signal_data["signal"]
+        data = await asyncio.to_thread(
+            yf.download, tickers=yfinance_symbol, period=period, interval=timeframe,
+            progress=False, auto_adjust=False
+        )
+        if data.empty: raise ValueError(f"No data returned for '{yfinance_symbol}'.")
         
-        if core_signal == "wait" and len(candles) < 34:
-            return {
-                "status": "no-signal", "symbol": symbol, "signal": "wait",
-                "pattern": "Insufficient Data", "risk": "Normal", "news": "Clear",
-                "reason": "Insufficient historical data for a reliable signal.",
-                "confidence": 50.0, "tier": "Tier 5 – Weak", "timeframe": timeframe,
-                "price": candles[-1]['close'] if candles else None, "tp": None, "sl": None, "candles": candles
-            }
+        # ملٹی انڈیکس کالمز کو ہینڈل کریں
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
 
-        pattern_data = detect_patterns(candles)
-        pattern_name = pattern_data.get("pattern", "No Specific Pattern")
-        pattern_type = pattern_data.get("type", "neutral")
-
-        risk_assessment = check_risk(candles)
-        risk_status = risk_assessment.get("status", "Normal")
-        risk_reason = risk_assessment.get("reason", "Market risk appears normal.")
-
-        async with httpx.AsyncClient() as client:
-            news_data = await check_news(symbol, client)
-        news_impact = news_data["impact"]
-        news_reason = news_data["reason"]
-
-        if risk_status == "High" or news_impact == "High":
-            block_reason = risk_reason if risk_status == "High" else news_reason
-            return {
-                "status": "blocked", "symbol": symbol, "signal": "wait",
-                "pattern": pattern_name, "risk": risk_status, "news": news_impact,
-                "reason": f"Trading BLOCKED: {block_reason}", "confidence": 0.0,
-                "tier": "Tier 5 – Weak", "timeframe": timeframe,
-                "price": candles[-1]['close'] if candles else None, "tp": None, "sl": None, "candles": candles
-            }
-
-        confidence = get_confidence(core_signal, pattern_type, risk_status, news_impact, symbol)
-        tier = get_tier(confidence)
-        reason = generate_reason(core_signal, pattern_data, risk_status, news_impact, confidence)
-
-        tp_sl_buy, tp_sl_sell = calculate_tp_sl(candles)
-        tp = None
-        sl = None
-
-        if core_signal == "buy" and tp_sl_buy:
-            tp, sl = tp_sl_buy
-        elif core_signal == "sell" and tp_sl_sell:
-            tp, sl = tp_sl_sell
-
-        final_result = {
-            "status": "ok" if core_signal != "wait" else "no-signal",
-            "symbol": symbol, "signal": core_signal, "pattern": pattern_name,
-            "risk": risk_status, "news": news_impact, "reason": reason,
-            "confidence": round(confidence, 2), "tier": tier, "timeframe": timeframe,
-            "price": candles[-1]['close'] if candles else None,
-            "tp": round(tp, 5) if tp is not None else None,
-            "sl": round(sl, 5) if sl is not None else None,
-            "candles": candles
-        }
-
-        # --- اہم ترین تبدیلی: یہاں صرف ایک پیرامیٹر بھیجیں ---
-        if final_result["status"] == "ok" and tp is not None and sl is not None:
-            add_active_signal(final_result) # <-- یہاں سے symbol ہٹا دیا گیا ہے
-
-        return final_result
-
+        data.reset_index(inplace=True)
+        data.columns = [str(col).lower().strip() for col in data.columns]
+        
+        rename_dict = {'date': 'datetime', 'index': 'datetime'}
+        data.rename(columns=rename_dict, inplace=True)
+        
+        required_cols = ['datetime', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_cols:
+            if col not in data.columns:
+                raise ValueError(f"Missing required column '{col}'. Available: {data.columns.to_list()}")
+        
+        # تاریخ کو UTC میں تبدیل کریں اور فارمیٹ کریں
+        data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_convert('UTC').dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        candles = data[required_cols].to_dict('records')
+        print(f"YAHOO FINANCE: Successfully fetched and processed {len(candles)} candles.")
+        return candles
     except Exception as e:
-        print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
+        print(f"CRITICAL: Failed to process data from yfinance: {e}")
         traceback.print_exc()
-        raise Exception(f"Error in AI fusion for {symbol}: {e}")
+        raise
+
+# --- API اینڈ پوائنٹس ---
+
+@app.get("/health", status_code=200)
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/api/signal")
+async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m")):
+    try:
+        # 1. ڈیٹا حاصل کریں
+        candles = await fetch_real_ohlc_data(symbol, timeframe)
+        if not candles: 
+            raise HTTPException(status_code=404, detail="Could not fetch candle data.")
         
+        # 2. --- اہم تبدیلی: اصل AI انجن کو کال کریں ---
+        signal_result = await generate_final_signal(symbol, candles, timeframe)
+        
+        # 3. نتیجہ واپس بھیجیں
+        return signal_result
+        
+    except Exception as e:
+        print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
+        traceback.print_exc()
+        # فرنٹ اینڈ کو ایک واضح ایرر بھیجیں
+        raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
+
+# --- اسٹیٹک فائلیں اور روٹ پیج ---
+# یہ لائن 'frontend' فولڈر میں موجود تمام فائلوں کو پیش کرے گی
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+
