@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chart Test</title>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+    <h1>Lightweight Charts Library Test</h1>
+    <p>If you see a chart below, the library is working correctly.</p>
+
+    <div id="chart-div" style="width: 600px; height: 400px; border: 1px solid black;"></div>
+
+    <script>
+        // اس بات کو یقینی بنائیں کہ DOM مکمل طور پر تیار ہے
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            console.log('DOM loaded. Trying to create chart...');
+            
+            // چیک کریں کہ لائبریری موجود ہے
+            if (typeof LightweightCharts === 'undefined') {
+                console.error('LightweightCharts library is NOT defined.');
+                document.getElementById('chart-div').innerText = 'Error: LightweightCharts library failed to load.';
+                return;
+            }
+
+            console.log('LightweightCharts object is available:', LightweightCharts);
+
+            const chartContainer = document.getElementById('chart-div');
+            
+            try {
+                // چارٹ بنائیں
+                const chart = LightweightCharts.createChart(chartContainer, {
+                    width: 600,
+                    height: 400,
+                });
+
+                console.log('Chart object created successfully:', chart);
+
+                // کینڈل اسٹک سیریز شامل کریں
+                const candlestickSeries = chart.addCandlestickSeries();
+
+                console.log('Candlestick series added successfully:', candlestickSeries);
+
+                // کچھ فرضی ڈیٹا ڈالیں
+                candlestickSeries.setData([
+                    { time: '2024-07-20', open: 180, high: 182, low: 178, close: 181 },
+                    { time: '2024-07-21', open: 181, high: 183, low: 179, close: 182 },
+                    { time: '2024-07-22', open: 182, high: 185, low: 181, close: 184 },
+                ]);
+
+                console.log('Chart setup complete.');
+                chartContainer.style.borderColor = 'green'; // کامیابی کی نشانی
+
+            } catch (error) {
+                console.error('An error occurred during chart creation:', error);
+                chartContainer.innerHTML = `<h2 style="color: red;">CHART FAILED</h2><p>${error.message}</p>`;
+            }
+        });
+    </script>
+
+</body>
+</html>
