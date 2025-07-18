@@ -1,61 +1,71 @@
 import random
-from feedback_memory import get_feedback_stats
+from feedback_memory import get_feedback_stats # فیڈ بیک حاصل کرنے کے لیے امپورٹ کریں
 
 def get_confidence(
     core_signal: str,
     pattern_signal_type: str,
     risk_status: str,
     news_impact: str,
-    symbol: str
+    symbol: str,
+    timeframe: str # --- نیا: ٹائم فریم بھی شامل کریں ---
 ) -> float:
     """
-    Estimates signal confidence based on current logic fusion.
+    سگنل کے اعتماد کا تخمینہ لگاتا ہے، اب ماضی کی کارکردگی کو بھی مدنظر رکھتے ہوئے۔
     """
-    # --- اہم تبدیلی: بنیادی اعتماد کو تھوڑا بڑھائیں ---
-    confidence = 55.0  # پہلے 50.0 تھا
+    base_confidence = 55.0
 
-    # 1. Core Signal and Pattern Alignment
+    # 1. تکنیکی عوامل (پہلے کی طرح)
     if core_signal == "buy" and pattern_signal_type == "bullish":
-        confidence += 20
+        base_confidence += 15
     elif core_signal == "sell" and pattern_signal_type == "bearish":
-        confidence += 20
-    elif core_signal == "wait" and pattern_signal_type == "neutral":
-        confidence += 5 # پہلے 10 تھا
+        base_confidence += 15
     elif (core_signal == "buy" and pattern_signal_type == "bearish") or \
          (core_signal == "sell" and pattern_signal_type == "bullish"):
-        confidence -= 25
+        base_confidence -= 20
 
-    # 2. Risk Assessment Impact
     if risk_status == "High":
-        confidence -= 20
+        base_confidence -= 15
     elif risk_status == "Moderate":
-        confidence -= 5 # پہلے 10 تھا
+        base_confidence -= 7
 
-    # 3. News Impact Assessment
     if news_impact == "High":
-        confidence -= 20 # پہلے 25 تھا
+        base_confidence -= 20
     elif news_impact == "Medium":
-        confidence -= 10 # پہلے 15 تھا
-    elif news_impact == "Low":
-        confidence -= 3 # پہلے 5 تھا
+        base_confidence -= 10
 
-    # 4. Feedback Loop Impact
-    feedback = get_feedback_stats(symbol)
-    if feedback and feedback["total"] > 10: # کم از کم 10 فیڈ بیک کے بعد
-        accuracy = feedback.get("accuracy", 50) # اگر accuracy نہ ہو تو 50 مانیں
-        if accuracy > 70:
-            confidence += 10 # اگر AI اچھا کام کر رہا ہے تو اعتماد بڑھائیں
+    # --- 2. نیا اور اہم مرحلہ: فیڈ بیک لوپ ---
+    # ہم ایک منفرد شناخت کنندہ بنائیں گے، جیسے "XAU/USD_15m"
+    performance_key = f"{symbol}_{timeframe}"
+    stats = get_feedback_stats(performance_key)
+
+    if stats and stats["total"] >= 5: # کم از کم 5 ٹریڈز کے بعد سیکھنا شروع کریں
+        accuracy = stats.get("accuracy", 50.0) # اگر accuracy نہ ہو تو 50 مانیں
+        
+        print(f"Feedback Loop for {performance_key}: Accuracy is {accuracy}% over {stats['total']} trades.")
+
+        if accuracy > 75:
+            # بہت اچھی کارکردگی -> اعتماد میں بڑا اضافہ
+            base_confidence += 10
+            print(f"Applying +10 confidence boost for high accuracy.")
+        elif accuracy > 60:
+            # اچھی کارکردگی -> تھوڑا اضافہ
+            base_confidence += 5
+            print(f"Applying +5 confidence boost for good accuracy.")
         elif accuracy < 40:
-            confidence -= 15 # اگر برا کام کر رہا ہے تو اعتماد کم کریں
+            # بری کارکردگی -> اعتماد میں کمی
+            base_confidence -= 10
+            print(f"Applying -10 confidence penalty for low accuracy.")
+        elif accuracy < 25:
+            # بہت بری کارکردگی -> اعتماد میں بڑی کمی
+            base_confidence -= 15
+            print(f"Applying -15 confidence penalty for very low accuracy.")
+    
+    # اعتماد کو 0-100 کی حد میں رکھیں
+    final_confidence = max(0.0, min(100.0, base_confidence))
+    
+    # تھوڑا سا بے ترتیب عنصر شامل کریں تاکہ ہر بار ایک جیسی ویلیو نہ آئے
+    final_confidence += random.uniform(-1.5, 1.5)
+    final_confidence = max(0.0, min(100.0, final_confidence))
 
-    # --- اہم تبدیلی: wait سگنل پر جرمانہ ہٹا دیں ---
-    # if core_signal == "wait":
-    #     confidence -= 10 # اس لائن کو ہٹا دیا گیا ہے
-
-    # Ensure confidence stays within 0-100 range
-    confidence = max(0.0, min(100.0, confidence))
-    confidence += random.uniform(-2.0, 2.0)
-    confidence = max(0.0, min(100.0, confidence))
-
-    return round(confidence, 2)
+    return round(final_confidence, 2)
     
