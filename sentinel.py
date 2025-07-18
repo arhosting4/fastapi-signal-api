@@ -1,53 +1,89 @@
 import os
 import httpx
-from datetime import datetime, time
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
+import json
 
-MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+NEWS_CACHE_FILE = "data/news_cache.json"
 
-# --- اہم تبدیلی: یہاں client پیرامیٹر شامل کریں ---
-async def check_news(symbol: str, client: httpx.AsyncClient) -> dict:
+# یقینی بنائیں کہ 'data' ڈائرکٹری موجود ہے
+os.makedirs("data", exist_ok=True)
+
+async def update_economic_calendar_cache():
     """
-    Checks for high-impact news events using the Marketaux API.
+    معاشی کیلنڈر سے آنے والے ہائی امپیکٹ واقعات کو حاصل کرتا ہے اور انہیں کیشے فائل میں محفوظ کرتا ہے۔
+    یہ فنکشن دن میں صرف دو بار چلایا جائے گا۔
     """
-    # اگر API ٹوکن سیٹ نہیں ہے تو ایک عمومی جواب واپس کریں
-    if not MARKETAUX_API_TOKEN:
-        print("⚠️ Marketaux API token not set. Skipping news check.")
-        return {"impact": "Clear", "reason": "News analysis is disabled."}
+    print("--- SENTINEL: Updating economic calendar cache... ---")
+    if not TWELVE_DATA_API_KEY:
+        print("⚠️ Sentinel Warning: TWELVE_DATA_API_KEY not set.")
+        return
 
-    # کرنسی پیئرز سے بنیادی کرنسی نکالیں (مثلاً، EUR/USD -> EUR,USD)
-    currencies = symbol.replace('/', ',').split(',')[0:2]
-    currency_filter = ",".join(currencies)
+    # تمام اہم ممالک کا ڈیٹا ایک ساتھ حاصل کریں
+    countries = "US,Eurozone,United Kingdom,Germany,Japan,Canada,Australia,China"
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    # اگلے 2 دن کا ڈیٹا حاصل کریں تاکہ کوئی چیز مس نہ ہو
+    day_after_tomorrow = (datetime.utcnow() + timedelta(days=2)).strftime('%Y-%m-%d')
 
-    url = f"https://api.marketaux.com/v1/news/all?symbols={currency_filter}&filter_entities=true&group=sentiment&api_token={MARKETAUX_API_TOKEN}"
+    url = f"https://api.twelvedata.com/economic_calendar"
+    params = {"country": countries, "start_date": today, "end_date": day_after_tomorrow, "apikey": TWELVE_DATA_API_KEY}
 
     try:
-        response = await client.get(url, timeout=10)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=20)
         response.raise_for_status()
         data = response.json()
 
-        if not data or not data.get("data"):
-            return {"impact": "Clear", "reason": "No significant news found."}
-
-        # خبروں کے سینٹیمنٹ کا تجزیہ کریں
-        high_impact_score = 0
-        for news_item in data["data"]:
-            # 'sentiment_score' کی موجودگی کو چیک کریں
-            if 'sentiment_score' in news_item:
-                # اگر سینٹیمنٹ بہت زیادہ مثبت یا منفی ہے تو اسے ہائی امپیکٹ سمجھیں
-                if abs(news_item["sentiment_score"]) > 0.6:
-                    high_impact_score += 1
+        upcoming_high_impact_events = []
+        if data and "events" in data and data["events"]:
+            for event in data["events"]:
+                if event.get("importance") == "High":
+                    upcoming_high_impact_events.append(event)
         
-        if high_impact_score >= 2: # اگر 2 یا زیادہ ہائی امپیکٹ خبریں ہیں
-            return {"impact": "High", "reason": f"High-impact news detected for {currency_filter}."}
-        elif high_impact_score == 1:
-            return {"impact": "Medium", "reason": f"Medium-impact news detected for {currency_filter}."}
-        else:
-            return {"impact": "Clear", "reason": "No significant market-moving news found."}
+        # کیشے فائل میں محفوظ کریں
+        with open(NEWS_CACHE_FILE, "w") as f:
+            json.dump(upcoming_high_impact_events, f, indent=2)
+        
+        print(f"--- SENTINEL: Cache updated. Found {len(upcoming_high_impact_events)} high-impact events for the next 48 hours. ---")
 
-    except httpx.RequestError as e:
-        print(f"⚠️ News API request failed: {e}")
-        return {"impact": "Clear", "reason": "Could not fetch news data."}
     except Exception as e:
-        print(f"⚠️ An unexpected error occurred during news check: {e}")
-        return {"impact": "Clear", "reason": "An error occurred during news analysis."}
+        print(f"⚠️ SENTINEL ERROR: Could not update news cache. Reason: {e}")
 
+def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
+    """
+    کیشے فائل سے ایک مخصوص علامت کے لیے نیوز کا تجزیہ حاصل کرتا ہے۔ (کوئی API کال نہیں)
+    """
+    try:
+        with open(NEWS_CACHE_FILE, "r") as f:
+            all_events = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"impact": "Clear", "reason": "News cache is not available."}
+
+    country_map = {
+        "XAU/USD": ["US"],
+        "EUR/USD": ["US", "Eurozone", "Germany"],
+        "GBP/USD": ["US", "United Kingdom"],
+        "BTC/USD": ["US"]
+    }
+    relevant_countries = country_map.get(symbol, ["US"])
+    now = datetime.utcnow()
+
+    for event in all_events:
+        event_country = event.get("country")
+        if event_country in relevant_countries:
+            event_time_str = event.get("date")
+            if not event_time_str:
+                continue
+            
+            event_time = datetime.fromisoformat(event_time_str.replace('Z', '+00:00'))
+            
+            # اگر واقعہ مستقبل میں ہے اور اگلے 60 منٹ کے اندر ہے
+            if now < event_time < (now + timedelta(minutes=60)):
+                event_name = event.get("name")
+                time_to_event = round((event_time - now).total_seconds() / 60)
+                reason = f"High-impact event '{event_name}' ({event_country}) scheduled in {time_to_event} minutes."
+                return {"impact": "High", "reason": reason}
+
+    return {"impact": "Clear", "reason": "No high-impact events for this symbol in the near future."}
+    
