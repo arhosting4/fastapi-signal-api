@@ -3,7 +3,7 @@ import traceback
 import asyncio
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles # --- یہ لائن شامل کریں ---
+from fastapi.staticfiles import StaticFiles # --- یہ لائن اہم ہے ---
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import yfinance as yf
@@ -15,15 +15,9 @@ from logger import log_signal
 from feedback_checker import check_signals
 from signal_tracker import add_active_signal
 
-# --- FastAPI ایپ اور شیڈولر کی شروعات ---
+# --- FastAPI ایپ کی شروعات ---
 app = FastAPI()
 
-# --- اسٹیٹک فائلوں کے لیے فولڈر کو ماؤنٹ کریں ---
-app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
-
-scheduler = BackgroundScheduler()
-
-# ... (باقی تمام ہیلپر فنکشنز اور API اینڈ پوائنٹس ویسے ہی رہیں گے) ...
 # --- ہیلپر فنکشنز ---
 
 def get_yfinance_symbol(symbol: str) -> str:
@@ -57,20 +51,12 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         if data.empty:
             raise ValueError(f"'{yfinance_symbol}' کے لیے کوئی ڈیٹا نہیں ملا۔")
 
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = ['_'.join(col).strip() for col in data.columns.values]
-
         data.reset_index(inplace=True)
         data.columns = [str(col).lower() for col in data.columns]
         
         rename_dict = {
             'date': 'datetime',
             'index': 'datetime',
-            f'open_{yfinance_symbol.lower()}': 'open',
-            f'high_{yfinance_symbol.lower()}': 'high',
-            f'low_{yfinance_symbol.lower()}': 'low',
-            f'close_{yfinance_symbol.lower()}': 'close',
-            f'volume_{yfinance_symbol.lower()}': 'volume'
         }
         data.rename(columns={k: v for k, v in rename_dict.items() if k in data.columns}, inplace=True)
 
@@ -92,14 +78,6 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         raise
 
 # --- API اینڈ پوائنٹس ---
-
-@app.get("/")
-async def read_root():
-    return FileResponse('frontend/index.html')
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
 
 @app.get("/api/signal")
 async def get_signal(
@@ -130,14 +108,13 @@ async def get_signal(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
 
-
 # --- بیک گراؤنڈ ٹاسک ---
+scheduler = BackgroundScheduler()
 def feedback_task_wrapper():
     """async فنکشن کو چلانے کے لیے ایک ریپر۔"""
     print("SCHEDULER: فیڈ بیک چیکر چل رہا ہے...")
     asyncio.run(check_signals())
 
-# --- ایپ کے شروع اور بند ہونے پر ---
 @app.on_event("startup")
 def startup_event():
     """ایپ کے شروع ہونے پر شیڈولر کو شروع کرتا ہے۔"""
@@ -150,4 +127,11 @@ def shutdown_event():
     """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
     print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
     scheduler.shutdown()
+
+# --- اسٹیٹک فائلوں اور روٹ پیج کو آخر میں ماؤنٹ کریں ---
+@app.get("/")
+async def read_root():
+    return FileResponse('frontend/index.html')
+
+app.mount("/", StaticFiles(directory="frontend"), name="frontend")
     
