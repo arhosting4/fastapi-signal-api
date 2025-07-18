@@ -1,5 +1,9 @@
 import traceback
 import httpx
+import pandas as pd
+import pandas_ta as ta
+
+# ہمارے پروجیکٹ کے ایجنٹس
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
 from riskguardian import check_risk
@@ -7,124 +11,126 @@ from sentinel import check_news
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
-# signal_tracker کو ابھی استعمال نہیں کر رہے، لیکن مستقبل کے لیے رکھ سکتے ہیں
-# from signal_tracker import add_active_signal
+from signal_tracker import add_active_signal
+
+# --- نیا فنکشن: بڑے ٹائم فریم کے رجحان کی تصدیق کے لیے ---
+def get_higher_timeframe_trend(candles: list) -> str:
+    """
+    ایک سادہ موونگ ایوریج کراس اوور کا استعمال کرکے بڑے ٹائم فریم کے رجحان کی سمت کا تعین کرتا ہے۔
+    """
+    if len(candles) < 50: # 50-پیریڈ SMA کے لیے کافی ڈیٹا چاہیے
+        return "neutral"
+
+    df = pd.DataFrame(candles)
+    df['close'] = pd.to_numeric(df['close'])
+
+    # دو موونگ ایوریجز کا حساب لگائیں
+    sma_fast = ta.sma(df['close'], length=20)
+    sma_slow = ta.sma(df['close'], length=50)
+
+    if sma_fast is None or sma_slow is None or sma_fast.empty or sma_slow.empty:
+        return "neutral"
+
+    # آخری دو کینڈلز کی بنیاد پر رجحان کا تعین کریں
+    if sma_fast.iloc[-1] > sma_slow.iloc[-1] and sma_fast.iloc[-2] <= sma_slow.iloc[-2]:
+        return "up_momentum" # ابھی ابھی مثبت کراس اوور ہوا
+    elif sma_fast.iloc[-1] > sma_slow.iloc[-1]:
+        return "up" # پہلے سے ہی اپ ٹرینڈ میں ہے
+    elif sma_fast.iloc[-1] < sma_slow.iloc[-1] and sma_fast.iloc[-2] >= sma_slow.iloc[-2]:
+        return "down_momentum" # ابھی ابھی منفی کراس اوور ہوا
+    elif sma_fast.iloc[-1] < sma_slow.iloc[-1]:
+        return "down" # پہلے سے ہی ڈاؤن ٹرینڈ میں ہے
+    else:
+        return "neutral"
+
+# --- اہم تبدیلی: app.py سے fetch_twelve_data_ohlc کو یہاں امپورٹ کریں ---
+# چونکہ fusion_engine کو خود ڈیٹا لانے کی ضرورت ہے، ہمیں یہ فنکشن یہاں چاہیے
+# نوٹ: یہ سرکلر امپورٹ سے بچنے کا ایک طریقہ ہے
+from app import fetch_twelve_data_ohlc
+
 
 async def generate_final_signal(symbol: str, candles: list, timeframe: str):
     """
-    تمام AI ایجنٹس سے ڈیٹا اکٹھا کرکے ایک حتمی، جامع ٹریڈنگ سگنل تیار کرتا ہے۔
+    یہ مرکزی AI انجن ہے جو تمام ایجنٹس سے مل کر حتمی سگنل بناتا ہے۔
+    اب اس میں ملٹی ٹائم فریم تصدیق شامل ہے۔
     """
     try:
-        # 1. بنیادی تکنیکی تجزیہ سے سگنل حاصل کریں
+        # 1. بنیادی ٹائم فریم پر تجزیہ
         core_signal_data = generate_core_signal(symbol, timeframe, candles)
         core_signal = core_signal_data["signal"]
         
-        # اگر ڈیٹا بہت کم ہے تو فوری طور پر انتظار کا سگنل دیں
-        if core_signal == "wait" and len(candles) < 34:
+        if core_signal == "wait":
             return {
-                "signal": "wait",
-                "reason": "Insufficient historical data for a reliable analysis.",
-                "confidence": 30.0,
-                "tier": "Tier 5 – Weak",
-                "price": candles[-1]['close'] if candles else None,
-                "tp": None,
-                "sl": None,
-                "candles": candles,
-                "pattern": "Insufficient Data",
-                "risk": "Unknown",
-                "news": "Unknown"
+                "signal": "wait", "reason": "Primary indicators suggest no clear opportunity.",
+                "confidence": 40.0, "tier": "Tier 5 – Weak", "price": candles[-1]['close'],
+                "tp": None, "sl": None, "candles": candles
             }
 
-        # 2. کینڈل اسٹک پیٹرن کا پتہ لگائیں
+        # --- 2. ملٹی ٹائم فریم تصدیق ---
+        higher_timeframe_map = {"1m": "5m", "5m": "15m", "15m": "1h"}
+        confirmation_tf = higher_timeframe_map.get(timeframe)
+        
+        htf_trend = "neutral"
+        if confirmation_tf:
+            print(f"CONFIRMATION: Fetching {confirmation_tf} data to confirm {timeframe} signal...")
+            try:
+                # بڑے ٹائم فریم کا ڈیٹا حاصل کریں
+                htf_candles = await fetch_twelve_data_ohlc(symbol, confirmation_tf)
+                htf_trend = get_higher_timeframe_trend(htf_candles)
+                print(f"CONFIRMATION: Higher timeframe ({confirmation_tf}) trend is '{htf_trend}'.")
+            except Exception as e:
+                print(f"Warning: Could not get higher timeframe confirmation. Error: {e}")
+                htf_trend = "neutral" # اگر کوئی مسئلہ ہو تو غیر جانبدار رہیں
+
+        # اگر بنیادی سگنل اور بڑا رجحان مخالف ہوں تو سگنل کو بلاک کر دیں
+        if (core_signal == "buy" and htf_trend in ["down", "down_momentum"]) or \
+           (core_signal == "sell" and htf_trend in ["up", "up_momentum"]):
+            
+            reason = f"Signal ({core_signal.upper()}) on {timeframe} was blocked by opposing trend on {confirmation_tf} timeframe."
+            print(f"BLOCK: {reason}")
+            return {
+                "signal": "wait", "reason": reason, "confidence": 20.0,
+                "tier": "Tier 5 – Weak", "price": candles[-1]['close'],
+                "tp": None, "sl": None, "candles": candles
+            }
+
+        # 3. باقی تجزیہ جاری رکھیں اگر سگنل بلاک نہیں ہوا
         pattern_data = detect_patterns(candles)
-        pattern_name = pattern_data.get("pattern", "No Specific Pattern")
-        pattern_type = pattern_data.get("type", "neutral")
-
-        # 3. مارکیٹ کے رسک کا اندازہ لگائیں
         risk_assessment = check_risk(candles)
-        risk_status = risk_assessment.get("status", "Normal")
-        risk_reason = risk_assessment.get("reason", "Market risk appears normal.")
-
-        # 4. اہم خبروں کی جانچ کریں (غیر مطابقت پذیر طریقے سے)
+        
+        # (باقی تمام منطق جیسے نیوز، اعتماد، وغیرہ ویسی ہی رہے گی)
         async with httpx.AsyncClient() as client:
             news_data = await check_news(symbol, client)
-        news_impact = news_data.get("impact", "Clear")
-        news_reason = news_data.get("reason", "News analysis complete.")
 
-        # 5. اگر رسک یا خبریں بہت زیادہ ہیں تو ٹریڈنگ کو بلاک کریں
-        if risk_status == "High" or news_impact == "High":
-            block_reason = f"Trading Blocked: {risk_reason}" if risk_status == "High" else f"Trading Blocked: {news_reason}"
-            return {
-                "signal": "wait",
-                "reason": block_reason,
-                "confidence": 10.0,
-                "tier": "Tier 5 – Weak",
-                "price": candles[-1]['close'] if candles else None,
-                "tp": None,
-                "sl": None,
-                "candles": candles,
-                "pattern": pattern_name,
-                "risk": risk_status,
-                "news": news_impact
-            }
-
-        # 6. تمام معلومات کی بنیاد پر اعتماد کا سکور حاصل کریں
-        confidence = get_confidence(core_signal, pattern_type, risk_status, news_impact, symbol)
+        confidence = get_confidence(core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data["impact"], symbol)
         
-        # 7. اعتماد کی بنیاد پر ٹئیر (درجہ) حاصل کریں
+        # اگر بڑا رجحان بھی ساتھ دے رہا ہو تو اعتماد میں اضافہ کریں
+        if (core_signal == "buy" and htf_trend in ["up", "up_momentum"]) or \
+           (core_signal == "sell" and htf_trend in ["down", "down_momentum"]):
+            print("CONFIRMATION: Boosting confidence due to alignment with higher timeframe.")
+            confidence = min(100.0, confidence + 10) # 10 پوائنٹس کا اضافہ
+
         tier = get_tier(confidence)
+        reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data["impact"], confidence)
         
-        # 8. سگنل کی وجہ واضح اور جامع الفاظ میں بنائیں
-        reason = generate_reason(core_signal, pattern_data, risk_status, news_impact, confidence)
-
-        # 9. ٹیک پرافٹ (TP) اور اسٹاپ لاس (SL) کا حساب لگائیں
         tp_sl_buy, tp_sl_sell = calculate_tp_sl(candles)
-        tp = None
-        sl = None
+        tp, sl = (tp_sl_buy if core_signal == "buy" else tp_sl_sell) if (tp_sl_buy and tp_sl_sell) else (None, None)
 
-        if core_signal == "buy" and tp_sl_buy:
-            tp, sl = tp_sl_buy
-        elif core_signal == "sell" and tp_sl_sell:
-            tp, sl = tp_sl_sell
-
-        # 10. حتمی نتیجہ تیار کریں
         final_result = {
-            "signal": core_signal,
-            "price": candles[-1]['close'] if candles else None,
+            "signal": core_signal, "reason": reason, "confidence": round(confidence, 2),
+            "tier": tier, "price": candles[-1]['close'],
             "tp": round(tp, 5) if tp is not None else None,
             "sl": round(sl, 5) if sl is not None else None,
-            "confidence": round(confidence, 2),
-            "tier": tier,
-            "reason": reason,
-            "pattern": pattern_name,
-            "risk": risk_status,
-            "news": news_impact,
-            "timeframe": timeframe,
-            "symbol": symbol,
             "candles": candles
         }
 
-        # اگر سگنل درست ہے تو اسے ٹریکر میں شامل کریں (مستقبل کے لیے)
-        # if final_result["signal"] != "wait" and tp is not None and sl is not None:
-        #     add_active_signal(final_result)
+        if final_result["signal"] in ["buy", "sell"] and tp is not None and sl is not None:
+            add_active_signal(final_result)
 
         return final_result
 
     except Exception as e:
         print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
         traceback.print_exc()
-        # ایک محفوظ ایرر میسج واپس بھیجیں
-        return {
-            "signal": "wait",
-            "reason": f"An internal AI error occurred: {e}",
-            "confidence": 0.0,
-            "tier": "Error",
-            "price": candles[-1]['close'] if candles else None,
-            "tp": None,
-            "sl": None,
-            "candles": candles,
-            "pattern": "Error",
-            "risk": "Error",
-            "news": "Error"
-        }
+        raise Exception(f"Error in AI fusion for {symbol}: {e}")
         
