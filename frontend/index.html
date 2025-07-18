@@ -9,8 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- مقامی Lightweight Charts لائبریری -->
-    <script src="/lightweight-charts.standalone.production.js"></script>
+    <!-- مقامی Lightweight Charts لائبریری (./ کے ساتھ) -->
+    <script src="./lightweight-charts.standalone.production.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -116,32 +116,43 @@
 
         function updateChart(signalData) {
             if (!chart || !candlestickSeries) {
+                console.warn("Chart or series not initialized, skipping chart update.");
                 return;
             }
-            const formattedCandles = signalData.candles.map(candle => ({
-                time: new Date(candle.datetime).getTime() / 1000,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
-            }));
-            candlestickSeries.setData(formattedCandles);
+            try {
+                const formattedCandles = signalData.candles.map(candle => ({
+                    time: new Date(candle.datetime).getTime() / 1000,
+                    open: candle.open,
+                    high: candle.high,
+                    low: candle.low,
+                    close: candle.close,
+                }));
+                candlestickSeries.setData(formattedCandles);
 
-            const lastCandle = formattedCandles[formattedCandles.length - 1];
-            const markers = [];
-            if (signalData.signal === 'buy') {
-                markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
-            } else if (signalData.signal === 'sell') {
-                markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
+                const lastCandle = formattedCandles[formattedCandles.length - 1];
+                const markers = [];
+                if (signalData.signal === 'buy') {
+                    markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
+                } else if (signalData.signal === 'sell') {
+                    markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
+                }
+                candlestickSeries.setMarkers(markers);
+                
+                chart.timeScale().fitContent();
+            } catch (e) {
+                console.error("Error updating chart data:", e);
             }
-            candlestickSeries.setMarkers(markers);
-            
-            chart.timeScale().fitContent();
         }
 
         async function fetchAndDisplaySignal(timeframe) {
             signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe}.</p>`;
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
+
+            // چارٹ کو پہلے سے ہی صاف کر دیں تاکہ پرانا ڈیٹا نہ دکھے
+            if (candlestickSeries) {
+                candlestickSeries.setData([]);
+                candlestickSeries.setMarkers([]);
+            }
 
             try {
                 const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
