@@ -39,7 +39,7 @@ async def shutdown_event():
     print("APScheduler has been shut down.")
 
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100):
-    # ... (یہ فنکشن ویسے ہی رہے گا) ...
+    """Twelve Data API سے OHLCV ڈیٹا حاصل کرتا ہے۔ (اس میں کیشنگ نہیں ہے)"""
     if not TWELVE_DATA_API_KEY:
         raise HTTPException(status_code=500, detail="API key for data provider is not configured.")
     interval_map = {"1m": "1min", "5m": "5min", "15m": "15min"}
@@ -48,7 +48,7 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int =
         raise ValueError(f"Unsupported timeframe for Twelve Data: {timeframe}")
     url = f"https://api.twelvedata.com/time_series"
     params = {"symbol": symbol, "interval": interval, "outputsize": output_size, "apikey": TWELVE_DATA_API_KEY, "timezone": "UTC"}
-    print(f"TWELVE DATA: Fetching time series for {symbol} ({interval})...")
+    print(f"TWELVE DATA (OHLC): Fetching fresh time series for {symbol} ({interval})...")
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, params=params, timeout=20)
@@ -59,7 +59,7 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int =
         candles = []
         for item in reversed(data["values"]):
             candles.append({"datetime": item["datetime"], "open": float(item["open"]), "high": float(item["high"]), "low": float(item["low"]), "close": float(item["close"]), "volume": int(item.get("volume", 0))})
-        print(f"TWELVE DATA: Successfully fetched and processed {len(candles)} candles.")
+        print(f"TWELVE DATA (OHLC): Successfully fetched and processed {len(candles)} candles.")
         return candles
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Failed to fetch data from provider: {e.response.status_code}")
@@ -71,7 +71,6 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int =
 async def health_check():
     return {"status": "ok", "message": "ScalpMaster AI is running."}
 
-# --- نیا، کیشنگ کے ساتھ اپ ڈیٹ شدہ /api/price اینڈ پوائنٹ ---
 @app.get("/api/price", tags=["Real-time Data"])
 async def get_realtime_price(symbol: str = Query("XAU/USD")):
     """تازہ ترین قیمت حاصل کرتا ہے، اور API کالز بچانے کے لیے کیشنگ کا استعمال کرتا ہے۔"""
@@ -107,7 +106,6 @@ async def get_realtime_price(symbol: str = Query("XAU/USD")):
 
 @app.get("/api/signal", tags=["AI Signals"])
 async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m")):
-    # ... (یہ فنکشن ویسے ہی رہے گا) ...
     try:
         active_signal = get_active_signal_for_timeframe(symbol, timeframe)
         if active_signal:
@@ -133,4 +131,4 @@ async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m"
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-    
+        
