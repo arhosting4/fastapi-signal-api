@@ -7,8 +7,8 @@
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- مقامی Lightweight Charts لائبریری -->
-    <script src="/lightweight-charts.standalone.production.js"></script>
+    <!-- اہم تبدیلی: چارٹ لائبریری کو براہ راست انٹرنیٹ سے لوڈ کریں -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
         .signal-card { background-color: #1f2937; border-radius: 0.75rem; border: 1px solid #374151; padding: 1.5rem; text-align: center; transition: all 0.3s ease-in-out; }
@@ -33,7 +33,6 @@
                 <div class="bg-gray-800 p-4 rounded-lg">
                     <div class="flex justify-between items-center mb-3">
                         <h2 class="text-xl font-semibold text-white">Timeframe:</h2>
-                        <!-- نیا: آخری اپ ڈیٹ کا وقت دکھانے کے لیے -->
                         <span id="last-updated"></span>
                     </div>
                     <div id="timeframe-selector" class="flex space-x-2">
@@ -61,19 +60,22 @@
         const chartContainer = document.getElementById('chart-container');
         const timeframeSelector = document.getElementById('timeframe-selector');
         const chartTitle = document.getElementById('chart-title');
-        const lastUpdatedSpan = document.getElementById('last-updated'); // نیا
+        const lastUpdatedSpan = document.getElementById('last-updated');
 
         let chart = null;
         let candlestickSeries = null;
         let currentTimeframe = '5m';
-        let autoRefreshInterval = null; // نیا: ٹائمر کو اسٹور کرنے کے لیے
+        let autoRefreshInterval = null;
 
         function initializeChart() {
             try {
-                if (typeof LightweightCharts === 'undefined') throw new Error("LightweightCharts library is not loaded.");
+                if (typeof LightweightCharts === 'undefined') {
+                    throw new Error("LightweightCharts library is not loaded.");
+                }
                 chartContainer.innerHTML = '';
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth, height: chartContainer.clientHeight,
+                    width: chartContainer.clientWidth,
+                    height: chartContainer.clientHeight,
                     layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
                     grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
                     timeScale: { timeVisible: true, secondsVisible: false }
@@ -85,7 +87,7 @@
                 });
             } catch (e) {
                 console.error("FATAL: Could not create chart.", e);
-                chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
+                chartContainer.innerHTML = `<p class="text-red-500 p-4">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
             }
         }
 
@@ -105,7 +107,6 @@
             chart.timeScale().fitContent();
         }
 
-        // نیا: آخری اپ ڈیٹ کا وقت اپ ڈیٹ کرنے کا فنکشن
         function updateLastUpdated(manual = false) {
             const now = new Date();
             lastUpdatedSpan.textContent = `Last updated: ${now.toLocaleTimeString()}`;
@@ -115,7 +116,7 @@
 
         async function fetchAndDisplaySignal(timeframe, isManual = false) {
             if (isManual) {
-                signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe}.</p>`;
+                signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching new signal for ${timeframe}.</p>`;
             }
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
             
@@ -123,20 +124,20 @@
                 const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Could not fetch data.');
+                    throw new Error(errorData.detail || 'Could not fetch data from server.');
                 }
                 const data = await response.json();
                 const { signal, confidence, tier, reason, price, tp, sl, candles } = data;
-                const statusClass = signal || 'wait';
+                const statusClass = signal.toLowerCase() || 'wait';
                 signalDisplay.innerHTML = `
                     <div class="signal-card ${statusClass}">
-                        <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signal ? signal.toUpperCase() : 'N/A'}</h3>
+                        <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signal ? signal.toUpperCase() : 'WAIT'}</h3>
                         <p class="text-lg font-semibold text-gray-200 mt-1">XAU/USD @ ${price ? price.toFixed(5) : 'N/A'}</p>
                         <div class="text-left mt-4 space-y-1 text-sm">
                             <p><strong>Confidence:</strong> ${confidence ? confidence.toFixed(2) + '%' : 'N/A'}</p>
                             <p><strong>Tier:</strong> ${tier || 'N/A'}</p>
-                            <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'No reason.'}</em></p>
-                            ${signal !== 'wait' ? `<p><strong>TP:</strong> ${tp ? tp.toFixed(5) : 'N/A'}</p><p><strong>SL:</strong> ${sl ? sl.toFixed(5) : 'N/A'}</p>` : ''}
+                            <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'No specific reason.'}</em></p>
+                            ${signal.toLowerCase() !== 'wait' && tp && sl ? `<p><strong>TP:</strong> ${tp.toFixed(5)}</p><p><strong>SL:</strong> ${sl.toFixed(5)}</p>` : ''}
                         </div>
                     </div>`;
                 
@@ -144,22 +145,22 @@
                     if (!chart) initializeChart();
                     updateChart(data);
                 } else {
-                    chartContainer.innerHTML = '<p class="text-center text-gray-500">Chart data not available.</p>';
+                    if (chart) chart.remove(); chart = null;
+                    chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available for this timeframe.</p>';
                 }
-                updateLastUpdated(isManual); // اپ ڈیٹ کا وقت دکھائیں
+                updateLastUpdated(isManual);
             } catch (error) {
                 console.error("Fetch error:", error);
                 signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
             }
         }
 
-        // نیا: آٹو ریفریش کو شروع کرنے کا فنکشن
         function startAutoRefresh() {
-            if (autoRefreshInterval) clearInterval(autoRefreshInterval); // پرانا ٹائمر صاف کریں
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
             autoRefreshInterval = setInterval(() => {
                 console.log(`Auto-refreshing for ${currentTimeframe}...`);
-                fetchAndDisplaySignal(currentTimeframe, false); // false کا مطلب ہے کہ یہ خودکار ہے
-            }, 60000); // 60000 ملی سیکنڈ = 1 منٹ
+                fetchAndDisplaySignal(currentTimeframe, false);
+            }, 60000); // 1 minute
         }
 
         timeframeSelector.addEventListener('click', (e) => {
@@ -169,8 +170,8 @@
                     currentTimeframe = newTimeframe;
                     document.querySelectorAll('#timeframe-selector button').forEach(btn => btn.classList.remove('active'));
                     e.target.classList.add('active');
-                    fetchAndDisplaySignal(currentTimeframe, true); // true کا مطلب ہے کہ یہ دستی ہے
-                    startAutoRefresh(); // ٹائمر کو دوبارہ شروع کریں
+                    fetchAndDisplaySignal(currentTimeframe, true);
+                    startAutoRefresh();
                 }
             }
         });
