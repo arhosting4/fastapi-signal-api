@@ -1,29 +1,27 @@
 import os
 import traceback
 import asyncio
-import httpx # yfinance کی جگہ API کالز کے لیے
+import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import pandas as pd # pandas اب بھی ڈیٹا کی ترتیب کے لیے استعمال ہوگا
+import pandas as pd
 
 # ہمارے اپنے ماڈیولز
 from feedback_checker import check_active_signals_job
 from fusion_engine import generate_final_signal
 from signal_tracker import get_active_signal_for_timeframe, add_active_signal
 
-# --- Twelve Data API کلید کو ماحول سے لوڈ کریں ---
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 app = FastAPI(title="ScalpMaster AI API")
 
-# --- شیڈیولر کی شروعات ---
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 @app.on_event("startup")
 async def startup_event():
     if not TWELVE_DATA_API_KEY:
-        print("CRITICAL WARNING: TWELVE_DATA_API_KEY is not set. The application will not work correctly.")
+        print("CRITICAL WARNING: TWELVE_DATA_API_KEY is not set.")
     scheduler.add_job(check_active_signals_job, 'interval', seconds=60, id="signal_check_job")
     scheduler.start()
     print("APScheduler started. Signal checker is running every 60 seconds.")
@@ -33,64 +31,59 @@ async def shutdown_event():
     scheduler.shutdown()
     print("APScheduler has been shut down.")
 
-# --- اہم تبدیلی: yfinance کی جگہ نیا فنکشن ---
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100):
-    """Twelve Data API سے OHLCV ڈیٹا حاصل کرتا ہے۔"""
     if not TWELVE_DATA_API_KEY:
         raise HTTPException(status_code=500, detail="API key for data provider is not configured.")
-
-    # Twelve Data کے لیے ٹائم فریم فارمیٹ
     interval_map = {"1m": "1min", "5m": "5min", "15m": "15min"}
     interval = interval_map.get(timeframe)
     if not interval:
         raise ValueError(f"Unsupported timeframe for Twelve Data: {timeframe}")
-
     url = f"https://api.twelvedata.com/time_series"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "outputsize": output_size,
-        "apikey": TWELVE_DATA_API_KEY,
-        "timezone": "UTC"
-    }
-    
+    params = {"symbol": symbol, "interval": interval, "outputsize": output_size, "apikey": TWELVE_DATA_API_KEY, "timezone": "UTC"}
     print(f"TWELVE DATA: Fetching time series for {symbol} ({interval})...")
-    
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, params=params, timeout=20)
-        response.raise_for_status() # اگر 4xx یا 5xx ہو تو ایرر دے
+        response.raise_for_status()
         data = response.json()
-
         if data.get("status") != "ok" or "values" not in data:
             raise ValueError(f"Twelve Data API returned an error: {data.get('message', 'Unknown error')}")
-
-        # ڈیٹا کو صحیح فارمیٹ میں تبدیل کریں (پرانے فارمیٹ کی طرح)
         candles = []
-        for item in reversed(data["values"]): # API نیا ڈیٹا پہلے دیتی ہے، ہمیں پرانا پہلے چاہیے
-            candles.append({
-                "datetime": item["datetime"],
-                "open": float(item["open"]),
-                "high": float(item["high"]),
-                "low": float(item["low"]),
-                "close": float(item["close"]),
-                "volume": int(item.get("volume", 0)) # حجم ہمیشہ موجود نہیں ہوتا
-            })
-        
+        for item in reversed(data["values"]):
+            candles.append({"datetime": item["datetime"], "open": float(item["open"]), "high": float(item["high"]), "low": float(item["low"]), "close": float(item["close"]), "volume": int(item.get("volume", 0))})
         print(f"TWELVE DATA: Successfully fetched and processed {len(candles)} candles.")
         return candles
     except httpx.HTTPStatusError as e:
-        print(f"HTTP Error fetching from Twelve Data: {e.response.text}")
         raise HTTPException(status_code=502, detail=f"Failed to fetch data from provider: {e.response.status_code}")
     except Exception as e:
-        print(f"CRITICAL: Error processing data from Twelve Data: {e}")
         traceback.print_exc()
         raise
 
-# (باقی API اینڈ پوائنٹس اب نئے فنکشن کا استعمال کریں گے)
 @app.get("/health", status_code=200, tags=["System"])
 async def health_check():
     return {"status": "ok", "message": "ScalpMaster AI is running."}
+
+# --- نیا، ہلکا پھلکا اینڈ پوائنٹ ---
+@app.get("/api/price", tags=["Real-time Data"])
+async def get_realtime_price(symbol: str = Query("XAU/USD")):
+    """صرف ایک علامت کے لیے تازہ ترین قیمت تیزی سے حاصل کرتا ہے۔"""
+    if not TWELVE_DATA_API_KEY:
+        raise HTTPException(status_code=500, detail="API key is not configured.")
+    
+    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "price" in data:
+            return {"symbol": symbol, "price": float(data["price"])}
+        else:
+            # اگر قیمت دستیاب نہ ہو تو ایک مناسب ایرر بھیجیں
+            raise HTTPException(status_code=404, detail="Price not available for the symbol.")
+    except Exception as e:
+        # عام ایرر کو بھی ایک مناسب HTTP ایرر میں تبدیل کریں
+        raise HTTPException(status_code=502, detail=f"Failed to fetch real-time price: {str(e)}")
 
 @app.get("/api/signal", tags=["AI Signals"])
 async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m")):
@@ -115,9 +108,8 @@ async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m"
         return signal_result
         
     except Exception as e:
-        print(f"CRITICAL SERVER ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-            
+        
