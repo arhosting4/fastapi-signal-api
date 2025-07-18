@@ -1,7 +1,7 @@
 import os
 import traceback
 import asyncio
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -44,7 +44,7 @@ async def add_security_headers(request, call_next):
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' https://scalpmasterai.in data:; "
-        "connect-src 'self' https://*.yfinance.com;"  # yfinance کے لیے شامل کیا گیا
+        "connect-src 'self' https://*.yfinance.com;"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -63,32 +63,38 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
     try:
         data = await asyncio.to_thread(
             yf.download, tickers=yfinance_symbol, period=period, interval=timeframe,
-            progress=False, auto_adjust=False
+            progress=False, auto_adjust=False, group_by='ticker'
         )
         if data.empty: raise ValueError(f"No data returned for '{yfinance_symbol}'.")
+
+        # --- اہم تبدیلی: yfinance کے کالم کے مسئلے کو حل کرنا ---
+        # اگر کالم ملٹی لیول ہیں (جیسے ('Close', 'GC=F')), تو انہیں ٹھیک کریں
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1) # دوسرے لیول کو ہٹا دیں
+
         data.reset_index(inplace=True)
         data.columns = [str(col).lower() for col in data.columns]
+        
         rename_dict = {'date': 'datetime', 'index': 'datetime'}
         data.rename(columns={k: v for k, v in rename_dict.items() if k in data.columns}, inplace=True)
+        
         required_cols = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         for col in required_cols:
             if col not in data.columns:
                 raise ValueError(f"Missing required column '{col}'. Available: {data.columns.to_list()}")
+        
         data['datetime'] = pd.to_datetime(data['datetime'], utc=True).dt.strftime('%Y-%m-%d %H:%M:%S')
         candles = data[required_cols].to_dict('records')
-        print(f"YAHOO FINANCE: Successfully fetched {len(candles)} candles.")
+        print(f"YAHOO FINANCE: Successfully fetched and processed {len(candles)} candles.")
         return candles
     except Exception as e:
-        print(f"CRITICAL: Failed to fetch data from yfinance: {e}")
+        print(f"CRITICAL: Failed to process data from yfinance: {e}")
         traceback.print_exc()
         raise
 
 # --- API اینڈ پوائنٹس ---
-
-# --- نیا: Render کے ہیلتھ چیک کے لیے اینڈ پوائنٹ ---
 @app.get("/health", status_code=200)
 async def health_check():
-    """Render کو بتانے کے لیے کہ ایپ زندہ ہے۔"""
     return {"status": "ok"}
 
 @app.get("/api/signal")
@@ -130,4 +136,4 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 @app.get("/", response_class=FileResponse)
 async def read_root():
     return 'frontend/index.html'
-
+    
