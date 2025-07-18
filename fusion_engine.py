@@ -1,5 +1,4 @@
 import traceback
-import httpx
 import pandas as pd
 import pandas_ta as ta
 
@@ -7,16 +6,13 @@ import pandas_ta as ta
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
 from riskguardian import check_risk
-from sentinel import check_news
+# --- اہم تبدیلی: sentinel سے نیا فنکشن امپورٹ کریں ---
+from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
 from signal_tracker import add_active_signal
-
-# --- نیا: مارکیٹ اسٹرکچر ایجنٹ کو امپورٹ کریں ---
 from marketstructure import analyze_market_structure
-
-# utils.py سے امپورٹ کریں
 from utils import fetch_twelve_data_ohlc
 
 def get_higher_timeframe_trend(candles: list) -> str:
@@ -32,56 +28,51 @@ def get_higher_timeframe_trend(candles: list) -> str:
 
 async def generate_final_signal(symbol: str, candles: list, timeframe: str, should_save_active: bool = True):
     """
-    یہ مرکزی AI انجن ہے۔ اب یہ سگنل بنانے سے پہلے مارکیٹ کی ساخت (سپورٹ/ریزسٹنس) کا بھی تجزیہ کرتا ہے۔
+    یہ مرکزی AI انجن ہے۔ اب یہ نیوز کے لیے موثر کیشنگ سسٹم استعمال کرتا ہے۔
     """
     try:
-        # 1. بنیادی انڈیکیٹرز کی بنیاد پر سگنل بنائیں
+        # --- نیا: نیوز کا تجزیہ سب سے پہلے کریں ---
+        news_data = get_news_analysis_for_symbol(symbol)
+        if news_data["impact"] == "High":
+            print(f"BLOCK by News: {news_data['reason']}")
+            return {"signal": "wait", "reason": news_data['reason']}
+
+        # 1. بنیادی سگنل
         core_signal_data = generate_core_signal(symbol, timeframe, candles)
         core_signal = core_signal_data["signal"]
-        
         if core_signal == "wait":
             return {"signal": "wait", "reason": "Primary indicators suggest no clear opportunity."}
 
         current_price = candles[-1]['close']
 
-        # --- 2. نیا مرحلہ: مارکیٹ اسٹرکچر کا تجزیہ ---
+        # 2. مارکیٹ اسٹرکچر کا تجزیہ
         structure_analysis = analyze_market_structure(core_signal, current_price, candles)
         if structure_analysis["decision"] == "block":
             print(f"BLOCK by Market Structure: {structure_analysis['reason']}")
-            return {"signal": "wait", "reason": structure_analysis["reason"]}
+            return {"signal": "wait", "reason": structure_analysis['reason']}
 
         # 3. ملٹی ٹائم فریم تصدیق
         higher_timeframe_map = {"1m": "5m", "5m": "15m", "15m": "1h"}
         confirmation_tf = higher_timeframe_map.get(timeframe)
-        
         htf_trend = "neutral"
         if confirmation_tf:
             htf_candles = await fetch_twelve_data_ohlc(symbol, confirmation_tf)
             if htf_candles: htf_trend = get_higher_timeframe_trend(htf_candles)
 
         if (core_signal == "buy" and htf_trend == "down") or (core_signal == "sell" and htf_trend == "up"):
-            reason = f"Signal ({core_signal.upper()}) on {timeframe} was blocked by opposing trend on {confirmation_tf}."
-            print(f"BLOCK by HTF: {reason}")
-            return {"signal": "wait", "reason": reason}
+            return {"signal": "wait", "reason": f"Signal blocked by opposing trend on {confirmation_tf}."}
 
-        # 4. باقی تجزیہ جاری رکھیں
+        # 4. باقی تجزیہ
         pattern_data = detect_patterns(candles)
         risk_assessment = check_risk(candles)
         
-        async with httpx.AsyncClient() as client:
-            news_data = await check_news(symbol, client)
-
         confidence = get_confidence(core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data["impact"], symbol)
-        
-        # اعتماد میں اضافہ کریں اگر بڑا رجحان اور مارکیٹ کی ساخت دونوں ساتھ دیں
         confidence += structure_analysis["confidence_boost"]
         if (core_signal == "buy" and htf_trend == "up") or (core_signal == "sell" and htf_trend == "down"):
             confidence += 10
-
-        confidence = min(100.0, confidence) # یقینی بنائیں کہ اعتماد 100 سے زیادہ نہ ہو
+        confidence = min(100.0, confidence)
 
         tier = get_tier(confidence)
-        # وجہ کو مزید بہتر بنائیں
         base_reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data["impact"], confidence)
         final_reason = base_reason
         if structure_analysis["confidence_boost"] > 0:
