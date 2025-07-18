@@ -43,9 +43,13 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         )
         if data.empty: raise ValueError(f"No data returned for '{yfinance_symbol}'.")
         
+        # --- اہم تبدیلی: yfinance کے tuple والے کالم کے مسئلے کو حل کرنا ---
+        if isinstance(data.columns, pd.MultiIndex):
+            # tuple ('Close', 'GC=F') کو صرف 'Close' میں تبدیل کریں
+            data.columns = data.columns.get_level_values(0)
+
         data.reset_index(inplace=True)
-        # کالم کے ناموں کو صاف کرنے کا بہتر طریقہ
-        data.columns = [col.strip().lower() for col in data.columns]
+        data.columns = [str(col).lower() for col in data.columns]
         
         rename_dict = {'date': 'datetime', 'index': 'datetime'}
         data.rename(columns=rename_dict, inplace=True)
@@ -53,7 +57,10 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         required_cols = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         for col in required_cols:
             if col not in data.columns:
-                raise ValueError(f"Missing required column '{col}'. Available: {data.columns.to_list()}")
+                # کالم کے ناموں میں کسی بھی ممکنہ خالی جگہ کو ہٹائیں
+                data.columns = [c.strip() for c in data.columns]
+                if col not in data.columns:
+                    raise ValueError(f"Missing required column '{col}'. Available: {data.columns.to_list()}")
         
         data['datetime'] = pd.to_datetime(data['datetime'], utc=True).dt.strftime('%Y-%m-%d %H:%M:%S')
         candles = data[required_cols].to_dict('records')
@@ -77,8 +84,6 @@ async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m"
         current_price = candles[-1]['close']
         signal_result = await generate_final_signal(symbol, candles, timeframe)
         signal_result.update({'price': current_price, 'candles': candles})
-        log_signal(symbol, signal_result, candles)
-        if signal_result.get("signal") in ["buy", "sell"]: add_active_signal(signal_result)
         return signal_result
     except Exception as e:
         print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
@@ -86,7 +91,8 @@ async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m"
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
 
 # --- اسٹیٹک فائلیں اور روٹ پیج (سب سے آخر میں) ---
-# یہ لائن 'frontend' فولڈر میں موجود تمام فائلوں (جیسے css, js) کو دستیاب کرائے گی
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-
-# html=True خود بخود index.html کو روٹ پر پیش کر دے گا
+# ہم صرف روٹ پیج پیش کریں گے، باقی سب CDN سے آئے گا
+@app.get("/", response_class=FileResponse)
+async def read_root():
+    return "frontend/index.html"
+    
