@@ -2,7 +2,7 @@ import os
 import traceback
 import asyncio
 from fastapi import FastAPI, HTTPException, Query, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -18,6 +18,8 @@ import pandas as pd
 
 # --- فرضی فنکشنز (اگر اصل فائلیں موجود نہیں ہیں) ---
 async def generate_final_signal(symbol, candles, timeframe):
+    if not candles or len(candles) < 2:
+        return {"signal": "wait", "reason": "Not enough data."}
     return {
         "signal": "buy" if candles[-1]['close'] > candles[-2]['close'] else "sell",
         "confidence": 75.5, "tier": "Tier 2", "reason": "A test reason.",
@@ -42,7 +44,7 @@ async def add_security_headers(request, call_next):
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' https://scalpmasterai.in data:; "
-        "connect-src 'self';"
+        "connect-src 'self' https://*.yfinance.com;"  # yfinance کے لیے شامل کیا گیا
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -82,6 +84,13 @@ async def fetch_real_ohlc_data(symbol: str, timeframe: str):
         raise
 
 # --- API اینڈ پوائنٹس ---
+
+# --- نیا: Render کے ہیلتھ چیک کے لیے اینڈ پوائنٹ ---
+@app.get("/health", status_code=200)
+async def health_check():
+    """Render کو بتانے کے لیے کہ ایپ زندہ ہے۔"""
+    return {"status": "ok"}
+
 @app.get("/api/signal")
 async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m")):
     try:
@@ -118,7 +127,7 @@ def shutdown_event():
 # --- اسٹیٹک فائلیں اور روٹ پیج ---
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
-@app.get("/")
+@app.get("/", response_class=FileResponse)
 async def read_root():
-    return FileResponse('frontend/index.html')
-    
+    return 'frontend/index.html'
+
