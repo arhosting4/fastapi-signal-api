@@ -11,7 +11,10 @@ from sentinel import check_news
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
-from signal_tracker import add_active_signal # یہ TP/SL کی نگرانی کے لیے اب بھی استعمال ہوگا
+from signal_tracker import add_active_signal
+
+# --- نیا: مارکیٹ اسٹرکچر ایجنٹ کو امپورٹ کریں ---
+from marketstructure import analyze_market_structure
 
 # utils.py سے امپورٹ کریں
 from utils import fetch_twelve_data_ohlc
@@ -27,18 +30,27 @@ def get_higher_timeframe_trend(candles: list) -> str:
     elif sma_fast.iloc[-1] < sma_slow.iloc[-1]: return "down"
     else: return "neutral"
 
-# --- اہم تبدیلی: ایک نیا پیرامیٹر 'should_save_active' شامل کریں ---
 async def generate_final_signal(symbol: str, candles: list, timeframe: str, should_save_active: bool = True):
     """
-    یہ مرکزی AI انجن ہے۔ اب یہ کنٹرول کر سکتا ہے کہ سگنل کو فعال ٹریکر میں شامل کرنا ہے یا نہیں۔
+    یہ مرکزی AI انجن ہے۔ اب یہ سگنل بنانے سے پہلے مارکیٹ کی ساخت (سپورٹ/ریزسٹنس) کا بھی تجزیہ کرتا ہے۔
     """
     try:
+        # 1. بنیادی انڈیکیٹرز کی بنیاد پر سگنل بنائیں
         core_signal_data = generate_core_signal(symbol, timeframe, candles)
         core_signal = core_signal_data["signal"]
         
         if core_signal == "wait":
             return {"signal": "wait", "reason": "Primary indicators suggest no clear opportunity."}
 
+        current_price = candles[-1]['close']
+
+        # --- 2. نیا مرحلہ: مارکیٹ اسٹرکچر کا تجزیہ ---
+        structure_analysis = analyze_market_structure(core_signal, current_price, candles)
+        if structure_analysis["decision"] == "block":
+            print(f"BLOCK by Market Structure: {structure_analysis['reason']}")
+            return {"signal": "wait", "reason": structure_analysis["reason"]}
+
+        # 3. ملٹی ٹائم فریم تصدیق
         higher_timeframe_map = {"1m": "5m", "5m": "15m", "15m": "1h"}
         confirmation_tf = higher_timeframe_map.get(timeframe)
         
@@ -48,8 +60,11 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str, shou
             if htf_candles: htf_trend = get_higher_timeframe_trend(htf_candles)
 
         if (core_signal == "buy" and htf_trend == "down") or (core_signal == "sell" and htf_trend == "up"):
-            return {"signal": "wait", "reason": f"Signal blocked by opposing trend on {confirmation_tf}."}
+            reason = f"Signal ({core_signal.upper()}) on {timeframe} was blocked by opposing trend on {confirmation_tf}."
+            print(f"BLOCK by HTF: {reason}")
+            return {"signal": "wait", "reason": reason}
 
+        # 4. باقی تجزیہ جاری رکھیں
         pattern_data = detect_patterns(candles)
         risk_assessment = check_risk(candles)
         
@@ -58,22 +73,29 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str, shou
 
         confidence = get_confidence(core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data["impact"], symbol)
         
+        # اعتماد میں اضافہ کریں اگر بڑا رجحان اور مارکیٹ کی ساخت دونوں ساتھ دیں
+        confidence += structure_analysis["confidence_boost"]
         if (core_signal == "buy" and htf_trend == "up") or (core_signal == "sell" and htf_trend == "down"):
-            confidence = min(100.0, confidence + 10)
+            confidence += 10
+
+        confidence = min(100.0, confidence) # یقینی بنائیں کہ اعتماد 100 سے زیادہ نہ ہو
 
         tier = get_tier(confidence)
-        reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data["impact"], confidence)
-        
+        # وجہ کو مزید بہتر بنائیں
+        base_reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data["impact"], confidence)
+        final_reason = base_reason
+        if structure_analysis["confidence_boost"] > 0:
+            final_reason = f"{base_reason} Confirmed by market structure: {structure_analysis['reason']}"
+
         tp_sl_buy, tp_sl_sell = calculate_tp_sl(candles)
         tp, sl = (tp_sl_buy if core_signal == "buy" else tp_sl_sell) if (tp_sl_buy and tp_sl_sell) else (None, None)
 
         final_result = {
             "symbol": symbol, "timeframe": timeframe, "signal": core_signal, 
-            "reason": reason, "confidence": round(confidence, 2), "tier": tier, 
-            "price": candles[-1]['close'], "tp": tp, "sl": sl, "candles": candles
+            "reason": final_reason, "confidence": round(confidence, 2), "tier": tier, 
+            "price": current_price, "tp": tp, "sl": sl, "candles": candles
         }
 
-        # --- اہم تبدیلی: صرف تب محفوظ کریں جب کہا جائے ---
         if should_save_active and final_result["signal"] in ["buy", "sell"] and tp is not None and sl is not None:
             add_active_signal(final_result)
 
@@ -82,4 +104,4 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str, shou
     except Exception as e:
         traceback.print_exc()
         return {"signal": "wait", "reason": f"An error occurred during analysis: {e}"}
-    
+        
