@@ -5,53 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ScalpMaster AI - Gold Standard</title>
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
-    <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- مقامی Lightweight Charts لائبریری -->
-    <script src="/lightweight-charts.standalone.production.js"></script>
+    <!-- Lightweight Charts لائبریری CDN سے (سب سے قابل اعتماد طریقہ) -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #111827; /* Dark background */
-            color: #d1d5db; /* Light gray text */
-        }
-        .signal-card {
-            background-color: #1f2937;
-            border-radius: 0.75rem;
-            border: 1px solid #374151;
-            padding: 1.5rem;
-            text-align: center;
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
+        .signal-card { background-color: #1f2937; border-radius: 0.75rem; border: 1px solid #374151; padding: 1.5rem; text-align: center; }
         .signal-card.buy { border-left: 6px solid #10B981; }
         .signal-card.sell { border-left: 6px solid #EF4444; }
         .signal-card.wait { border-left: 6px solid #F59E0B; }
         .signal-card.error { border-left: 6px solid #DC2626; }
-        .timeframe-btn {
-            transition: all 0.2s ease-in-out;
-        }
-        .timeframe-btn.active {
-            background-color: #4f46e5;
-            color: white;
-            font-weight: 600;
-        }
-        #chart-container {
-            width: 100%;
-            height: 500px;
-            border-radius: 0.5rem;
-            overflow: hidden;
-        }
-        #error-log {
-            background-color: #371a1a;
-            border: 1px solid #dc2626;
-            color: #fca5a5;
-            padding: 1rem;
-            margin-top: 1rem;
-            border-radius: 0.5rem;
-            white-space: pre-wrap;
-            font-family: monospace;
-        }
+        .timeframe-btn { transition: all 0.2s ease-in-out; }
+        .timeframe-btn.active { background-color: #4f46e5; color: white; font-weight: 600; }
+        #chart-container { width: 100%; height: 500px; border-radius: 0.5rem; overflow: hidden; }
     </style>
 </head>
 <body class="antialiased">
@@ -60,11 +27,8 @@
             <h1 class="text-4xl font-bold text-amber-400">ScalpMaster AI</h1>
             <p class="text-lg text-gray-400 mt-2">The Gold Standard in Trading Signals</p>
         </header>
-
         <section id="dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Left Panel: Controls and Signal -->
             <div class="lg:col-span-1 space-y-6">
-                <!-- Timeframe Selection -->
                 <div class="bg-gray-800 p-4 rounded-lg">
                     <h2 class="text-xl font-semibold mb-3 text-white">Timeframe:</h2>
                     <div id="timeframe-selector" class="flex space-x-2">
@@ -73,57 +37,34 @@
                         <button data-timeframe="15m" class="timeframe-btn flex-1 p-2 bg-gray-700 rounded-md hover:bg-gray-600">15 Min</button>
                     </div>
                 </div>
-                <!-- Signal Display -->
                 <div id="signal-display" class="signal-card">
                     <h3 class="text-xl font-semibold mb-2 text-gray-400">Initializing...</h3>
                     <p class="text-gray-500">Please wait while the AI analyzes the market.</p>
                 </div>
             </div>
-
-            <!-- Right Panel: Chart -->
             <div class="lg:col-span-2 bg-gray-800 p-4 rounded-lg">
                 <h2 id="chart-title" class="text-xl font-semibold mb-3 text-white">XAU/USD Chart</h2>
                 <div id="chart-container"></div>
             </div>
         </section>
-
-        <!-- ایرر لاگ دکھانے کے لیے سیکشن -->
-        <section id="error-section" class="hidden">
-             <h2 class="text-xl font-semibold text-red-400">Debug Log:</h2>
-             <pre id="error-log"></pre>
-        </section>
-
         <footer class="text-center text-gray-500 mt-12 py-4 border-t border-gray-700">
             <p>&copy; 2025 ScalpMaster AI. All rights reserved.</p>
-            <p class="text-sm mt-1">Disclaimer: Trading involves significant risk. Do your own research.</p>
         </footer>
     </main>
-
     <script>
         const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
         const timeframeSelector = document.getElementById('timeframe-selector');
         const chartTitle = document.getElementById('chart-title');
-        const errorSection = document.getElementById('error-section');
-        const errorLog = document.getElementById('error-log');
 
         let chart = null;
         let candlestickSeries = null;
         let currentTimeframe = '5m';
 
-        function logError(message, error) {
-            console.error(message, error);
-            errorSection.classList.remove('hidden');
-            errorLog.textContent += `[${new Date().toISOString()}] ${message}\n`;
-            if (error) {
-                errorLog.textContent += `DETAILS: ${error.stack || error.message || String(error)}\n\n`;
-            }
-        }
-
         function initializeChart() {
             try {
                 if (typeof LightweightCharts === 'undefined') {
-                    throw new Error("LightweightCharts library object is not available. Check if the script is blocked or failed to load.");
+                    throw new Error("LightweightCharts library is not loaded.");
                 }
                 chartContainer.innerHTML = '';
                 chart = LightweightCharts.createChart(chartContainer, {
@@ -137,16 +78,13 @@
                     wickDownColor: '#EF4444', wickUpColor: '#10B981'
                 });
             } catch (e) {
-                logError("FATAL: Could not create chart.", e);
-                chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library.</p>`;
+                console.error("FATAL: Could not create chart.", e);
+                chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
             }
         }
 
         function updateChart(signalData) {
-            if (!chart || !candlestickSeries) {
-                logError("Chart or series not initialized, skipping chart update.");
-                return;
-            }
+            if (!chart || !candlestickSeries) return;
             const formattedCandles = signalData.candles.map(c => ({
                 time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
             }));
@@ -169,14 +107,8 @@
             try {
                 const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    let errorDetail = 'Could not fetch data from the provider.';
-                    try {
-                        errorDetail = JSON.parse(errorText).detail;
-                    } catch (e) {
-                        errorDetail = errorText;
-                    }
-                    throw new Error(`Network error: ${response.status}. Response: ${errorDetail}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Could not fetch data from the provider.');
                 }
                 const data = await response.json();
                 const { signal, confidence, tier, reason, price, tp, sl, candles } = data;
@@ -192,17 +124,13 @@
                             ${signal !== 'wait' ? `<p><strong>TP:</strong> ${tp ? tp.toFixed(5) : 'N/A'}</p><p><strong>SL:</strong> ${sl ? sl.toFixed(5) : 'N/A'}</p>` : ''}
                         </div>
                     </div>`;
-                
-                // ایرر سیکشن کو چھپا دیں اگر سب کچھ ٹھیک ہو
-                errorSection.classList.add('hidden');
-
                 if (candles && candles.length > 0) {
                     updateChart(data);
                 } else {
                     chartContainer.innerHTML = '<p class="text-center text-gray-500">Chart data not available.</p>';
                 }
             } catch (error) {
-                logError("Failed to fetch or display signal.", error);
+                console.error("Fetch error:", error);
                 signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
             }
         }
