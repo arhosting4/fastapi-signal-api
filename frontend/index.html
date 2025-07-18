@@ -7,7 +7,6 @@
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- اہم تبدیلی: چارٹ لائبریری کو براہ راست انٹرنیٹ سے لوڈ کریں -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
@@ -68,11 +67,12 @@
         let autoRefreshInterval = null;
 
         function initializeChart() {
+            // اگر چارٹ پہلے سے موجود ہے تو کچھ نہ کریں
+            if (chart) {
+                return;
+            }
             try {
-                if (typeof LightweightCharts === 'undefined') {
-                    throw new Error("LightweightCharts library is not loaded.");
-                }
-                chartContainer.innerHTML = '';
+                chartContainer.innerHTML = ''; // چارٹ بنانے سے پہلے کنٹینر کو صاف کریں
                 chart = LightweightCharts.createChart(chartContainer, {
                     width: chartContainer.clientWidth,
                     height: chartContainer.clientHeight,
@@ -88,15 +88,19 @@
             } catch (e) {
                 console.error("FATAL: Could not create chart.", e);
                 chartContainer.innerHTML = `<p class="text-red-500 p-4">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
+                chart = null; // ایرر کی صورت میں چارٹ کو null پر ری سیٹ کریں
             }
         }
 
         function updateChart(signalData) {
-            if (!candlestickSeries) return;
+            // اہم: اگر چارٹ یا سیریز موجود نہیں تو کچھ نہ کریں
+            if (!chart || !candlestickSeries) return;
+            
             const formattedCandles = signalData.candles.map(c => ({
                 time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
             }));
             candlestickSeries.setData(formattedCandles);
+            
             const lastCandle = formattedCandles[formattedCandles.length - 1];
             if (lastCandle) {
                 const markers = [];
@@ -120,6 +124,9 @@
             }
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
             
+            // اہم تبدیلی: ڈیٹا حاصل کرنے سے پہلے چارٹ کو یقینی بنائیں
+            initializeChart();
+
             try {
                 const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
                 if (!response.ok) {
@@ -142,10 +149,8 @@
                     </div>`;
                 
                 if (candles && candles.length > 0) {
-                    if (!chart) initializeChart();
                     updateChart(data);
                 } else {
-                    if (chart) chart.remove(); chart = null;
                     chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available for this timeframe.</p>';
                 }
                 updateLastUpdated(isManual);
@@ -177,7 +182,6 @@
         });
 
         document.addEventListener('DOMContentLoaded', () => {
-            initializeChart();
             fetchAndDisplaySignal(currentTimeframe, true);
             startAutoRefresh();
         });
