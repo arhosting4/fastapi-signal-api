@@ -1,64 +1,84 @@
-import os
 import httpx
+import json
+import os
 from datetime import datetime, timedelta
+from typing import List, Dict, Optional
 
-# API کلید
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+# --- نیا: کلید مینیجر کو امپورٹ کریں ---
+from key_manager import key_manager
 
-# --- نیا: کینڈل ڈیٹا کے لیے کیشنگ سسٹم ---
+# کینڈل ڈیٹا کے لیے کیشنگ
 ohlc_cache = {}
-OHLC_CACHE_DURATION_SECONDS = 60 # 1 منٹ کے لیے کینڈلز کو کیش کریں
+CACHE_DURATION_OHLC = timedelta(seconds=55) # 55 سیکنڈ، تاکہ 1 منٹ کے وقفے پر ہمیشہ تازہ ڈیٹا ملے
 
-async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100):
+async def fetch_twelve_data_ohlc(symbol: str, timeframe: str) -> Optional[List[Dict]]:
     """
-    Twelve Data API سے OHLCV ڈیٹا حاصل کرتا ہے۔
-    اب یہ API کالز بچانے کے لیے کیشنگ کا استعمال کرتا ہے۔
+    Twelve Data سے OHLC (کینڈل) ڈیٹا حاصل کرتا ہے، اب API کلید کی گردش کے ساتھ۔
     """
+    cache_key = f"{symbol}-{timeframe}"
     now = datetime.utcnow()
-    cache_key = f"{symbol}_{timeframe}"
 
-    # 1. کیشے چیک کریں
     if cache_key in ohlc_cache:
-        cached_candles, cache_time = ohlc_cache[cache_key]
-        if now - cache_time < timedelta(seconds=OHLC_CACHE_DURATION_SECONDS):
-            print(f"OHLC CACHE HIT: Returning cached candles for {cache_key}")
-            return cached_candles
+        data, cache_time = ohlc_cache[cache_key]
+        if now - cache_time < CACHE_DURATION_OHLC:
+            return data
 
-    # 2. اگر کیشے پرانی ہے یا موجود نہیں، تو API کال کریں
-    print(f"OHLC CACHE MISS: Fetching fresh candles for {cache_key} from Twelve Data.")
-    if not TWELVE_DATA_API_KEY:
-        print("CRITICAL ERROR in utils: API key is not configured.")
-        return []
-
-    interval_map = {"1m": "1min", "5m": "5min", "15m": "15min", "1h": "1h"}
-    interval = interval_map.get(timeframe)
-    if not interval:
-        print(f"Unsupported timeframe requested in utils: {timeframe}")
-        return []
+    # --- اہم تبدیلی: کلید مینیجر سے کلید حاصل کریں ---
+    api_key = key_manager.get_current_key()
+    if not api_key:
+        print("OHLC Fetcher: No available API key.")
+        return None
 
     url = f"https://api.twelvedata.com/time_series"
-    params = {"symbol": symbol, "interval": interval, "outputsize": output_size, "apikey": TWELVE_DATA_API_KEY, "timezone": "UTC"}
-    
+    params = {
+        "symbol": symbol,
+        "interval": timeframe,
+        "outputsize": 100, # تجزیے کے لیے کافی کینڈلز
+        "apikey": api_key,
+    }
+
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=20)
+            response = await client.get(url, params=params, timeout=15)
+        
+        # اگر کوٹہ ختم ہو جائے تو کلید کو گھمائیں
+        if response.status_code == 429 or ("credits" in response.text and "run out" in response.text):
+            print(f"API key limit reached for key ending in ...{api_key[-4:]}. Rotating key.")
+            # --- اہم: اگلی کلید پر جائیں ---
+            new_key = key_manager.rotate_to_next_key()
+            if new_key:
+                # نئی کلید کے ساتھ دوبارہ کوشش کریں
+                print("Retrying with new key...")
+                params["apikey"] = new_key
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url, params=params, timeout=15)
+            else:
+                # اگر کوئی نئی کلید نہیں ہے
+                print("All keys exhausted. Cannot fetch OHLC data.")
+                return None
+
         response.raise_for_status()
         data = response.json()
 
-        if data.get("status") != "ok" or "values" not in data:
-            print(f"Twelve Data API error in utils: {data.get('message', 'Unknown error')}")
-            return []
-
-        candles = []
-        for item in reversed(data["values"]):
-            candles.append({"datetime": item["datetime"], "open": float(item["open"]), "high": float(item["high"]), "low": float(item["low"]), "close": float(item["close"]), "volume": int(item.get("volume", 0))})
-        
-        # 3. نئے ڈیٹا کو کیشے میں محفوظ کریں
-        if candles:
+        if "values" in data:
+            candles = [
+                {
+                    "datetime": v["datetime"],
+                    "open": float(v["open"]),
+                    "high": float(v["high"]),
+                    "low": float(v["low"]),
+                    "close": float(v["close"]),
+                }
+                for v in data["values"]
+            ]
+            candles.reverse() # API سے ڈیٹا الٹا آتا ہے، اسے سیدھا کریں
             ohlc_cache[cache_key] = (candles, now)
-        
-        return candles
+            return candles
+        else:
+            print(f"Warning: 'values' not in response for {symbol}. Response: {data}")
+            return None
+
     except Exception as e:
-        print(f"CRITICAL ERROR in utils.fetch_twelve_data_ohlc: {e}")
-        return []
+        print(f"ERROR fetching OHLC for {symbol}: {e}")
+        return None
         
