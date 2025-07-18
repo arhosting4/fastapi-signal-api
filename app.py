@@ -1,137 +1,23 @@
-import os
-import traceback
-import asyncio
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles # --- یہ لائن اہم ہے ---
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-import yfinance as yf
-import pandas as pd
+from fastapi.staticfiles import StaticFiles
 
-# --- AI اور ہیلپر ماڈیولز کو امپورٹ کریں ---
-from fusion_engine import generate_final_signal
-from logger import log_signal
-from feedback_checker import check_signals
-from signal_tracker import add_active_signal
-
-# --- FastAPI ایپ کی شروعات ---
 app = FastAPI()
 
-# --- ہیلپر فنکشنز ---
+# 1. Render کے ہیلتھ چیک کے لیے اینڈ پوائنٹ
+@app.get("/health", status_code=200)
+async def health_check():
+    return {"status": "ok"}
 
-def get_yfinance_symbol(symbol: str) -> str:
-    """عام سمبل کو yfinance کے فارمیٹ میں تبدیل کرتا ہے۔"""
-    if symbol.upper() == "XAU/USD":
-        return "GC=F"
-    return symbol
+# 2. اسٹیٹک فائلوں کو پیش کرنے کے لیے ماؤنٹنگ
+# یہ یقینی بنائے گا کہ index.html اور دیگر فائلیں مل سکیں
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
-async def fetch_real_ohlc_data(symbol: str, timeframe: str):
-    """yfinance کا استعمال کرتے ہوئے OHLC ڈیٹا حاصل کرتا ہے۔"""
-    yfinance_symbol = get_yfinance_symbol(symbol)
-    
-    period_map = {
-        "1m": "2d", "5m": "5d", "15m": "10d",
-        "1h": "1mo", "4h": "3mo", "1d": "1y"
-    }
-    period = period_map.get(timeframe, "5d")
-
-    print(f"YAHOO FINANCE: '{yfinance_symbol}' کا ڈیٹا ({timeframe}, {period}) حاصل کیا جا رہا ہے...")
-
-    try:
-        data = await asyncio.to_thread(
-            yf.download,
-            tickers=yfinance_symbol,
-            period=period,
-            interval=timeframe,
-            progress=False,
-            auto_adjust=False
-        )
-
-        if data.empty:
-            raise ValueError(f"'{yfinance_symbol}' کے لیے کوئی ڈیٹا نہیں ملا۔")
-
-        data.reset_index(inplace=True)
-        data.columns = [str(col).lower() for col in data.columns]
-        
-        rename_dict = {
-            'date': 'datetime',
-            'index': 'datetime',
-        }
-        data.rename(columns={k: v for k, v in rename_dict.items() if k in data.columns}, inplace=True)
-
-        required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
-        for col in required_columns:
-            if col not in data.columns:
-                raise ValueError(f"ڈیٹا میں ضروری کالم '{col}' موجود نہیں ہے۔ موجودہ کالم: {data.columns.to_list()}")
-
-        data['datetime'] = pd.to_datetime(data['datetime'], utc=True)
-        data['datetime'] = data['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-        candles = data[required_columns].to_dict('records')
-        print(f"YAHOO FINANCE: کامیابی سے {len(candles)} کینڈلز حاصل کی گئیں۔")
-        return candles
-
-    except Exception as e:
-        print(f"CRITICAL: yfinance سے ڈیٹا حاصل کرنے میں ناکامی: {e}")
-        traceback.print_exc()
-        raise
-
-# --- API اینڈ پوائنٹس ---
-
-@app.get("/api/signal")
-async def get_signal(
-    symbol: str = Query("XAU/USD", description="Trading symbol"),
-    timeframe: str = Query("5m", description="Chart timeframe")
-):
-    try:
-        candles = await fetch_real_ohlc_data(symbol, timeframe)
-        
-        if not candles:
-            raise HTTPException(status_code=404, detail="Could not fetch candle data.")
-
-        current_price = candles[-1]['close']
-        signal_result = await generate_final_signal(symbol, candles, timeframe)
-
-        signal_result['price'] = current_price
-        signal_result['candles'] = candles
-        
-        log_signal(symbol, signal_result, candles)
-
-        if signal_result.get("signal") in ["buy", "sell"]:
-            add_active_signal(signal_result)
-
-        return signal_result
-
-    except Exception as e:
-        print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
-
-# --- بیک گراؤنڈ ٹاسک ---
-scheduler = BackgroundScheduler()
-def feedback_task_wrapper():
-    """async فنکشن کو چلانے کے لیے ایک ریپر۔"""
-    print("SCHEDULER: فیڈ بیک چیکر چل رہا ہے...")
-    asyncio.run(check_signals())
-
-@app.on_event("startup")
-def startup_event():
-    """ایپ کے شروع ہونے پر شیڈولر کو شروع کرتا ہے۔"""
-    print("STARTUP: ایپلیکیشن شروع ہو رہی ہے...")
-    scheduler.add_job(feedback_task_wrapper, IntervalTrigger(minutes=15))
-    scheduler.start()
-
-@app.on_event("shutdown")
-def shutdown_event():
-    """ایپ کے بند ہونے پر شیڈولر کو بند کرتا ہے۔"""
-    print("SHUTDOWN: ایپلیکیشن بند ہو رہی ہے...")
-    scheduler.shutdown()
-
-# --- اسٹیٹک فائلوں اور روٹ پیج کو آخر میں ماؤنٹ کریں ---
-@app.get("/")
+# 3. روٹ پیج (index.html) کو پیش کرنے کے لیے اینڈ پوائنٹ
+@app.get("/", response_class=FileResponse)
 async def read_root():
-    return FileResponse('frontend/index.html')
+    # یہ یقینی بنائیں کہ آپ کی index.html فائل 'frontend' فولڈر کے اندر ہے
+    return "frontend/index.html"
 
-app.mount("/", StaticFiles(directory="frontend"), name="frontend")
-    
+# باقی تمام کوڈ (yfinance, scheduler, api/signal) کو عارضی طور پر ہٹا دیا گیا ہے
+# تاکہ ہم صرف ڈیپلائمنٹ کے مسئلے پر توجہ مرکوز کر سکیں۔
