@@ -3,6 +3,9 @@ import httpx
 import asyncio
 from datetime import datetime
 
+# --- اہم تبدیلی: Union کو امپورٹ کریں ---
+from typing import Union
+
 # ہمارے اپنے پروجیکٹ کی فائلیں
 from signal_tracker import get_all_signals, update_signal_status
 from feedback_memory import save_feedback
@@ -10,7 +13,8 @@ from feedback_memory import save_feedback
 # Twelve Data API کلید
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
-async def fetch_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> float | None:
+# --- اہم تبدیلی: -> float | None کو -> Union[float, None] سے تبدیل کریں ---
+async def fetch_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Union[float, None]:
     """Twelve Data سے ایک علامت کے لیے تازہ ترین قیمت حاصل کرتا ہے۔"""
     if not TWELVE_DATA_API_KEY:
         return None
@@ -55,7 +59,6 @@ async def check_active_signals_job():
             if not all([signal_id, symbol, signal_type, tp, sl, timeframe]):
                 continue
 
-            # --- اہم تبدیلی: yfinance کی جگہ نیا فنکشن ---
             current_price = await fetch_current_price_twelve_data(symbol, client)
             
             if current_price is None:
