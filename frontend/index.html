@@ -7,7 +7,7 @@
     <link rel="icon" href="https://scalpmasterai.in/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lightweight Charts لائبریری CDN سے (سب سے قابل اعتماد طریقہ) -->
+    <!-- Lightweight Charts لائبریری CDN سے -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
@@ -18,7 +18,12 @@
         .signal-card.error { border-left: 6px solid #DC2626; }
         .timeframe-btn { transition: all 0.2s ease-in-out; }
         .timeframe-btn.active { background-color: #4f46e5; color: white; font-weight: 600; }
-        #chart-container { width: 100%; height: 500px; border-radius: 0.5rem; overflow: hidden; }
+        #chart-container {
+            width: 100%;
+            height: 500px;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -66,17 +71,24 @@
                 if (typeof LightweightCharts === 'undefined') {
                     throw new Error("LightweightCharts library is not loaded.");
                 }
-                chartContainer.innerHTML = '';
+                
+                chartContainer.innerHTML = ''; // کنٹینر کو صاف کریں
+                
+                // --- اہم تبدیلی: چارٹ بنانے کے لیے ایک زیادہ مضبوط طریقہ ---
                 chart = LightweightCharts.createChart(chartContainer, {
+                    width: chartContainer.clientWidth, // کنٹینر کی موجودہ چوڑائی استعمال کریں
+                    height: chartContainer.clientHeight, // کنٹینر کی موجودہ اونچائی استعمال کریں
                     layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
                     grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
                     timeScale: { timeVisible: true, secondsVisible: false }
                 });
+
                 candlestickSeries = chart.addCandlestickSeries({
                     upColor: '#10B981', downColor: '#EF4444',
                     borderDownColor: '#EF4444', borderUpColor: '#10B981',
                     wickDownColor: '#EF4444', wickUpColor: '#10B981'
                 });
+
             } catch (e) {
                 console.error("FATAL: Could not create chart.", e);
                 chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
@@ -84,7 +96,10 @@
         }
 
         function updateChart(signalData) {
-            if (!chart || !candlestickSeries) return;
+            if (!candlestickSeries) { // صرف candlestickSeries کو چیک کریں
+                console.warn("Candlestick series not initialized, skipping chart update.");
+                return;
+            }
             const formattedCandles = signalData.candles.map(c => ({
                 time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
             }));
@@ -147,6 +162,7 @@
             }
         });
 
+        // صفحہ لوڈ ہونے پر شروع کریں
         document.addEventListener('DOMContentLoaded', () => {
             initializeChart();
             fetchAndDisplaySignal(currentTimeframe);
