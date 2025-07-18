@@ -42,6 +42,16 @@
             border-radius: 0.5rem;
             overflow: hidden;
         }
+        #error-log {
+            background-color: #371a1a;
+            border: 1px solid #dc2626;
+            color: #fca5a5;
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 0.5rem;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -77,6 +87,12 @@
             </div>
         </section>
 
+        <!-- ایرر لاگ دکھانے کے لیے سیکشن -->
+        <section id="error-section" class="hidden">
+             <h2 class="text-xl font-semibold text-red-400">Debug Log:</h2>
+             <pre id="error-log"></pre>
+        </section>
+
         <footer class="text-center text-gray-500 mt-12 py-4 border-t border-gray-700">
             <p>&copy; 2025 ScalpMaster AI. All rights reserved.</p>
             <p class="text-sm mt-1">Disclaimer: Trading involves significant risk. Do your own research.</p>
@@ -88,100 +104,105 @@
         const chartContainer = document.getElementById('chart-container');
         const timeframeSelector = document.getElementById('timeframe-selector');
         const chartTitle = document.getElementById('chart-title');
+        const errorSection = document.getElementById('error-section');
+        const errorLog = document.getElementById('error-log');
 
         let chart = null;
         let candlestickSeries = null;
         let currentTimeframe = '5m';
 
+        function logError(message, error) {
+            console.error(message, error);
+            errorSection.classList.remove('hidden');
+            errorLog.textContent += `[${new Date().toISOString()}] ${message}\n`;
+            if (error) {
+                errorLog.textContent += `DETAILS: ${error.stack || error.message || String(error)}\n\n`;
+            }
+        }
+
         function initializeChart() {
             try {
+                if (typeof LightweightCharts === 'undefined') {
+                    throw new Error("LightweightCharts library object is not available. Check if the script is blocked or failed to load.");
+                }
                 chartContainer.innerHTML = '';
-                
                 chart = LightweightCharts.createChart(chartContainer, {
                     layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
                     grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
                     timeScale: { timeVisible: true, secondsVisible: false }
                 });
-
                 candlestickSeries = chart.addCandlestickSeries({
                     upColor: '#10B981', downColor: '#EF4444',
                     borderDownColor: '#EF4444', borderUpColor: '#10B981',
                     wickDownColor: '#EF4444', wickUpColor: '#10B981'
                 });
             } catch (e) {
-                console.error("FATAL: Could not create chart.", e);
+                logError("FATAL: Could not create chart.", e);
                 chartContainer.innerHTML = `<p class="text-red-500">Fatal Error: Could not initialize the chart library.</p>`;
             }
         }
 
         function updateChart(signalData) {
             if (!chart || !candlestickSeries) {
+                logError("Chart or series not initialized, skipping chart update.");
                 return;
             }
-            const formattedCandles = signalData.candles.map(candle => ({
-                time: new Date(candle.datetime).getTime() / 1000,
-                open: candle.open,
-                high: candle.high,
-                low: candle.low,
-                close: candle.close,
+            const formattedCandles = signalData.candles.map(c => ({
+                time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
             }));
             candlestickSeries.setData(formattedCandles);
-
             const lastCandle = formattedCandles[formattedCandles.length - 1];
-            const markers = [];
-            if (signalData.signal === 'buy') {
-                markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
-            } else if (signalData.signal === 'sell') {
-                markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
+            if (lastCandle) {
+                const markers = [];
+                if (signalData.signal === 'buy') markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
+                else if (signalData.signal === 'sell') markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
+                candlestickSeries.setMarkers(markers);
             }
-            candlestickSeries.setMarkers(markers);
-            
             chart.timeScale().fitContent();
         }
 
         async function fetchAndDisplaySignal(timeframe) {
             signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching data for ${timeframe}.</p>`;
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
+            if (candlestickSeries) { candlestickSeries.setData([]); candlestickSeries.setMarkers([]); }
 
             try {
                 const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Could not fetch data from the provider.');
+                    const errorText = await response.text();
+                    let errorDetail = 'Could not fetch data from the provider.';
+                    try {
+                        errorDetail = JSON.parse(errorText).detail;
+                    } catch (e) {
+                        errorDetail = errorText;
+                    }
+                    throw new Error(`Network error: ${response.status}. Response: ${errorDetail}`);
                 }
                 const data = await response.json();
-                
-                const statusClass = data.signal || 'wait';
-                const signalText = data.signal ? data.signal.toUpperCase() : 'N/A';
-                const confidence = data.confidence ? `${data.confidence.toFixed(2)}%` : 'N/A';
-                const tier = data.tier || 'N/A';
-                const reason = data.reason || 'No specific reason provided.';
-                const price = data.price ? data.price.toFixed(5) : 'N/A';
-                const tp = data.tp ? data.tp.toFixed(5) : 'N/A';
-                const sl = data.sl ? data.sl.toFixed(5) : 'N/A';
-
-                let content = `
+                const { signal, confidence, tier, reason, price, tp, sl, candles } = data;
+                const statusClass = signal || 'wait';
+                signalDisplay.innerHTML = `
                     <div class="signal-card ${statusClass}">
-                        <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signalText}</h3>
-                        <p class="text-lg font-semibold text-gray-200 mt-1">XAU/USD @ ${price}</p>
+                        <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : statusClass === 'sell' ? 'text-red-500' : 'text-amber-500'}">${signal ? signal.toUpperCase() : 'N/A'}</h3>
+                        <p class="text-lg font-semibold text-gray-200 mt-1">XAU/USD @ ${price ? price.toFixed(5) : 'N/A'}</p>
                         <div class="text-left mt-4 space-y-1 text-sm">
-                            <p><strong>Confidence:</strong> ${confidence}</p>
-                            <p><strong>Tier:</strong> ${tier}</p>
-                            <p><strong>Reason:</strong> <em class="text-gray-400">${reason}</em></p>
-                            ${data.signal !== 'wait' ? `<p><strong>TP:</strong> ${tp}</p><p><strong>SL:</strong> ${sl}</p>` : ''}
+                            <p><strong>Confidence:</strong> ${confidence ? confidence.toFixed(2) + '%' : 'N/A'}</p>
+                            <p><strong>Tier:</strong> ${tier || 'N/A'}</p>
+                            <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'No reason.'}</em></p>
+                            ${signal !== 'wait' ? `<p><strong>TP:</strong> ${tp ? tp.toFixed(5) : 'N/A'}</p><p><strong>SL:</strong> ${sl ? sl.toFixed(5) : 'N/A'}</p>` : ''}
                         </div>
-                    </div>
-                `;
-                signalDisplay.innerHTML = content;
+                    </div>`;
+                
+                // ایرر سیکشن کو چھپا دیں اگر سب کچھ ٹھیک ہو
+                errorSection.classList.add('hidden');
 
-                if (data.candles && data.candles.length > 0) {
+                if (candles && candles.length > 0) {
                     updateChart(data);
                 } else {
-                    chartContainer.innerHTML = '<p class="text-center text-gray-500">Could not load chart data.</p>';
+                    chartContainer.innerHTML = '<p class="text-center text-gray-500">Chart data not available.</p>';
                 }
-
             } catch (error) {
-                console.error("Fetch error:", error);
+                logError("Failed to fetch or display signal.", error);
                 signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
             }
         }
@@ -204,5 +225,4 @@
         });
     </script>
 </body>
-    </html>
-    
+</html>
