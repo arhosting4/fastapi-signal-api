@@ -1,72 +1,77 @@
-import os
 import httpx
 import asyncio
 from datetime import datetime, timedelta
-from signal_tracker import get_active_signals, update_signal_status
+import yfinance as yf
+
+# ہمارے اپنے پروجیکٹ کی فائلیں امپورٹ کریں
+from signal_tracker import get_all_signals, update_signal_status
 from feedback_memory import save_feedback
-from dotenv import load_dotenv
-from typing import Union # Union کو امپورٹ کریں
 
-load_dotenv()
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
-
-async def fetch_current_price(symbol: str) -> Union[float, None]: # | کو Union کے ساتھ تبدیل کریں
-    """Fetches the most recent price for a symbol from Twelve Data."""
-    if not TWELVE_DATA_API_KEY:
-        print("⚠️ TWELVE_DATA_API_KEY is not set.")
-        return None
-    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_API_KEY}"
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        price = data.get("price")
-        if price:
-            return float(price)
-        return None
-    except Exception as e:
-        print(f"⚠️ Error fetching current price for {symbol}: {e}")
-        return None
-
-async def check_signals():
+async def check_active_signals_job():
     """
-    Checks all active signals, determines their outcome, and saves feedback.
+    یہ وہ مرکزی فنکشن ہے جو پس منظر میں چلے گا۔
+    یہ فعال سگنلز کو چیک کرے گا اور ان کے TP/SL کی نگرانی کرے گا۔
     """
-    print(f"[{datetime.now()}] --- Running Feedback Checker (Background Task) ---")
-    active_signals = get_active_signals()
+    print(f"--- [{datetime.now()}] Running Background Signal Checker Job ---")
+    
+    all_signals = get_all_signals()
+    # صرف وہی سگنل چیک کریں جو 'active' ہیں
+    active_signals = [s for s in all_signals if s.get('status') == 'active']
+
     if not active_signals:
         print("No active signals to check.")
         return
+
     print(f"Found {len(active_signals)} active signals to check.")
+
     for signal in active_signals:
         signal_id = signal.get("id")
         symbol = signal.get("symbol")
         signal_type = signal.get("signal")
         tp = signal.get("tp")
         sl = signal.get("sl")
-        signal_time_str = signal.get("timestamp")
-        if not all([signal_id, symbol, signal_type, tp, sl, signal_time_str]):
+        timeframe = signal.get("timeframe") # فیڈ بیک کے لیے ٹائم فریم بھی حاصل کریں
+
+        if not all([signal_id, symbol, signal_type, tp, sl, timeframe]):
+            print(f"Skipping invalid signal data: {signal_id}")
             continue
-        current_price = await fetch_current_price(symbol)
-        if current_price is None:
-            continue
-        print(f"Checking {signal_id} for {symbol}. Price: {current_price}, TP: {tp}, SL: {sl}")
-        feedback, new_status = None, None
+
+        # yfinance سے تازہ ترین قیمت حاصل کریں
+        y_symbol = "GC=F" if symbol == "XAU/USD" else symbol
+        try:
+            # ہم تیز ترین ڈیٹا کے لیے '1m' انٹرول استعمال کریں گے
+            data = yf.Ticker(y_symbol).history(period="1d", interval="1m")
+            if data.empty:
+                print(f"Warning: No price data returned for {symbol}.")
+                continue
+            current_price = data['Close'].iloc[-1]
+        except Exception as e:
+            print(f"Error fetching price for {symbol}: {e}")
+            continue # اگر قیمت نہ ملے تو اگلے سگنل پر جائیں
+        
+        print(f"Checking: {signal_id} | {symbol} | Price: {current_price:.5f} | TP: {tp:.5f} | SL: {sl:.5f}")
+
+        new_status = None
+        feedback = None
+
         if signal_type == "buy":
-            if current_price >= tp: feedback, new_status = "correct", "tp_hit"
-            elif current_price <= sl: feedback, new_status = "incorrect", "sl_hit"
+            if current_price >= tp:
+                new_status, feedback = "tp_hit", "correct"
+            elif current_price <= sl:
+                new_status, feedback = "sl_hit", "incorrect"
+        
         elif signal_type == "sell":
-            if current_price <= tp: feedback, new_status = "correct", "tp_hit"
-            elif current_price >= sl: feedback, new_status = "incorrect", "sl_hit"
-        
-        signal_time = datetime.fromisoformat(signal_time_str)
-        if new_status is None and (datetime.utcnow() - signal_time) > timedelta(hours=24):
-            feedback, new_status = "missed", "expired"
-        
-        if feedback and new_status:
-            print(f"Signal {signal_id} outcome: {new_status}. Saving feedback: '{feedback}'")
-            save_feedback(symbol, feedback)
-            update_signal_status(signal_id, new_status)
-    print(f"[{datetime.now()}] --- Feedback Checker Finished ---")
+            if current_price <= tp:
+                new_status, feedback = "tp_hit", "correct"
+            elif current_price >= sl:
+                new_status, feedback = "sl_hit", "incorrect"
+
+        if new_status:
+            print(f"✅ OUTCOME: Signal {signal_id} resulted in '{new_status}' at price {current_price:.5f}.")
+            # سگنل کی حیثیت کو اپ ڈیٹ کریں
+            update_signal_status(signal_id, new_status, current_price)
+            # AI کو سکھانے کے لیے فیڈ بیک محفوظ کریں
+            save_feedback(symbol, feedback, timeframe)
+
+    print(f"--- [{datetime.now()}] Signal Checker Job Finished ---")
     
