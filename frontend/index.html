@@ -55,6 +55,7 @@
         </footer>
     </main>
     <script>
+        // --- اسکرپٹ کا مواد یہاں سے شروع ہوتا ہے ---
         const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
         const timeframeSelector = document.getElementById('timeframe-selector');
@@ -67,15 +68,11 @@
         let autoRefreshInterval = null;
 
         function initializeChart() {
-            // اگر چارٹ پہلے سے موجود ہے تو کچھ نہ کریں
-            if (chart) {
-                return;
-            }
+            if (chart) return;
             try {
-                chartContainer.innerHTML = ''; // چارٹ بنانے سے پہلے کنٹینر کو صاف کریں
+                chartContainer.innerHTML = '';
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth,
-                    height: chartContainer.clientHeight,
+                    width: chartContainer.clientWidth, height: chartContainer.clientHeight,
                     layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
                     grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
                     timeScale: { timeVisible: true, secondsVisible: false }
@@ -87,25 +84,22 @@
                 });
             } catch (e) {
                 console.error("FATAL: Could not create chart.", e);
-                chartContainer.innerHTML = `<p class="text-red-500 p-4">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
-                chart = null; // ایرر کی صورت میں چارٹ کو null پر ری سیٹ کریں
+                chartContainer.innerHTML = `<p class="text-red-500 p-4">Fatal Error: ${e.message}</p>`;
+                chart = null;
             }
         }
 
         function updateChart(signalData) {
-            // اہم: اگر چارٹ یا سیریز موجود نہیں تو کچھ نہ کریں
             if (!chart || !candlestickSeries) return;
-            
             const formattedCandles = signalData.candles.map(c => ({
                 time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
             }));
             candlestickSeries.setData(formattedCandles);
-            
             const lastCandle = formattedCandles[formattedCandles.length - 1];
             if (lastCandle) {
                 const markers = [];
-                if (signalData.signal === 'buy') markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
-                else if (signalData.signal === 'sell') markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
+                if (signalData.signal.toLowerCase() === 'buy') markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
+                else if (signalData.signal.toLowerCase() === 'sell') markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
                 candlestickSeries.setMarkers(markers);
             }
             chart.timeScale().fitContent();
@@ -120,18 +114,16 @@
 
         async function fetchAndDisplaySignal(timeframe, isManual = false) {
             if (isManual) {
-                signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching new signal for ${timeframe}.</p>`;
+                signalDisplay.innerHTML = `<h3 class="text-xl font-semibold mb-2 text-gray-400">Analyzing...</h3><p class="text-gray-500">Fetching signal for ${timeframe}.</p>`;
             }
             chartTitle.innerText = `XAU/USD Chart (${timeframe})`;
-            
-            // اہم تبدیلی: ڈیٹا حاصل کرنے سے پہلے چارٹ کو یقینی بنائیں
             initializeChart();
 
             try {
                 const response = await fetch(`/api/signal?symbol=XAU/USD&timeframe=${timeframe}`);
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Could not fetch data from server.');
+                    throw new Error(errorData.detail || 'Could not fetch data.');
                 }
                 const data = await response.json();
                 const { signal, confidence, tier, reason, price, tp, sl, candles } = data;
@@ -151,7 +143,7 @@
                 if (candles && candles.length > 0) {
                     updateChart(data);
                 } else {
-                    chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available for this timeframe.</p>';
+                    chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available.</p>';
                 }
                 updateLastUpdated(isManual);
             } catch (error) {
@@ -163,9 +155,8 @@
         function startAutoRefresh() {
             if (autoRefreshInterval) clearInterval(autoRefreshInterval);
             autoRefreshInterval = setInterval(() => {
-                console.log(`Auto-refreshing for ${currentTimeframe}...`);
                 fetchAndDisplaySignal(currentTimeframe, false);
-            }, 60000); // 1 minute
+            }, 60000);
         }
 
         timeframeSelector.addEventListener('click', (e) => {
@@ -181,7 +172,8 @@
             }
         });
 
-        document.addEventListener('DOMContentLoaded', () => {
+        // --- اہم ترین تبدیلی یہاں ہے ---
+        window.addEventListener('load', () => {
             fetchAndDisplaySignal(currentTimeframe, true);
             startAutoRefresh();
         });
