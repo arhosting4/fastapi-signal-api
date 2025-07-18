@@ -7,7 +7,8 @@
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- اہم ترین تبدیلی: لائبریری کا مستحکم ورژن 4.1.3 استعمال کریں -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
         .signal-card { background-color: #1f2937; border-radius: 0.75rem; border: 1px solid #374151; padding: 1.5rem; text-align: center; transition: all 0.3s ease-in-out; }
@@ -55,7 +56,6 @@
         </footer>
     </main>
     <script>
-        // --- اسکرپٹ کا مواد یہاں سے شروع ہوتا ہے ---
         const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
         const timeframeSelector = document.getElementById('timeframe-selector');
@@ -172,7 +172,6 @@
             }
         });
 
-        // --- اہم ترین تبدیلی یہاں ہے ---
         window.addEventListener('load', () => {
             fetchAndDisplaySignal(currentTimeframe, true);
             startAutoRefresh();
