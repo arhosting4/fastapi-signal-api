@@ -12,7 +12,7 @@ from trainerai import get_confidence
 from tierbot import get_tier
 from signal_tracker import add_active_signal
 
-# --- اہم تبدیلی: utils.py سے امپورٹ کریں ---
+# utils.py سے امپورٹ کریں
 from utils import fetch_twelve_data_ohlc
 
 def get_higher_timeframe_trend(candles: list) -> str:
@@ -77,14 +77,30 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str):
         tp_sl_buy, tp_sl_sell = calculate_tp_sl(candles)
         tp, sl = (tp_sl_buy if core_signal == "buy" else tp_sl_sell) if (tp_sl_buy and tp_sl_sell) else (None, None)
 
-        final_result = {"signal": core_signal, "reason": reason, "confidence": round(confidence, 2), "tier": tier, "price": candles[-1]['close'], "tp": round(tp, 5) if tp is not None else None, "sl": round(sl, 5) if sl is not None else None, "candles": candles}
+        # --- اہم تبدیلی: final_result میں 'symbol' اور 'timeframe' شامل کریں ---
+        final_result = {
+            "symbol": symbol, # یہ لائن شامل کی گئی ہے
+            "timeframe": timeframe, # یہ لائن بھی شامل کی گئی ہے
+            "signal": core_signal, 
+            "reason": reason, 
+            "confidence": round(confidence, 2), 
+            "tier": tier, 
+            "price": candles[-1]['close'], 
+            "tp": round(tp, 5) if tp is not None else None, 
+            "sl": round(sl, 5) if sl is not None else None, 
+            "candles": candles
+        }
 
         if final_result["signal"] in ["buy", "sell"] and tp is not None and sl is not None:
+            # اب final_result میں 'symbol' موجود ہے
             add_active_signal(final_result)
 
         return final_result
 
     except Exception as e:
+        # ایرر کو مزید واضح کریں
+        print(f"CRITICAL ERROR in fusion_engine for {symbol}: {e}")
         traceback.print_exc()
+        # فرنٹ اینڈ پر بھیجنے کے لیے ایک واضح ایرر بنائیں
         raise Exception(f"Error in AI fusion for {symbol}: {e}")
-            
+               
