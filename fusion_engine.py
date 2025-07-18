@@ -2,87 +2,118 @@ import os
 import traceback
 import asyncio
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import yfinance as yf
 import pandas as pd
 
-# --- اہم تبدیلی: اصل فیوژن انجن کو امپورٹ کریں ---
+# --- اہم: اصل فیوژن انجن کو امپورٹ کریں ---
 from fusion_engine import generate_final_signal
 
 # --- FastAPI ایپ کی شروعات ---
-app = FastAPI()
+app = FastAPI(title="ScalpMaster AI API")
 
 # --- ہیلپر فنکشنز ---
 def get_yfinance_symbol(symbol: str) -> str:
-    if symbol.upper() == "XAU/USD": return "GC=F"
+    """ 'XAU/USD' جیسے علامات کو yfinance کے لیے 'GC=F' میں تبدیل کرتا ہے۔ """
+    if symbol.upper() == "XAU/USD":
+        return "GC=F"
+    # مستقبل میں دیگر علامات کے لیے بھی یہاں منطق شامل کی جا سکتی ہے
     return symbol
 
 async def fetch_real_ohlc_data(symbol: str, timeframe: str):
+    """Yahoo Finance سے OHLCV ڈیٹا حاصل کرتا ہے۔"""
     yfinance_symbol = get_yfinance_symbol(symbol)
-    period_map = {"1m":"2d", "5m":"5d", "15m":"10d", "1h":"1mo", "4h":"3mo", "1d":"1y"}
-    period = period_map.get(timeframe, "5d")
-    print(f"YAHOO FINANCE: Fetching data for '{yfinance_symbol}' ({timeframe}, {period})...")
+    
+    # yfinance کے لیے ٹائم فریم اور پیریڈ میپنگ
+    period_map = {"1m": "2d", "5m": "5d", "15m": "10d", "1h": "1mo", "4h": "3mo", "1d": "1y"}
+    period = period_map.get(timeframe)
+    if not period:
+        raise ValueError(f"Unsupported timeframe: {timeframe}")
+
+    print(f"YAHOO FINANCE: Fetching data for '{yfinance_symbol}' (Timeframe: {timeframe}, Period: {period})...")
+    
     try:
+        # yfinance.download ایک بلاکنگ I/O آپریشن ہے، اسے تھریڈ میں چلائیں
         data = await asyncio.to_thread(
-            yf.download, tickers=yfinance_symbol, period=period, interval=timeframe,
-            progress=False, auto_adjust=False
+            yf.download,
+            tickers=yfinance_symbol,
+            period=period,
+            interval=timeframe,
+            progress=False,
+            auto_adjust=False
         )
-        if data.empty: raise ValueError(f"No data returned for '{yfinance_symbol}'.")
         
-        # ملٹی انڈیکس کالمز کو ہینڈل کریں
+        if data.empty:
+            raise ValueError(f"No data returned from yfinance for '{yfinance_symbol}'. It might be a holiday or an invalid symbol.")
+        
+        # ملٹی انڈیکس کالمز کو ہینڈل کریں (اگر ہوں)
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
 
         data.reset_index(inplace=True)
+        # کالم کے ناموں کو لوئر کیس کریں
         data.columns = [str(col).lower().strip() for col in data.columns]
         
+        # 'Date' یا 'Datetime' کو 'datetime' میں تبدیل کریں
         rename_dict = {'date': 'datetime', 'index': 'datetime'}
         data.rename(columns=rename_dict, inplace=True)
         
+        # یقینی بنائیں کہ تمام ضروری کالمز موجود ہیں
         required_cols = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         for col in required_cols:
             if col not in data.columns:
-                raise ValueError(f"Missing required column '{col}'. Available: {data.columns.to_list()}")
+                raise ValueError(f"Missing required column '{col}'. Available columns: {data.columns.to_list()}")
         
-        # تاریخ کو UTC میں تبدیل کریں اور فارمیٹ کریں
+        # تاریخ کو UTC میں تبدیل کریں اور سٹرنگ فارمیٹ میں لائیں
         data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_convert('UTC').dt.strftime('%Y-%m-%d %H:%M:%S')
         
         candles = data[required_cols].to_dict('records')
         print(f"YAHOO FINANCE: Successfully fetched and processed {len(candles)} candles.")
         return candles
+        
     except Exception as e:
-        print(f"CRITICAL: Failed to process data from yfinance: {e}")
+        print(f"CRITICAL: Failed to fetch or process data from yfinance: {e}")
         traceback.print_exc()
+        # ایرر کو آگے بھیجیں تاکہ API کالر کو پتہ چلے
         raise
 
 # --- API اینڈ پوائنٹس ---
 
-@app.get("/health", status_code=200)
+@app.get("/health", status_code=200, tags=["System"])
 async def health_check():
-    return {"status": "ok"}
+    """ Render.com جیسی سروسز کے لیے ہیلتھ چیک اینڈ پوائنٹ۔ """
+    return {"status": "ok", "message": "ScalpMaster AI is running."}
 
-@app.get("/api/signal")
-async def get_signal(symbol: str = Query("XAU/USD"), timeframe: str = Query("5m")):
+@app.get("/api/signal", tags=["AI Signals"])
+async def get_signal(symbol: str = Query("XAU/USD", description="Trading Symbol"), timeframe: str = Query("5m", description="Chart Timeframe (e.g., 1m, 5m, 15m)")):
+    """
+    ایک مخصوص علامت اور ٹائم فریم کے لیے AI ٹریڈنگ سگنل تیار کرتا ہے۔
+    """
     try:
-        # 1. ڈیٹا حاصل کریں
+        # 1. مارکیٹ ڈیٹا حاصل کریں
         candles = await fetch_real_ohlc_data(symbol, timeframe)
-        if not candles: 
-            raise HTTPException(status_code=404, detail="Could not fetch candle data.")
+        if not candles or len(candles) < 20: # AI کو کم از کم 20 کینڈلز کی ضرورت ہے
+            raise HTTPException(status_code=404, detail="Not enough historical data to generate a reliable signal.")
         
-        # 2. --- اہم تبدیلی: اصل AI انجن کو کال کریں ---
+        # 2. اصل AI انجن کو کال کریں
+        print(f"Invoking AI Fusion Engine for {symbol} on {timeframe} timeframe...")
         signal_result = await generate_final_signal(symbol, candles, timeframe)
+        print(f"AI Engine returned signal: {signal_result.get('signal')}")
         
         # 3. نتیجہ واپس بھیجیں
         return signal_result
         
+    except ValueError as ve:
+        # ڈیٹا حاصل کرنے یا ٹائم فریم کے مسائل کے لیے
+        print(f"VALUE ERROR in get_signal: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        print(f"CRITICAL ERROR in get_signal for {symbol}: {e}")
+        # دیگر تمام غیر متوقع ایررز کے لیے
+        print(f"CRITICAL SERVER ERROR in get_signal for {symbol}: {e}")
         traceback.print_exc()
-        # فرنٹ اینڈ کو ایک واضح ایرر بھیجیں
-        raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred in the AI Engine: {str(e)}")
 
 # --- اسٹیٹک فائلیں اور روٹ پیج ---
-# یہ لائن 'frontend' فولڈر میں موجود تمام فائلوں کو پیش کرے گی
+# یہ 'frontend' فولڈر کو پیش کرتا ہے اور index.html کو روٹ پر دکھاتا ہے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-
+                     
