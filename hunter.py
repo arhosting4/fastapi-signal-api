@@ -1,4 +1,4 @@
-# hunter.py
+# filename: hunter.py
 import asyncio
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -7,8 +7,7 @@ from utils import get_available_pairs, fetch_twelve_data_ohlc
 from fusion_engine import generate_final_signal
 from signal_tracker import set_active_signals
 from messenger import send_telegram_message
-# --- اہم تبدیلی: src فولڈر کے ساتھ درست امپورٹ ---
-from src.database import crud
+import database_crud as crud
 
 MIN_CONFIDENCE_THRESHOLD = 65.0
 
