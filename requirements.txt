@@ -4,16 +4,16 @@ uvicorn==0.30.1
 gunicorn==22.0.0
 python-dotenv==1.0.1
 httpx==0.28.1
+requests==2.32.3
 
 # Data and AI
 numpy==1.26.4
 pandas==2.2.2
-pandas-ta==0.3.14b
 
 # Scheduling and Background Tasks
 apscheduler==3.10.4
 
-# --- نئی تبدیلیاں: ڈیٹا بیس کے لیے لائبریریاں ---
+# Database
 sqlalchemy==2.0.31
 psycopg2-binary==2.9.9
 alembic==1.13.2
