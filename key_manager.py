@@ -1,67 +1,48 @@
 import os
-import json
-from typing import List, Optional
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
-# یہ فائل ٹریک کرے گی کہ کون سی کلید اس وقت فعال ہے
-STATE_FILE = "data/key_manager_state.json"
+# .env فائل سے ماحول کے متغیرات لوڈ کریں
+load_dotenv()
 
-class KeyManager:
-    def __init__(self):
-        self.keys: List[str] = self._load_keys_from_env()
-        self.current_key_index: int = self._load_state()
-        if not self.keys:
-            raise ValueError("No Twelve Data API keys found in environment variables (e.g., TWELVE_DATA_API_KEY_1).")
+# API کلیدوں کو ماحول کے متغیرات سے حاصل کریں
+API_KEYS = [
+    key.strip() for key in os.getenv("TWELVE_DATA_API_KEYS", "").split(',') if key.strip()
+]
 
-    def _load_keys_from_env(self) -> List[str]:
-        """ماحول سے تمام API کلیدوں کو لوڈ کرتا ہے۔"""
-        loaded_keys = []
-        i = 1
-        while True:
-            key = os.getenv(f"TWELVE_DATA_API_KEY_{i}")
-            if key:
-                loaded_keys.append(key)
-                i += 1
-            else:
-                break
-        print(f"KeyManager: Found {len(loaded_keys)} API keys.")
-        return loaded_keys
+# یہ ڈکشنری ہر کلید کی آخری ناکامی کا وقت محفوظ کرے گی
+key_limits = {}
 
-    def _load_state(self) -> int:
-        """محفوظ کردہ حالت سے موجودہ کلید کا انڈیکس لوڈ کرتا ہے۔"""
-        try:
-            with open(STATE_FILE, "r") as f:
-                state = json.load(f)
-                return state.get("current_key_index", 0)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return 0
+print(f"KeyManager: Found {len(API_KEYS)} API keys.")
 
-    def _save_state(self):
-        """موجودہ کلید کے انڈیکس کو فائل میں محفوظ کرتا ہے۔"""
-        state = {"current_key_index": self.current_key_index}
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f)
+def get_api_key():
+    """
+    ایک دستیاب API کلید واپس کرتا ہے جو فی الحال محدود نہیں ہے۔
+    """
+    now = datetime.utcnow()
+    
+    # تمام کلیدوں میں سے ایک کو منتخب کرنے کی کوشش کریں
+    for key in API_KEYS:
+        # اگر کلید محدود ہے، تو چیک کریں کہ کیا ایک منٹ گزر چکا ہے
+        if key in key_limits:
+            if now - key_limits[key] > timedelta(minutes=1):
+                # ایک منٹ گزر چکا ہے، کلید کو دوبارہ قابل استعمال سمجھیں
+                key_limits.pop(key)
+                print(f"Key ending in ...{key[-4:]} is now available again.")
+                return key
+        else:
+            # اگر کلید محدود نہیں ہے، تو اسے استعمال کریں
+            return key
+            
+    # اگر تمام کلیدیں محدود ہیں اور کسی کا بھی ایک منٹ پورا نہیں ہوا
+    print("Warning: All API keys are currently rate-limited.")
+    return None
 
-    def get_current_key(self) -> str:
-        """موجودہ فعال API کلید واپس کرتا ہے۔"""
-        return self.keys[self.current_key_index]
+def mark_key_as_limited(key: str):
+    """
+    ایک کلید کو محدود کے طور پر نشان زد کرتا ہے اور اس کا وقت محفوظ کرتا ہے۔
+    """
+    now = datetime.utcnow()
+    key_limits[key] = now
+    print(f"Key ending in ...{key[-4:]} has been marked as rate-limited.")
 
-    def rotate_to_next_key(self) -> Optional[str]:
-        """
-        اگلی API کلید پر منتقل ہوتا ہے۔ اگر تمام کلیدیں استعمال ہو چکی ہوں تو None واپس کرتا ہے۔
-        """
-        print(f"KeyManager: Rotating from key index {self.current_key_index}.")
-        self.current_key_index += 1
-        if self.current_key_index >= len(self.keys):
-            print("KeyManager: All API keys have been exhausted for the day.")
-            # اگر تمام کلیدیں ختم ہو جائیں تو واپس شروع میں چلے جائیں (اگلے دن کے لیے)
-            self.current_key_index = 0 
-            self._save_state()
-            return None # آج کے لیے کوئی مزید کلید نہیں
-        
-        self._save_state()
-        new_key = self.get_current_key()
-        print(f"KeyManager: Rotated to new key index {self.current_key_index}.")
-        return new_key
-
-# ایک عالمی مینیجر بنائیں تاکہ پوری ایپ اسے استعمال کر سکے
-key_manager = KeyManager()
