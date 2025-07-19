@@ -1,30 +1,55 @@
-from datetime import datetime
-from typing import List, Dict, Optional, Any
+# signal_tracker.py
 
-LIVE_SIGNAL_CACHE: Dict[str, Any] = {}
-ACTIVE_SIGNALS_CACHE: List[Dict[str, Any]] = []
+import json
+import os
+from typing import List, Dict, Any
 
-def set_live_signal(signal_data: Dict[str, Any]):
-    global LIVE_SIGNAL_CACHE
-    LIVE_SIGNAL_CACHE = signal_data
+# --- اہم تبدیلی: فائل کا نام اور راستہ ---
+DATA_DIR = "data"
+ACTIVE_SIGNALS_FILE = os.path.join(DATA_DIR, "active_signals.json")
 
-def get_live_signal() -> Optional[Dict[str, Any]]:
-    return LIVE_SIGNAL_CACHE
+def _ensure_file_exists(file_path: str, default_content: Any):
+    """یقینی بناتا ہے کہ فائل موجود ہے، اگر نہیں تو اسے ڈیفالٹ مواد سے بناتا ہے۔"""
+    if not os.path.exists(file_path):
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as f:
+            json.dump(default_content, f, indent=2)
+        print(f"✅ Created empty file: {file_path}")
 
-def add_active_signal(signal_data: Dict[str, Any]):
-    global ACTIVE_SIGNALS_CACHE
-    signal_id = f"{signal_data['symbol']}_{datetime.utcnow().timestamp()}"
-    signal_data['signal_id'] = signal_id
-    signal_data['timestamp'] = datetime.utcnow().isoformat()
-    ACTIVE_SIGNALS_CACHE.append(signal_data)
+def set_active_signals(signals: List[Dict[str, Any]]):
+    """
+    فعال سگنلز کی پوری فہرست کو فائل میں محفوظ کرتا ہے۔
+    یہ پرانے سگنلز کو اوور رائٹ کر دے گا۔
+    """
+    _ensure_file_exists(ACTIVE_SIGNALS_FILE, [])
+    try:
+        with open(ACTIVE_SIGNALS_FILE, "w") as f:
+            json.dump(signals, f, indent=2)
+        print(f"--- INFO: Wrote {len(signals)} active signals to file. ---")
+    except Exception as e:
+        print(f"--- ERROR: Could not write active signals to file: {e} ---")
 
-def remove_active_signal(signal_id: str):
-    global ACTIVE_SIGNALS_CACHE
-    ACTIVE_SIGNALS_CACHE = [s for s in ACTIVE_SIGNALS_CACHE if s.get('signal_id') != signal_id]
+def get_active_signals() -> List[Dict[str, Any]]:
+    """
+    فائل سے فعال سگنلز کی فہرست پڑھتا ہے۔
+    """
+    _ensure_file_exists(ACTIVE_SIGNALS_FILE, [])
+    try:
+        with open(ACTIVE_SIGNALS_FILE, "r") as f:
+            # --- اہم: اگر فائل خالی ہے تو خالی فہرست واپس کریں ---
+            content = f.read()
+            if not content:
+                return []
+            return json.loads(content)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
 
-def get_all_signals() -> List[Dict[str, Any]]:
-    return list(ACTIVE_SIGNALS_CACHE)
+def clear_active_signals():
+    """
+    تمام فعال سگنلز کو صاف کرتا ہے (خالی فہرست لکھتا ہے)۔
+    """
+    set_active_signals([])
 
-def get_active_signals_count() -> int:
-    return len(ACTIVE_SIGNALS_CACHE)
-    
+# --- اس بات کو یقینی بنائیں کہ ایپ کے آغاز پر فائل موجود ہو ---
+_ensure_file_exists(ACTIVE_SIGNALS_FILE, [])
+        
