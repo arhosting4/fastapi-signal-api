@@ -7,8 +7,7 @@
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- مقامی Lightweight Charts لائبریری -->
-    <script src="/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
         .signal-card { background-color: #1f2937; border-radius: 0.75rem; border: 1px solid #374151; padding: 1.5rem; text-align: center; }
@@ -16,20 +15,8 @@
         .signal-card.sell { border-left: 6px solid #EF4444; }
         .signal-card.wait { border-left: 6px solid #F59E0B; }
         .signal-card.error { border-left: 6px solid #DC2626; }
-        #chart-container { width: 100%; height: 450px; border-radius: 0.5rem; overflow: hidden; }
-        .blinking-dot {
-            height: 10px;
-            width: 10px;
-            background-color: #10B981;
-            border-radius: 50%;
-            display: inline-block;
-            animation: blink-animation 1.5s infinite;
-        }
-        @keyframes blink-animation {
-            0% { opacity: 1; }
-            50% { opacity: 0.3; }
-            100% { opacity: 1; }
-        }
+        .nav-btn { transition: all 0.2s ease-in-out; background-color: #374151; padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; }
+        .nav-btn:hover { background-color: #4f46e5; color: white; }
     </style>
 </head>
 <body class="antialiased">
@@ -37,26 +24,21 @@
         <header class="text-center mb-8">
             <h1 class="text-4xl font-bold text-amber-400">ScalpMaster AI</h1>
             <p class="text-lg text-gray-400 mt-2">Your Autonomous Signal Hunter</p>
-            <!-- یہ نیا نیویگیشن سیکشن ہے -->
-            <div class="flex justify-center space-x-4 mt-4">
-                <a href="/history.html" class="text-indigo-400 hover:text-indigo-300">Performance History &rarr;</a>
-                <a href="/news.html" class="text-indigo-400 hover:text-indigo-300">News Center &rarr;</a>
-            </div>
         </header>
 
+        <nav class="flex justify-center space-x-4 mb-8">
+            <a href="/history.html" class="nav-btn">Performance History →</a>
+            <a href="/news.html" class="nav-btn">News Center →</a>
+        </nav>
+
         <section id="dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- سگنل ڈسپلے -->
-            <div class="lg:col-span-1 space-y-6">
-                <div id="signal-display" class="signal-card">
-                    <h3 class="text-xl font-semibold mb-2 text-gray-400">Initializing...</h3>
-                    <p class="text-gray-500">Please wait while the AI hunter scans the markets.</p>
-                </div>
+            <div id="signal-display" class="lg:col-span-1 signal-card">
+                <!-- مواد جاوا اسکرپٹ سے آئے گا -->
             </div>
-            <!-- چارٹ ڈسپلے -->
             <div class="lg:col-span-2 bg-gray-800 p-4 rounded-lg">
                 <h2 id="chart-title" class="text-xl font-semibold mb-3 text-white">Market Chart</h2>
-                <div id="chart-container">
-                    <p class="text-center pt-16 text-gray-500">Chart will be displayed here once a signal is found.</p>
+                <div id="chart-container" class="w-full h-[500px] rounded-lg overflow-hidden">
+                    <!-- چارٹ یہاں بنے گا -->
                 </div>
             </div>
         </section>
@@ -67,7 +49,6 @@
     </main>
 
     <script>
-        // ... (جاوا اسکرپٹ کا کوڈ ویسے ہی رہے گا جیسا پچھلے جواب میں تھا) ...
         const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
         const chartTitle = document.getElementById('chart-title');
@@ -76,12 +57,10 @@
         let candlestickSeries = null;
 
         function initializeChart() {
-            if (chart) return;
+            if (chart) { chart.remove(); chart = null; }
             try {
-                chartContainer.innerHTML = '';
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth,
-                    height: chartContainer.clientHeight,
+                    width: chartContainer.clientWidth, height: 500,
                     layout: { background: { color: '#1f2937' }, textColor: '#d1d5db' },
                     grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
                     timeScale: { timeVisible: true, secondsVisible: false }
@@ -92,90 +71,82 @@
                     wickDownColor: '#EF4444', wickUpColor: '#10B981'
                 });
             } catch (e) {
-                console.error("FATAL: Could not create chart.", e);
-                chartContainer.innerHTML = `<p class="text-red-500 p-4">Fatal Error: Could not initialize the chart library. ${e.message}</p>`;
+                console.error("Chart initialization failed:", e);
+                chartContainer.innerHTML = `<p class="text-red-500 p-4">Chart Error: ${e.message}</p>`;
             }
         }
 
         function updateChart(signalData) {
-            if (!candlestickSeries) return;
+            if (!candlestickSeries || !signalData.candles || signalData.candles.length === 0) {
+                chartTitle.innerText = "Market Chart";
+                chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart data not available for this signal.</p>';
+                return;
+            }
+            chartTitle.innerText = `${signalData.symbol} Chart (${signalData.timeframe})`;
             const formattedCandles = signalData.candles.map(c => ({
-                time: new Date(c.datetime).getTime() / 1000, open: c.open, high: c.high, low: c.low, close: c.close
+                time: new Date(c.datetime).getTime() / 1000,
+                open: c.open, high: c.high, low: c.low, close: c.close
             }));
             candlestickSeries.setData(formattedCandles);
-            
-            const lastCandle = formattedCandles[formattedCandles.length - 1];
-            if (lastCandle) {
-                const markers = [];
-                if (signalData.signal === 'buy') {
-                    markers.push({ time: lastCandle.time, position: 'belowBar', color: '#10B981', shape: 'arrowUp', text: 'BUY' });
-                } else if (signalData.signal === 'sell') {
-                    markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#EF4444', shape: 'arrowDown', text: 'SELL' });
-                }
-                candlestickSeries.setMarkers(markers);
-            }
             chart.timeScale().fitContent();
         }
 
-        async function fetchAndDisplaySignal() {
-            try {
-                const response = await fetch('/api/get_live_signal');
-                if (!response.ok) throw new Error('Could not fetch data from server.');
-                
-                const data = await response.json();
-                const { signal, symbol, timeframe, confidence, tier, reason, price, tp, sl, candles, timestamp } = data;
-                
-                const statusClass = signal || 'wait';
-                let signalTime = timestamp ? new Date(timestamp * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
+        function displaySignal(data) {
+            const { signal, symbol, timeframe, confidence, tier, reason, price, tp, sl, found_at } = data;
+            const statusClass = signal ? signal.toLowerCase() : 'wait';
+            let signalHTML = '';
 
-                if (signal === 'wait') {
-                    signalDisplay.innerHTML = `
-                        <div class="signal-card wait">
-                            <h3 class="text-2xl font-bold text-amber-500">WAIT</h3>
-                            <p class="text-lg font-semibold text-gray-200 mt-1">${symbol || 'N/A'}</p>
-                            <div class="text-left mt-4 space-y-1 text-sm">
-                                <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'No reason.'}</em></p>
-                            </div>
-                        </div>`;
-                    chartContainer.innerHTML = '<p class="text-center pt-16 text-gray-500">Chart data not available for this signal.</p>';
-                    chartTitle.innerText = 'Market Chart';
-                    chart = null;
-                } else {
-                    signalDisplay.innerHTML = `
-                        <div class="signal-card ${statusClass}">
-                            <div class="flex items-center justify-center mb-2">
-                                <span class="blinking-dot mr-2"></span>
-                                <h3 class="text-2xl font-bold ${statusClass === 'buy' ? 'text-green-500' : 'text-red-500'}">${signal.toUpperCase()}</h3>
-                            </div>
-                            <p class="text-lg font-semibold text-gray-200 mt-1">${symbol} (${timeframe})</p>
-                            <div class="text-left mt-4 space-y-2 text-sm">
-                                <p><strong>Confidence:</strong> ${confidence ? confidence.toFixed(2) + '%' : 'N/A'}</p>
-                                <p><strong>Tier:</strong> ${tier || 'N/A'}</p>
-                                <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'No reason.'}</em></p>
-                                <p><strong>Entry Price:</strong> ${price ? price.toFixed(5) : 'N/A'}</p>
-                                <p><strong>TP:</strong> ${tp ? tp.toFixed(5) : 'N/A'}</p>
-                                <p><strong>SL:</strong> ${sl ? sl.toFixed(5) : 'N/A'}</p>
-                                <p class="text-xs text-gray-500 pt-2">Signal found at: ${signalTime}</p>
-                            </div>
-                        </div>`;
-                    
-                    chartTitle.innerText = `${symbol} Chart (${timeframe})`;
-                    if (candles && candles.length > 0) {
-                        initializeChart();
-                        updateChart(data);
+            if (signal && signal !== 'wait') {
+                signalHTML = `
+                    <h3 class="text-3xl font-bold ${statusClass === 'buy' ? 'text-green-400' : 'text-red-400'}">${signal.toUpperCase()}</h3>
+                    <p class="text-xl font-semibold text-gray-200 mt-1">${symbol} (${timeframe})</p>
+                    <div class="text-left mt-4 space-y-2 text-sm">
+                        <p><strong>Confidence:</strong> ${confidence?.toFixed(2) || 'N/A'}%</p>
+                        <p><strong>Tier:</strong> ${tier || 'N/A'}</p>
+                        <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'N/A'}</em></p>
+                        <p><strong>TP:</strong> ${tp?.toFixed(5) || 'N/A'}</p>
+                        <p><strong>SL:</strong> ${sl?.toFixed(5) || 'N/A'}</p>
+                        <p class="text-xs text-gray-500 pt-2">Signal found at: ${found_at || 'N/A'}</p>
+                    </div>`;
+            } else {
+                signalHTML = `
+                    <h3 class="text-3xl font-bold text-amber-400">WAIT</h3>
+                    <p class="text-xl font-semibold text-gray-200 mt-1">N/A</p>
+                    <div class="text-left mt-4 space-y-2 text-sm">
+                        <p><strong>Reason:</strong> <em class="text-gray-400">${reason || 'AI is scanning for opportunities.'}</em></p>
+                    </div>`;
+            }
+            signalDisplay.className = `lg:col-span-1 signal-card ${statusClass}`;
+            signalDisplay.innerHTML = signalHTML;
+        }
+
+        async function fetchAndUpdate() {
+            try {
+                const response = await fetch('/api/live-signal');
+                if (!response.ok) {
+                    // --- اہم تبدیلی: سرور سے ڈیٹا نہ ملنے پر بہتر پیغام دکھائیں ---
+                    if (response.status === 404) {
+                         displaySignal({ signal: 'wait', reason: 'AI is preparing the first signal. Please wait...' });
                     } else {
-                        chartContainer.innerHTML = '<p class="text-center pt-16 text-gray-500">Chart data not available for this signal.</p>';
+                        throw new Error(`Server responded with status: ${response.status}`);
                     }
+                } else {
+                    const data = await response.json();
+                    displaySignal(data);
+                    updateChart(data);
                 }
             } catch (error) {
                 console.error("Fetch error:", error);
-                signalDisplay.innerHTML = `<div class="signal-card error"><h3 class="text-xl font-semibold text-red-500">Error</h3><p>${error.message}</p></div>`;
+                signalDisplay.className = 'lg:col-span-1 signal-card error';
+                signalDisplay.innerHTML = `<h3 class="text-xl font-semibold text-red-500">Error</h3><p>Could not fetch data from server. It might be starting up. Please wait a moment.</p>`;
+                chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Chart will be displayed here once a signal is found.</p>';
             }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            fetchAndDisplaySignal();
-            setInterval(fetchAndDisplaySignal, 60000);
+            initializeChart();
+            fetchAndUpdate(); // صفحہ لوڈ ہوتے ہی ایک بار چلائیں
+            setInterval(fetchAndUpdate, 30000); // ہر 30 سیکنڈ بعد چلائیں
         });
     </script>
 </body>
