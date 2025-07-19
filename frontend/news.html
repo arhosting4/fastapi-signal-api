@@ -3,101 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Economic News Center - ScalpMaster AI</title>
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>ScalpMaster AI - Market News</title>
+    <!-- (یہاں وہی CSS اور فونٹس ہوں گے جو index.html میں ہیں) -->
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
-        .nav-btn { transition: all 0.2s ease-in-out; background-color: #374151; padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; }
-        .nav-btn:hover { background-color: #4f46e5; color: white; }
-        .news-card { background-color: #1f2937; border-radius: 0.5rem; padding: 1rem; border-left: 4px solid #4f46e5; }
-        .impact-high { border-color: #EF4444; }
-        .impact-medium { border-color: #F59E0B; }
-        .impact-clear { border-color: #10B981; }
+        /* (وہی مشترکہ CSS کوڈ) */
+        .news-card { border-bottom: 1px solid var(--secondary-color); padding: 15px 5px; }
+        .news-title { font-size: 1.1em; font-weight: bold; color: #fff; }
+        .news-meta { font-size: 0.8em; color: #aaa; margin-top: 5px; }
+        .news-source { font-weight: bold; color: var(--accent-color); }
     </style>
 </head>
-<body class="antialiased">
-    <main class="container mx-auto px-4 py-8">
-        <header class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-amber-400">Economic News Center</h1>
-            <p class="text-lg text-gray-400 mt-2">Upcoming high-impact events monitored by the AI.</p>
-        </header>
-
-        <nav class="flex justify-center space-x-4 mb-8">
-            <a href="/" class="nav-btn">← Live Signal</a>
-            <a href="/history.html" class="nav-btn">Performance History →</a>
+<body>
+    <header class="header">
+        <h1>SCALPMASTER AI</h1>
+        <nav class="navbar">
+            <a href="index.html">Live Signals</a>
+            <a href="history.html">Trade History</a>
+            <a href="news.html" class="active">Market News</a>
         </nav>
+    </header>
 
-        <div id="news-container" class="space-y-4">
-            <!-- مواد جاوا اسکرپٹ سے آئے گا -->
+    <div class="container">
+        <div class="glass-panel">
+            <h2>Latest Economic News</h2>
+            <div id="news-container"></div>
         </div>
-
-        <footer class="text-center text-gray-500 mt-12 py-4 border-t border-gray-700">
-            <p>&copy; 2025 ScalpMaster AI. All rights reserved.</p>
-        </footer>
-    </main>
+    </div>
 
     <script>
-        const newsContainer = document.getElementById('news-container');
-
-        function displayNews(data) {
-            // پہلے کنٹینر کو خالی کریں
-            newsContainer.innerHTML = '';
-            
-            let hasEvents = false;
-            for (const [symbol, analysis] of Object.entries(data)) {
-                if (analysis.impact !== 'Clear') {
-                    hasEvents = true;
-                    const card = document.createElement('div');
-                    card.className = `news-card impact-${analysis.impact.toLowerCase()}`;
-                    card.innerHTML = `
-                        <h3 class="text-lg font-semibold text-white">${symbol}</h3>
-                        <p class="text-sm"><strong>Impact:</strong> ${analysis.impact}</p>
-                        <p class="text-sm text-gray-400">${analysis.reason}</p>
-                    `;
-                    newsContainer.appendChild(card);
-                }
-            }
-
-            if (!hasEvents) {
-                newsContainer.innerHTML = `
-                    <div class="news-card impact-clear">
-                        <h3 class="text-lg font-semibold text-white">All Clear</h3>
-                        <p class="text-sm text-gray-400">No upcoming high-impact news events found in the cache.</p>
-                    </div>`;
-            }
-        }
-
         async function fetchNews() {
-            // ابتدائی لوڈنگ کا پیغام دکھائیں
-            newsContainer.innerHTML = '<p class="text-center text-gray-400">Loading news events...</p>';
-            
-            try {
-                const response = await fetch('/api/news');
-                if (!response.ok) {
-                    throw new Error(`Server responded with status: ${response.status}`);
-                }
-                const data = await response.json();
-                
-                // چیک کریں کہ آیا ڈیٹا خالی ہے
-                if (Object.keys(data).length === 0) {
-                     newsContainer.innerHTML = '<p class="text-center text-gray-400">News cache is currently being updated. Please check back in a moment.</p>';
-                } else {
-                    displayNews(data);
-                }
-
-            } catch (error) {
-                console.error("Failed to load news:", error);
-                newsContainer.innerHTML = `<p class="text-center text-red-500">Error: Could not load news events. The server might be initializing.</p>`;
-            }
+            const response = await fetch('/api/news');
+            const newsItems = await response.json();
+            const newsContainer = document.getElementById('news-container');
+            newsContainer.innerHTML = '';
+            newsItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'news-card';
+                card.innerHTML = `
+                    <div class="news-title">${item.title}</div>
+                    <div class="news-meta">
+                        Source: <span class="news-source">${item.source}</span> | 
+                        Published: ${new Date(item.published_at).toLocaleString()}
+                    </div>
+                `;
+                newsContainer.appendChild(card);
+            });
         }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchNews();
-            // ہر 2 منٹ بعد خود بخود اپ ڈیٹ کریں
-            setInterval(fetchNews, 120000); 
-        });
+        fetchNews();
     </script>
 </body>
 </html>
