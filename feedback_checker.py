@@ -1,12 +1,37 @@
 import httpx
 from datetime import datetime, timedelta
 from typing import Optional
+import json
+import os
 
 from signal_tracker import get_all_signals, update_signal_status
-from feedback_memory import save_feedback # یہ اب بھی وہی رہے گا
+from feedback_memory import save_feedback
 from key_manager import key_manager
 
+# --- نئی فائل کا نام ---
+TRADE_HISTORY_FILE = "data/trade_history.json"
+os.makedirs("data", exist_ok=True)
+
+def log_trade_history(signal_data: dict):
+    """
+    ایک مکمل شدہ ٹریڈ کی تفصیلات کو ہسٹری فائل میں لاگ کرتا ہے۔
+    """
+    history = []
+    try:
+        with open(TRADE_HISTORY_FILE, "r") as f:
+            history = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass # اگر فائل موجود نہیں یا خالی ہے تو کوئی بات نہیں
+
+    history.append(signal_data)
+
+    with open(TRADE_HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
+    print(f"HISTORY: Logged trade {signal_data.get('id')} to history file.")
+
+
 async def fetch_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Optional[float]:
+    # ... (یہ فنکشن ویسے ہی رہے گا) ...
     api_key = key_manager.get_current_key()
     if not api_key: return None
     url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={api_key}"
@@ -24,18 +49,17 @@ async def fetch_current_price_twelve_data(symbol: str, client: httpx.AsyncClient
 
 async def check_active_signals_job():
     """
-    تمام فعال سگنلز کی نگرانی کرتا ہے اور نتیجہ کی بنیاد پر فیڈ بیک محفوظ کرتا ہے۔
+    فعال سگنلز کی نگرانی کرتا ہے اور نتیجہ کو فیڈ بیک اور ہسٹری دونوں میں محفوظ کرتا ہے۔
     """
     print("--- FEEDBACK CHECKER: Running job... ---")
     active_signals = get_all_signals()
     if not active_signals:
-        print("--- FEEDBACK CHECKER: No active signals to check. ---")
         return
 
     async with httpx.AsyncClient() as client:
         for signal in active_signals:
             symbol = signal.get("symbol")
-            timeframe = signal.get("timeframe") # <-- ٹائم فریم حاصل کریں
+            timeframe = signal.get("timeframe")
             if not all([symbol, timeframe, signal.get("id"), signal.get("signal"), signal.get("tp"), signal.get("sl")]):
                 continue
 
@@ -43,8 +67,7 @@ async def check_active_signals_job():
             if current_price is None: continue
 
             feedback, new_status = None, None
-            signal_type = signal["signal"]
-            tp, sl = signal["tp"], signal["sl"]
+            signal_type, tp, sl = signal["signal"], signal["tp"], signal["sl"]
 
             if signal_type == "buy":
                 if current_price >= tp: feedback, new_status = "correct", "tp_hit"
@@ -58,9 +81,15 @@ async def check_active_signals_job():
                 feedback, new_status = "expired", "expired"
             
             if feedback and new_status:
-                # --- اہم تبدیلی: پرفارمنس کی بنائیں اور استعمال کریں ---
                 performance_key = f"{symbol}_{timeframe}"
                 save_feedback(performance_key, feedback)
+                
+                # --- اہم تبدیلی: ٹریڈ کو ہسٹری میں لاگ کریں ---
+                signal['status'] = new_status # اسٹیٹس کو اپ ڈیٹ کریں
+                signal['closing_price'] = current_price
+                signal['closed_at'] = datetime.utcnow().isoformat()
+                log_trade_history(signal)
+                
                 update_signal_status(signal["id"], new_status, current_price)
-                print(f"--- FEEDBACK CHECKER: Signal {signal['id']} outcome: {new_status}. Feedback saved for '{performance_key}'. ---")
+                print(f"--- FEEDBACK CHECKER: Signal {signal['id']} outcome: {new_status}. Logged to history.")
                 
