@@ -11,7 +11,6 @@ async def check_active_signals_job():
     print(f"--- [{datetime.now()}] Running Feedback Checker Job ---")
     active_signals = get_all_signals()
     if not active_signals:
-        print("--- No active signals to check. ---")
         return
 
     db = SessionLocal()
@@ -45,5 +44,4 @@ async def check_active_signals_job():
                     remove_active_signal(signal_id)
     finally:
         db.close()
-    print(f"--- [{datetime.now()}] Feedback Checker Job Finished ---")
-    
+        
