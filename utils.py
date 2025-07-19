@@ -1,54 +1,62 @@
-import os
 import httpx
-import json
-from datetime import datetime
-from typing import List, Dict, Optional
+import asyncio
+from datetime import datetime, timedelta
+import os
 
-from key_manager import get_api_key, mark_key_as_limited
+from key_manager import key_manager
 
-def get_available_pairs() -> List[str]:
+API_CACHE = {}
+CACHE_DURATION = timedelta(minutes=10)
+
+def get_available_pairs():
     today = datetime.utcnow().weekday()
-    if today == 5 or today == 6:
-        print("Weekend detected. Scanning crypto pairs only.")
+    if today >= 5: # Saturday or Sunday
         return ["BTC/USD"]
-    else:
-        print("Weekday detected. Scanning all pairs.")
-        return ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
+    return ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
 
-async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100) -> Optional[List[Dict]]:
-    api_key = get_api_key()
+async def fetch_twelve_data_ohlc(symbol, timeframe, size):
+    api_key = key_manager.get_api_key()
     if not api_key:
-        print("All API keys have reached their limits.")
+        print("--- UTILS ERROR: No available API keys. ---")
         return None
-    url = f"https://api.twelvedata.com/time_series"
-    params = {
-        "symbol": symbol, "interval": timeframe, "apikey": api_key,
-        "outputsize": output_size, "timezone": "UTC"
-    }
+    
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&outputsize={size}&apikey={api_key}"
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=20)
-        data = response.json()
-        if response.status_code == 429 or (isinstance(data, dict) and data.get("code") == 429):
-            print(f"API key limit reached for key ending in ...{api_key[-4:]}. Rotating.")
-            mark_key_as_limited(api_key)
-            return await fetch_twelve_data_ohlc(symbol, timeframe, output_size)
+            response = await client.get(url, timeout=15)
+        if response.status_code == 429:
+            key_manager.mark_key_as_limited(api_key)
+            return await fetch_twelve_data_ohlc(symbol, timeframe, size) # Retry with new key
+        
         response.raise_for_status()
-        if "values" not in data:
+        data = response.json()
+        
+        if 'values' not in data:
             print(f"Warning: 'values' not in response for {symbol}. Response: {data}")
             return None
-        candles = data["values"]
-        candles.reverse()
-        formatted_candles = [
-            {"datetime": item["datetime"], "open": float(item["open"]), "high": float(item["high"]),
-             "low": float(item["low"]), "close": float(item["close"]), "volume": int(item.get("volume", 0))}
-            for item in candles
-        ]
-        return formatted_candles
+            
+        return data['values'][::-1]
     except httpx.HTTPStatusError as e:
-        print(f"HTTP Error fetching OHLC for {symbol}: {e.response.status_code} - {e.response.text}")
+        print(f"--- UTILS HTTP ERROR fetching {symbol}: {e} ---")
         return None
     except Exception as e:
-        print(f"An unexpected error in fetch_twelve_data_ohlc for {symbol}: {e}")
+        print(f"--- UTILS UNEXPECTED ERROR fetching {symbol}: {e} ---")
+        return None
+
+async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient):
+    api_key = key_manager.get_api_key()
+    if not api_key: return None
+    
+    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={api_key}"
+    try:
+        response = await client.get(url, timeout=10)
+        if response.status_code == 429:
+            key_manager.mark_key_as_limited(api_key)
+            return await get_current_price_twelve_data(symbol, client)
+        
+        response.raise_for_status()
+        data = response.json()
+        return float(data.get("price")) if data.get("price") else None
+    except Exception:
         return None
         
