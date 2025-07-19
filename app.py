@@ -9,14 +9,14 @@ from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
-# --- مقامی امپورٹس ---
-from src.database.config import SessionLocal, engine
-from src.database.models import create_db_and_tables
+# --- مقامی امپورٹس (درست راستوں کے ساتھ) ---
+# --- اہم تبدیلی: src.database.config کی جگہ صرف database_config ---
+from database_config import SessionLocal, engine
+from database_models import create_db_and_tables
 import database_crud as crud
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
-# --- اہم تبدیلی: signal_tracker سے نئے فنکشنز امپورٹ کریں ---
 from signal_tracker import get_active_signals
 
 # --- شیڈولر آبجیکٹ ---
@@ -47,7 +47,6 @@ app = FastAPI(lifespan=lifespan)
 async def health_check():
     return {"status": "ok"}
 
-# --- اہم تبدیلی: اینڈ پوائنٹ کا نام اور واپسی کی قسم ---
 @app.get("/api/active-signals", response_model=List[Dict[str, Any]])
 async def get_live_signals_endpoint():
     """
@@ -55,7 +54,6 @@ async def get_live_signals_endpoint():
     """
     signals = get_active_signals()
     if not signals:
-        # اگر کوئی سگنل نہیں ہے تو خالی فہرست واپس کریں، یہ ایرر نہیں ہے
         return []
     return signals
 
