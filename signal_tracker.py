@@ -5,14 +5,8 @@ from datetime import datetime
 SIGNALS_FILE = "active_signals.json"
 
 def save_signals_to_json(signals_list):
-    """
-    Active signals کو JSON file میں save کرتا ہے
-    """
     try:
-        # Create data directory if it doesn't exist
         os.makedirs("data", exist_ok=True)
-        
-        # Prepare data for JSON serialization
         json_data = []
         for signal in signals_list:
             signal_dict = {
@@ -30,7 +24,6 @@ def save_signals_to_json(signals_list):
             }
             json_data.append(signal_dict)
         
-        # Save to file
         with open(SIGNALS_FILE, "w") as f:
             json.dump(json_data, f, indent=2)
         
@@ -42,9 +35,6 @@ def save_signals_to_json(signals_list):
         return False
 
 def get_active_signals_from_json():
-    """
-    JSON file سے active signals کو retrieve کرتا ہے
-    """
     try:
         if not os.path.exists(SIGNALS_FILE):
             print(f"--- {SIGNALS_FILE} not found, returning empty list ---")
@@ -60,22 +50,44 @@ def get_active_signals_from_json():
         print(f"--- ERROR reading signals from JSON: {e} ---")
         return []
 
-def add_signal_to_json(signal_data):
-    """
-    ایک نیا signal JSON file میں add کرتا ہے
-    """
+def set_active_signals(signals_list):
     try:
-        # Get existing signals
+        formatted_signals = []
+        for signal in signals_list:
+            if isinstance(signal, dict):
+                formatted_signals.append(signal)
+            else:
+                signal_dict = {
+                    "id": getattr(signal, 'id', 0),
+                    "symbol": getattr(signal, 'symbol', ''),
+                    "signal": getattr(signal, 'signal', ''),
+                    "timeframe": getattr(signal, 'timeframe', ''),
+                    "price": float(getattr(signal, 'entry_price', 0)),
+                    "tp": float(getattr(signal, 'tp', 0)),
+                    "sl": float(getattr(signal, 'sl', 0)),
+                    "confidence": float(getattr(signal, 'confidence', 0)),
+                    "reason": getattr(signal, 'reason', ''),
+                    "tier": getattr(signal, 'tier', ''),
+                    "entry_time": getattr(signal, 'entry_time', datetime.utcnow()).isoformat() if hasattr(signal, 'entry_time') else datetime.utcnow().isoformat()
+                }
+                formatted_signals.append(signal_dict)
+        
+        return save_signals_to_json(formatted_signals)
+        
+    except Exception as e:
+        print(f"--- ERROR in set_active_signals: {e} ---")
+        return False
+
+def add_signal_to_json(signal_data):
+    try:
         existing_signals = get_active_signals_from_json()
         
-        # Remove any existing signal for the same symbol and timeframe
         existing_signals = [
             s for s in existing_signals 
             if not (s.get("symbol") == signal_data.get("symbol") and 
                    s.get("timeframe") == signal_data.get("timeframe"))
         ]
         
-        # Add new signal
         signal_dict = {
             "id": len(existing_signals) + 1,
             "symbol": signal_data.get("symbol", ""),
@@ -91,8 +103,6 @@ def add_signal_to_json(signal_data):
         }
         
         existing_signals.append(signal_dict)
-        
-        # Save updated list
         return save_signals_to_json(existing_signals)
         
     except Exception as e:
@@ -100,20 +110,14 @@ def add_signal_to_json(signal_data):
         return False
 
 def remove_signal_from_json(symbol, timeframe):
-    """
-    کسی specific symbol اور timeframe کے signal کو JSON file سے remove کرتا ہے
-    """
     try:
-        # Get existing signals
         existing_signals = get_active_signals_from_json()
         
-        # Remove the specified signal
         updated_signals = [
             s for s in existing_signals 
             if not (s.get("symbol") == symbol and s.get("timeframe") == timeframe)
         ]
         
-        # Save updated list
         if len(updated_signals) != len(existing_signals):
             save_signals_to_json(updated_signals)
             print(f"--- Removed signal for {symbol} {timeframe} ---")
@@ -127,9 +131,6 @@ def remove_signal_from_json(symbol, timeframe):
         return False
 
 def clear_all_signals():
-    """
-    تمام signals کو JSON file سے clear کرتا ہے
-    """
     try:
         with open(SIGNALS_FILE, "w") as f:
             json.dump([], f)
@@ -139,4 +140,4 @@ def clear_all_signals():
     except Exception as e:
         print(f"--- ERROR clearing signals: {e} ---")
         return False
-        
+    
