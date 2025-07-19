@@ -1,8 +1,4 @@
-# filename: app.py
-import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -11,8 +7,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
+# --- مقامی امپورٹس (فلیٹ ڈھانچے کے مطابق) ---
 from database_config import SessionLocal
-from models import create_db_and_tables
+from database_models import create_db_and_tables
 import database_crud as crud
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
@@ -42,13 +39,15 @@ async def health_check():
 
 @app.get("/api/active-signals", response_model=List[Dict[str, Any]])
 async def get_live_signals_endpoint():
-    return get_active_signals()
+    signals = get_active_signals()
+    return signals
 
 @app.get("/api/completed-trades")
 async def get_completed_trades_endpoint():
     db = SessionLocal()
     try:
-        return crud.get_completed_trades_from_db(db, limit=50)
+        trades = crud.get_completed_trades_from_db(db, limit=50)
+        return trades
     finally:
         db.close()
 
