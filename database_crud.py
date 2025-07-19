@@ -1,5 +1,3 @@
-# filename: database_crud.py
-
 import json
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -53,8 +51,7 @@ def move_trade_to_completed(db: Session, trade_id: int, outcome: str, close_pric
 
     completed_trade = CompletedTrade(
         symbol=active_trade.symbol,
-        # --- اہم تبدیلی: 'signal' کی جگہ 'active_trade.signal' استعمال کیا ---
-        signal_type=active_trade.signal,
+        signal=active_trade.signal,
         entry_price=active_trade.entry_price,
         close_price=close_price,
         tp=active_trade.tp,
@@ -68,7 +65,6 @@ def move_trade_to_completed(db: Session, trade_id: int, outcome: str, close_pric
     db.commit()
 
 def get_completed_trades_from_db(db: Session, limit: int = 50):
-    # --- اہم تبدیلی: 'CompletedTrade.signal' کو 'CompletedTrade.signal_type' سے تبدیل کیا ---
     return db.query(CompletedTrade).order_by(desc(CompletedTrade.close_time)).limit(limit).all()
 
 def get_feedback_stats_from_db(db: Session, symbol: str):
