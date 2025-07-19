@@ -4,8 +4,8 @@ import os
 import time
 from typing import List, Optional, Dict
 
-# --- اہم تبدیلی: عالمی مثال (global instance) کو ہٹا دیا گیا ہے ---
-# ہم اب key_manager کو یہاں نہیں بنائیں گے۔
+# --- سب سے اہم تبدیلی: عالمی مثال (global instance) کو یہاں سے ہٹا دیا گیا ہے ---
+# اس فائل میں اب صرف کلاس کی تعریف ہوگی۔
 
 class KeyManager:
     """
@@ -23,9 +23,9 @@ class KeyManager:
         """
         api_keys_str = os.getenv("TWELVE_DATA_API_KEYS", "")
         self.keys = [key.strip() for key in api_keys_str.split(',') if key.strip()]
-        # --- اہم تبدیلی: پرنٹ پیغام کو بہتر بنایا گیا ---
+        # --- اہم تبدیلی: پرنٹ پیغام کو بہتر بنایا گیا تاکہ یہ صرف ایک بار چلے ---
         if not hasattr(self, '_printed_key_count'):
-            print(f"--- KeyManager: Found {len(self.keys)} API keys. ---")
+            print(f"--- KeyManager Class Initialized: Found {len(self.keys)} API keys. ---")
             self._printed_key_count = True
 
     def get_api_key(self) -> Optional[str]:
