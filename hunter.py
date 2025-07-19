@@ -1,4 +1,3 @@
-# filename: hunter.py
 import asyncio
 from sqlalchemy.orm import Session
 from datetime import datetime
