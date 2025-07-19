@@ -1,12 +1,17 @@
+# utils.py
+
 import httpx
 import asyncio
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
+from typing import Optional
 
-from key_manager import key_manager
+# --- اہم تبدیلی: KeyManager کلاس کو براہ راست امپورٹ کریں ---
+from key_manager import KeyManager
 
-API_CACHE = {}
-CACHE_DURATION = timedelta(minutes=10)
+# --- اہم تبدیلی: key_manager کی مثال یہاں بنائیں ---
+# چونکہ utils.py ایک بنیادی فائل ہے جسے ہر کوئی استعمال کرتا ہے،
+# یہاں مثال بنانا سب سے محفوظ ہے۔
+key_manager = KeyManager()
 
 def get_available_pairs():
     today = datetime.utcnow().weekday()
@@ -14,7 +19,7 @@ def get_available_pairs():
         return ["BTC/USD"]
     return ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
 
-async def fetch_twelve_data_ohlc(symbol, timeframe, size):
+async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, size: int) -> Optional[list]:
     api_key = key_manager.get_api_key()
     if not api_key:
         print("--- UTILS ERROR: No available API keys. ---")
@@ -24,26 +29,26 @@ async def fetch_twelve_data_ohlc(symbol, timeframe, size):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=15)
+        
         if response.status_code == 429:
             key_manager.mark_key_as_limited(api_key)
-            return await fetch_twelve_data_ohlc(symbol, timeframe, size) # Retry with new key
+            # ایک سیکنڈ انتظار کریں اور دوبارہ کوشش کریں
+            await asyncio.sleep(1)
+            return await fetch_twelve_data_ohlc(symbol, timeframe, size)
         
         response.raise_for_status()
         data = response.json()
         
         if 'values' not in data:
-            print(f"Warning: 'values' not in response for {symbol}. Response: {data}")
+            print(f"--- UTILS WARNING: 'values' not in response for {symbol}. Response: {data} ---")
             return None
             
-        return data['values'][::-1]
-    except httpx.HTTPStatusError as e:
-        print(f"--- UTILS HTTP ERROR fetching {symbol}: {e} ---")
-        return None
+        return data['values'][::-1] # API سے ڈیٹا الٹا آتا ہے، اسے سیدھا کریں
     except Exception as e:
         print(f"--- UTILS UNEXPECTED ERROR fetching {symbol}: {e} ---")
         return None
 
-async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient):
+async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Optional[float]:
     api_key = key_manager.get_api_key()
     if not api_key: return None
     
@@ -52,6 +57,7 @@ async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient):
         response = await client.get(url, timeout=10)
         if response.status_code == 429:
             key_manager.mark_key_as_limited(api_key)
+            await asyncio.sleep(1)
             return await get_current_price_twelve_data(symbol, client)
         
         response.raise_for_status()
