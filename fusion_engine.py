@@ -8,16 +8,16 @@ from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 # ہمارے پروجیکٹ کے ماڈیولز
-from strategybot import generate_core_signal, calculate_tp_sl
+# --- تبدیلی: get_dynamic_atr_multiplier کو strategybot سے امپورٹ کریں ---
+from strategybot import generate_core_signal, calculate_tp_sl, get_dynamic_atr_multiplier
 from patternai import detect_patterns
-from riskguardian import check_risk, get_dynamic_atr_multiplier
+from riskguardian import check_risk #<-- یہاں سے get_dynamic_atr_multiplier ہٹا دیا گیا ہے
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
-from trainerai import get_confidence #<-- صرف get_confidence امپورٹ کریں
+from trainerai import get_confidence
 from tierbot import get_tier
 from market_structure import get_market_structure_analysis
 
-# --- نئی تبدیلی: یہ فنکشن اب ڈیٹا بیس سیشن لے گا ---
 async def generate_final_signal(db: Session, symbol: str, candles: list, timeframe: str) -> Dict[str, Any]:
     try:
         core_signal_data = generate_core_signal(symbol, timeframe, candles)
@@ -38,12 +38,12 @@ async def generate_final_signal(db: Session, symbol: str, candles: list, timefra
 
         market_structure = get_market_structure_analysis(candles)
 
-        # --- نئی تبدیلی: get_confidence کو ڈیٹا بیس سیشن فراہم کریں ---
         confidence = get_confidence(db, core_signal, pattern_type, risk_status, news_impact, symbol)
         
         tier = get_tier(confidence)
         reason = generate_reason(core_signal, pattern_data, risk_status, news_impact, confidence, market_structure)
 
+        # --- کوئی تبدیلی نہیں: یہ فنکشن اب strategybot سے آئے گا ---
         atr_multiplier = get_dynamic_atr_multiplier(risk_status)
         tp_sl_data = calculate_tp_sl(candles, atr_multiplier=atr_multiplier)
         
