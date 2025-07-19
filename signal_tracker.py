@@ -1,4 +1,4 @@
-# signal_tracker.py
+# filename: signal_tracker.py
 import json
 import os
 from typing import List, Dict, Any
@@ -6,9 +6,11 @@ from typing import List, Dict, Any
 DATA_DIR = "data"
 ACTIVE_SIGNALS_FILE = os.path.join(DATA_DIR, "active_signals.json")
 
+# --- اہم ترین تبدیلی: یقینی بنائیں کہ 'data' فولڈر موجود ہے ---
+os.makedirs(DATA_DIR, exist_ok=True)
+
 def _ensure_file_exists(file_path: str, default_content: Any):
     if not os.path.exists(file_path):
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w") as f:
             json.dump(default_content, f, indent=2)
         print(f"✅ Created empty file: {file_path}")
