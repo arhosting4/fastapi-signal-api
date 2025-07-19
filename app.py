@@ -1,4 +1,9 @@
+# filename: app.py
+
+import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -7,9 +12,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
-# --- مقامی امپورٹس (فلیٹ ڈھانچے کے مطابق) ---
+# --- مقامی امپورٹس ---
 from database_config import SessionLocal
-from database_models import create_db_and_tables
+# --- اہم ترین تبدیلی: 'database_models' کو 'models' سے تبدیل کیا گیا ---
+from models import create_db_and_tables 
 import database_crud as crud
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
