@@ -28,7 +28,7 @@ def get_db():
     finally:
         db.close()
 
-scheduler = BackgroundScheduler()
+scheduler = BackgroundScheduler(timezone="UTC")
 
 @app.get("/health", status_code=200)
 async def health_check():
@@ -70,7 +70,7 @@ async def startup_event():
     print("--- ScalpMaster AI Server is starting up... ---")
     create_db_and_tables()
     
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=30), id="hunter_job", name="Signal Hunter")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=45), id="hunter_job", name="Signal Hunter")
     scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="feedback_job", name="Feedback Checker")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_job", name="News Updater")
     
@@ -88,4 +88,3 @@ async def shutdown_event():
     print("--- ScalpMaster AI Server is shutting down. ---")
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-    
