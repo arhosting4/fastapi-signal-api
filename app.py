@@ -14,7 +14,7 @@ from typing import List, Dict, Any
 
 # --- مقامی امپورٹس ---
 from database_config import SessionLocal
-# --- یہ ہے وہ لائن جو بار بار غلط ہو رہی تھی - اب یہ درست ہے ---
+# --- یہ ہے وہ لائن جو بار بار غلط ہو رہی تھی - اب یہ 100% درست ہے ---
 from models import create_db_and_tables 
 import database_crud as crud
 from hunter import hunt_for_signals_job
