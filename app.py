@@ -1,44 +1,62 @@
 # filename: app.py
 
-# --- START: Python Path Injection (اسے ابھی بھی رکھیں گے) ---
+# --- Python Path Injection (اسے ہمیشہ رکھیں) ---
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-# --- END: Python Path Injection ---
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from typing import List, Dict, Any
 
-# --- عارضی طور پر تمام پیچیدہ چیزیں ہٹا دی گئی ہیں ---
-# from apscheduler.schedulers.asyncio import AsyncIOScheduler
-# from contextlib import asynccontextmanager
-# from database_config import SessionLocal
-# import database_crud as crud
-# from hunter import hunt_for_signals_job
-# ... اور دیگر تمام امپورٹس
+# --- مرحلہ 2: صرف ڈیٹا بیس کے امپورٹس کو واپس لانا ---
+from database_config import SessionLocal
+from database_models import create_db_and_tables
+import database_crud as crud
+# ابھی بھی شیڈیولر اور اس کے جابز کو امپورٹ نہیں کرنا
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     print("--- Minimal Application Startup ---")
-#     # ابھی کوئی شیڈیولر یا ڈیٹا بیس نہیں
-#     yield
-#     print("--- Minimal Application Shutdown ---")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("--- Application Startup with Database ---")
+    try:
+        # ڈیٹا بیس اور ٹیبلز بنانے کی کوشش کریں
+        create_db_and_tables()
+        print("--- Database and tables verified/created successfully. ---")
+    except Exception as e:
+        # اگر ڈیٹا بیس میں کوئی مسئلہ ہے تو لاگز میں واضح طور پر نظر آئے گا
+        print(f"--- CRITICAL ERROR DURING DB SETUP: {e} ---")
+        # یہاں ایک خرابی سرور کو بوٹ ہونے سے روک سکتی ہے
+    yield
+    print("--- Application Shutdown ---")
 
-# app = FastAPI(lifespan=lifespan) # ابھی سادہ FastAPI استعمال کریں
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/health", status_code=200)
 async def health_check():
-    # یہ سب سے اہم اینڈ پوائنٹ ہے۔ اگر یہ چل گیا تو مطلب سرور بوٹ ہو گیا ہے۔
-    print("--- Health check endpoint was called successfully! ---")
-    return {"status": "ok, minimalist server is running"}
+    print("--- Health check with DB connection was called successfully! ---")
+    return {"status": "ok, server with database is running"}
 
-# ابھی کے لیے دوسرے تمام API اینڈ پوائنٹس کو غیر فعال کر دیں
-# @app.get("/api/active-signals")
-# ...
+# --- اب ہم API اینڈ پوائنٹس کو واپس لا سکتے ہیں جو ڈیٹا بیس استعمال کرتے ہیں ---
+@app.get("/api/completed-trades")
+async def get_completed_trades_endpoint():
+    db = SessionLocal()
+    try:
+        # یہ چیک کرے گا کہ کیا ہم ڈیٹا بیس سے پڑھ سکتے ہیں
+        trades = crud.get_completed_trades_from_db(db, limit=50)
+        return trades
+    finally:
+        db.close()
 
-# صرف frontend کو فعال رکھیں تاکہ ہم دیکھ سکیں کہ کچھ چل رہا ہے
+@app.get("/api/news")
+async def get_news_endpoint():
+    # یہ چیک کرے گا کہ کیا ہم نیوز کیشے سے پڑھ سکتے ہیں
+    news = crud.get_news_from_cache()
+    if not news:
+        raise HTTPException(status_code=404, detail="Could not load news events.")
+    return news
+
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
 
-print("--- app.py file has been loaded by Python ---")
+print("--- app.py with database connection has been loaded by Python ---")
