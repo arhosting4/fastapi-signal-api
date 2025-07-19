@@ -8,9 +8,9 @@ from typing import Optional
 # --- اہم تبدیلی: KeyManager کلاس کو براہ راست امپورٹ کریں ---
 from key_manager import KeyManager
 
-# --- اہم تبدیلی: key_manager کی مثال یہاں بنائیں ---
+# --- سب سے اہم تبدیلی: key_manager کی مثال یہاں بنائیں ---
 # چونکہ utils.py ایک بنیادی فائل ہے جسے ہر کوئی استعمال کرتا ہے،
-# یہاں مثال بنانا سب سے محفوظ ہے۔
+# یہاں مثال بنانا سب سے محفوظ ہے اور سرکلر امپورٹ کو توڑتا ہے۔
 key_manager = KeyManager()
 
 def get_available_pairs():
@@ -32,7 +32,6 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, size: int) -> Opti
         
         if response.status_code == 429:
             key_manager.mark_key_as_limited(api_key)
-            # ایک سیکنڈ انتظار کریں اور دوبارہ کوشش کریں
             await asyncio.sleep(1)
             return await fetch_twelve_data_ohlc(symbol, timeframe, size)
         
@@ -43,7 +42,7 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, size: int) -> Opti
             print(f"--- UTILS WARNING: 'values' not in response for {symbol}. Response: {data} ---")
             return None
             
-        return data['values'][::-1] # API سے ڈیٹا الٹا آتا ہے، اسے سیدھا کریں
+        return data['values'][::-1]
     except Exception as e:
         print(f"--- UTILS UNEXPECTED ERROR fetching {symbol}: {e} ---")
         return None
