@@ -1,47 +1,21 @@
 # trainerai.py
 
 import random
-from typing import List
-
-# --- نئی تبدیلی: ڈیٹا بیس کے لیے امپورٹس ---
 from sqlalchemy.orm import Session
-from src.database.models import FeedbackEntry
+from typing import Dict
 
-# --- نئی تبدیلی: یہ فنکشن اب ڈیٹا بیس سیشن لے گا ---
-def get_feedback_stats_from_db(db: Session, symbol: str) -> dict:
-    """ڈیٹا بیس سے فیڈ بیک کے اعداد و شمار حاصل کرتا ہے۔"""
-    feedback_query = db.query(FeedbackEntry).filter(FeedbackEntry.symbol == symbol).all()
-    
-    if not feedback_query:
-        return {"total": 0, "accuracy": None, "correct": 0, "incorrect": 0, "missed": 0}
+# --- اہم تبدیلی: database_crud کو یہاں سے امپورٹ کریں ---
+import database_crud as crud
 
-    total = len(feedback_query)
-    correct = sum(1 for f in feedback_query if f.feedback == "correct")
-    incorrect = sum(1 for f in feedback_query if f.feedback == "incorrect")
-    missed = sum(1 for f in feedback_query if f.feedback == "missed")
-
-    accuracy = (correct / total) * 100 if total > 0 else None
-
-    return {
-        "total": total,
-        "correct": correct,
-        "incorrect": incorrect,
-        "missed": missed,
-        "accuracy": round(accuracy, 2) if accuracy is not None else None
-    }
-
-# --- نئی تبدیلی: یہ فنکشن بھی اب ڈیٹا بیس سیشن لے گا ---
-def get_confidence(
-    db: Session, #<-- نیا پیرامیٹر
-    core_signal: str,
-    pattern_signal_type: str,
-    risk_status: str,
-    news_impact: str,
-    symbol: str
-) -> float:
-    """سگنل کے اعتماد کا تخمینہ لگاتا ہے۔"""
+def get_confidence(db: Session, core_signal: str, pattern_signal_type: str, risk_status: str, news_impact: str, symbol: str) -> float:
+    """
+    سگنل کے اعتماد کا تخمینہ لگاتا ہے۔
+    یہ فنکشن اب براہ راست ڈیٹا بیس سیشن (db) کو بطور دلیل لیتا ہے۔
+    """
+    # بنیادی اعتماد
     confidence = 55.0
 
+    # 1. بنیادی سگنل اور پیٹرن کی مطابقت
     if core_signal == "buy" and pattern_signal_type == "bullish":
         confidence += 20
     elif core_signal == "sell" and pattern_signal_type == "bearish":
@@ -50,27 +24,31 @@ def get_confidence(
          (core_signal == "sell" and pattern_signal_type == "bullish"):
         confidence -= 25
 
+    # 2. رسک کی تشخیص کا اثر
     if risk_status == "High":
         confidence -= 20
     elif risk_status == "Moderate":
-        confidence -= 5
+        confidence -= 10
 
+    # 3. خبروں کے اثرات کی تشخیص
     if news_impact == "High":
         confidence -= 20
     elif news_impact == "Medium":
         confidence -= 10
 
-    # --- نئی تبدیلی: فیڈ بیک ڈیٹا بیس سے حاصل کریں ---
-    feedback = get_feedback_stats_from_db(db, symbol)
-    if feedback and feedback["total"] > 10:
-        accuracy = feedback.get("accuracy", 50)
+    # 4. فیڈ بیک لوپ کا اثر (ڈیٹا بیس سے)
+    # --- اہم تبدیلی: فیڈ بیک حاصل کرنے کے لیے crud ماڈیول کا استعمال کریں ---
+    feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
+    if feedback_stats and feedback_stats["total"] > 10:
+        accuracy = feedback_stats.get("accuracy", 50.0)
         if accuracy > 70:
             confidence += 10
         elif accuracy < 40:
             confidence -= 15
 
+    # اعتماد کو 0-100 کی حد میں رکھیں
     confidence = max(0.0, min(100.0, confidence))
-    confidence += random.uniform(-2.0, 2.0)
+    confidence += random.uniform(-1.5, 1.5) # تھوڑا سا بے ترتیب پن
     confidence = max(0.0, min(100.0, confidence))
 
     return round(confidence, 2)
