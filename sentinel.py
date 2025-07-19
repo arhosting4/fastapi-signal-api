@@ -1,93 +1,92 @@
 import os
 import httpx
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
-import json
+from typing import Dict, Any
 
-# --- نیا: کلید مینیجر کو امپورٹ کریں ---
-from key_manager import key_manager
+# .env فائل سے ماحول کے متغیرات لوڈ کریں
+from dotenv import load_dotenv
+load_dotenv()
 
-NEWS_CACHE_FILE = "data/news_cache.json"
-os.makedirs("data", exist_ok=True)
+# --- درست امپورٹ لائن ---
+# ہم یہاں key_manager سے کچھ بھی امپورٹ نہیں کر رہے کیونکہ اس کی ضرورت نہیں
+# Marketaux کی اپنی کلید ہے
 
-async def update_economic_calendar_cache():
+MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
+
+# خبروں کے ڈیٹا کو کیشے کرنے کے لیے تاکہ بار بار API کال نہ ہو
+news_cache: Dict[str, Any] = {
+    "data": None,
+    "timestamp": None
+}
+CACHE_DURATION = timedelta(minutes=30) # 30 منٹ کے لیے کیشے کریں
+
+async def update_news_cache():
     """
-    معاشی کیلنڈر کا ڈیٹا حاصل کرتا ہے، اب API کلید کی گردش کے ساتھ۔
+    Marketaux API سے خبروں کا ڈیٹا حاصل کرکے کیشے کو اپ ڈیٹ کرتا ہے۔
     """
-    print("--- SENTINEL: Updating economic calendar cache... ---")
-    
-    # --- اہم تبدیلی: کلید مینیجر سے کلید حاصل کریں ---
-    api_key = key_manager.get_current_key()
-    if not api_key:
-        print("Sentinel: No available API key.")
+    global news_cache
+    if not MARKETAUX_API_TOKEN:
+        print("⚠️ Marketaux API token not set. Skipping news check.")
+        news_cache["data"] = {} # کیشے کو خالی کریں
         return
 
-    countries = "US,Eurozone,United Kingdom,Germany,Japan,Canada,Australia,China"
-    today = datetime.utcnow().strftime('%Y-%m-%d')
-    day_after_tomorrow = (datetime.utcnow() + timedelta(days=2)).strftime('%Y-%m-%d')
-
-    url = f"https://api.twelvedata.com/economic_calendar"
-    params = {"country": countries, "start_date": today, "end_date": day_after_tomorrow, "apikey": api_key}
-
+    print("Updating news cache from Marketaux API...")
+    url = f"https://api.marketaux.com/v1/news/all?filter_entities=true&group=sentiment&api_token={MARKETAUX_API_TOKEN}"
+    
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=20)
-        
-        if response.status_code == 429:
-            print("Sentinel: API key limit reached. Rotating key.")
-            key_manager.rotate_to_next_key()
-            # دوبارہ کوشش نہیں کریں گے کیونکہ یہ جاب اہم نہیں اور 12 گھنٹے بعد خود چلے گی
-            return
-
+            response = await client.get(url, timeout=15)
         response.raise_for_status()
         data = response.json()
-
-        upcoming_high_impact_events = []
-        if data and "events" in data and data["events"]:
-            for event in data["events"]:
-                if event.get("importance") == "High":
-                    upcoming_high_impact_events.append(event)
         
-        with open(NEWS_CACHE_FILE, "w") as f:
-            json.dump(upcoming_high_impact_events, f, indent=2)
+        # صرف اہم کرنسیوں کی خبروں کو محفوظ کریں
+        processed_news = {}
+        if data and "data" in data:
+            for item in data["data"]:
+                # 'entities' کی موجودگی کو چیک کریں
+                if 'entities' in item:
+                    for entity in item['entities']:
+                        # 'symbol' کی موجودگی کو چیک کریں
+                        if 'symbol' in entity:
+                            symbol = entity["symbol"]
+                            # صرف اہم کرنسیوں کو شامل کریں
+                            if any(curr in symbol for curr in ["USD", "EUR", "GBP", "JPY", "XAU"]):
+                                if symbol not in processed_news:
+                                    processed_news[symbol] = []
+                                processed_news[symbol].append(item.get('sentiment_score', 0.0))
         
-        print(f"--- SENTINEL: Cache updated. Found {len(upcoming_high_impact_events)} high-impact events. ---")
+        news_cache["data"] = processed_news
+        news_cache["timestamp"] = datetime.utcnow()
+        print("✅ News cache updated successfully.")
 
     except Exception as e:
-        print(f"⚠️ SENTINEL ERROR: Could not update news cache. Reason: {e}")
+        print(f"❌ Failed to update news cache: {e}")
+        # ناکامی کی صورت میں کیشے کو خالی کریں
+        news_cache["data"] = {}
 
-# get_news_analysis_for_symbol فنکشن میں کوئی تبدیلی نہیں ہوگی
-def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
-    # ... (یہ فنکشن ویسے ہی رہے گا جیسا پچھلے جواب میں تھا) ...
-    try:
-        with open(NEWS_CACHE_FILE, "r") as f:
-            all_events = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"impact": "Clear", "reason": "News cache is not available."}
 
-    country_map = {
-        "XAU/USD": ["US"],
-        "EUR/USD": ["US", "Eurozone", "Germany"],
-        "GBP/USD": ["US", "United Kingdom"],
-        "BTC/USD": ["US"]
-    }
-    relevant_countries = country_map.get(symbol, ["US"])
-    now = datetime.utcnow()
+def get_news_analysis_for_symbol(symbol: str) -> Dict[str, str]:
+    """
+    کیشے سے کسی مخصوص علامت کے لیے خبروں کا تجزیہ واپس کرتا ہے۔
+    """
+    if not news_cache["data"]:
+        return {"impact": "Clear", "reason": "News data is not available."}
 
-    for event in all_events:
-        event_country = event.get("country")
-        if event_country in relevant_countries:
-            event_time_str = event.get("date")
-            if not event_time_str:
-                continue
-            
-            event_time = datetime.fromisoformat(event_time_str.replace('Z', '+00:00'))
-            
-            if now < event_time < (now + timedelta(minutes=60)):
-                event_name = event.get("name")
-                time_to_event = round((event_time - now).total_seconds() / 60)
-                reason = f"High-impact event '{event_name}' ({event_country}) scheduled in {time_to_event} minutes."
-                return {"impact": "High", "reason": reason}
-
-    return {"impact": "Clear", "reason": "No high-impact events for this symbol in the near future."}
+    # علامت سے بنیادی کرنسیوں کو نکالیں (مثلاً XAU/USD -> XAU, USD)
+    currencies = symbol.upper().split('/')
     
+    high_impact_score = 0
+    for currency in currencies:
+        # کیشے میں کرنسی کی خبروں کو تلاش کریں
+        if currency in news_cache["data"]:
+            for sentiment_score in news_cache["data"][currency]:
+                if abs(sentiment_score) > 0.6: # اگر سینٹیمنٹ بہت مضبوط ہے
+                    high_impact_score += 1
+
+    if high_impact_score >= 2:
+        return {"impact": "High", "reason": f"High-impact news detected for {symbol}."}
+    elif high_impact_score == 1:
+        return {"impact": "Medium", "reason": f"Medium-impact news detected for {symbol}."}
+    
+    return {"impact": "Clear", "reason": "No significant market-moving news found."}
+
