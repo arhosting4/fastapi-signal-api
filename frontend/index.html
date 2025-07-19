@@ -3,132 +3,220 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI - Live Signals</title>
+    <title>ScalpMaster AI - Elite Dashboard</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-color: #0a0f1e;
+            --primary-color: #1a233b;
+            --secondary-color: #2a3858;
+            --accent-color: #ffab00; /* Gold */
+            --text-color: #e0e0e0;
+            --buy-color: #00bfa5; /* Teal */
+            --sell-color: #ff5252; /* Red */
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 191, 165, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(0, 191, 165, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 191, 165, 0); }
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            background-color: #121212;
-            color: #e0e0e0;
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
             margin: 0;
             padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
         }
+
         .container {
             width: 100%;
-            max-width: 1200px;
+            max-width: 1400px;
+            margin: 0 auto;
         }
-        h1, h2 {
-            text-align: center;
-            color: #ffffff;
-            border-bottom: 2px solid #333;
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: rgba(26, 35, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-family: 'Teko', sans-serif;
+            font-size: 2.5em;
+            color: #fff;
+            margin: 0;
+            letter-spacing: 2px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-light {
+            width: 12px;
+            height: 12px;
+            background-color: var(--buy-color);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-text {
+            font-size: 1em;
+            font-weight: 500;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+        }
+
+        .glass-panel {
+            background: rgba(26, 35, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        
+        h2 {
+            font-family: 'Teko', sans-serif;
+            font-size: 1.8em;
+            color: var(--accent-color);
+            margin-top: 0;
+            border-bottom: 1px solid var(--secondary-color);
             padding-bottom: 10px;
         }
-        .table-container {
-            background-color: #1e1e1e;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            text-align: left;
         }
+
         th, td {
-            padding: 12px 15px;
-            border-bottom: 1px solid #333;
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--secondary-color);
         }
+
         th {
-            background-color: #333;
+            font-weight: 700;
             color: #fff;
         }
-        .signal-buy { color: #4CAF50; font-weight: bold; }
-        .signal-sell { color: #F44336; font-weight: bold; }
-        .tier-high { color: #FFC107; }
-        .tier-medium { color: #03A9F4; }
-        .tier-low { color: #9E9E9E; }
+        
+        tbody tr {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        tbody tr:hover {
+            background-color: var(--secondary-color);
+            cursor: pointer;
+        }
+
+        .signal-buy { color: var(--buy-color); font-weight: bold; }
+        .signal-sell { color: var(--sell-color); font-weight: bold; }
+        
         .no-signals {
             text-align: center;
-            padding: 40px;
+            padding: 50px;
             font-size: 1.2em;
-            color: #777;
+            color: #888;
         }
+
         #chart-container {
-            width: 100%;
-            height: 500px;
-            background-color: #1e1e1e;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            height: 550px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>ScalpMaster AI - Live Dashboard</h1>
-
-        <div class="table-container">
-            <h2>Active Trading Signals</h2>
-            <table id="signals-table">
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Timeframe</th>
-                        <th>Signal</th>
-                        <th>Entry Price</th>
-                        <th>Take Profit</th>
-                        <th>Stop Loss</th>
-                        <th>Confidence</th>
-                        <th>Tier</th>
-                    </tr>
-                </thead>
-                <tbody id="signals-body">
-                    <!-- Signal rows will be inserted here by JavaScript -->
-                </tbody>
-            </table>
-            <div id="no-signals-message" class="no-signals" style="display: none;">
-                <p>AI is scanning the markets... No high-confidence signals found at the moment.</p>
+        <div class="header">
+            <h1>SCALPMASTER AI</h1>
+            <div class="status">
+                <div class="status-light"></div>
+                <span class="status-text">AI Engine: Active</span>
             </div>
         </div>
 
-        <div id="chart-container"></div>
+        <div class="content-grid">
+            <div class="glass-panel">
+                <h2>Live Trading Signals</h2>
+                <div id="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Timeframe</th>
+                                <th>Signal</th>
+                                <th>Entry Price</th>
+                                <th>Take Profit</th>
+                                <th>Stop Loss</th>
+                                <th>Confidence</th>
+                                <th>Tier</th>
+                            </tr>
+                        </thead>
+                        <tbody id="signals-body">
+                            <!-- JS will populate this -->
+                        </tbody>
+                    </table>
+                    <div id="no-signals-message" class="no-signals" style="display: none;">
+                        <p>AI is scanning the markets... Awaiting high-probability setups.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-panel" id="chart-panel">
+                <h2>Market Chart</h2>
+                <div id="chart-container"></div>
+            </div>
+        </div>
     </div>
 
     <script>
+        const chartPanel = document.getElementById('chart-panel');
         const chartContainer = document.getElementById('chart-container');
         const chart = LightweightCharts.createChart(chartContainer, {
             width: chartContainer.clientWidth,
             height: chartContainer.clientHeight,
-            layout: {
-                backgroundColor: '#1e1e1e',
-                textColor: '#d1d4dc',
-            },
-            grid: {
-                vertLines: { color: '#333' },
-                horzLines: { color: '#333' },
-            },
+            layout: { backgroundColor: 'transparent', textColor: '#d1d4dc' },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.1)' }, horzLines: { color: 'rgba(255,255,255,0.1)' } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { timeVisible: true, secondsVisible: false },
+            timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(255,255,255,0.2)' },
         });
 
         const candleSeries = chart.addCandlestickSeries({
-            upColor: '#4CAF50',
-            downColor: '#F44336',
-            borderDownColor: '#F44336',
-            borderUpColor: '#4CAF50',
-            wickDownColor: '#F44336',
-            wickUpColor: '#4CAF50',
+            upColor: 'rgba(0, 191, 165, 0.8)',
+            downColor: 'rgba(255, 82, 82, 0.8)',
+            borderDownColor: '#ff5252',
+            borderUpColor: '#00bfa5',
+            wickDownColor: '#ff5252',
+            wickUpColor: '#00bfa5',
         });
 
-        let currentSymbol = 'XAU/USD'; // Default symbol
+        let currentSymbol = 'XAU/USD';
 
         async function fetchAndUpdateChart(symbol = 'XAU/USD', timeframe = '5m') {
             try {
-                const response = await fetch(`https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${timeframe}&outputsize=100&apikey=YOUR_TWELVE_DATA_API_KEY`);
+                // آپ کو یہاں اپنی Twelve Data API کی کلید ڈالنی ہوگی
+                const response = await fetch(`https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${timeframe}&outputsize=120&apikey=YOUR_TWELVE_DATA_API_KEY`);
                 const data = await response.json();
                 if (data.status === "ok" && data.values) {
                     const chartData = data.values.map(d => ({
@@ -153,28 +241,30 @@
                 const signalsBody = document.getElementById('signals-body');
                 const noSignalsMessage = document.getElementById('no-signals-message');
                 
-                signalsBody.innerHTML = ''; // Clear previous signals
+                signalsBody.innerHTML = '';
 
                 if (signals.length > 0) {
                     noSignalsMessage.style.display = 'none';
                     signals.forEach(signal => {
                         const row = document.createElement('tr');
+                        row.onclick = () => fetchAndUpdateChart(signal.symbol, signal.timeframe);
                         row.innerHTML = `
-                            <td>${signal.symbol}</td>
+                            <td><strong>${signal.symbol}</strong></td>
                             <td>${signal.timeframe}</td>
-                            <td class="signal-${signal.signal.toLowerCase()}">${signal.signal.toUpperCase()}</td>
+                            <td class="signal-${signal.signal.toLowerCase()}">
+                                ${signal.signal === 'buy' ? '▲' : '▼'} ${signal.signal.toUpperCase()}
+                            </td>
                             <td>${signal.price.toFixed(4)}</td>
                             <td>${signal.tp.toFixed(4)}</td>
                             <td>${signal.sl.toFixed(4)}</td>
                             <td>${signal.confidence.toFixed(2)}%</td>
-                            <td class="tier-${signal.tier.toLowerCase()}">${signal.tier}</td>
+                            <td>${signal.tier}</td>
                         `;
                         signalsBody.appendChild(row);
                     });
                     
-                    // Update chart with the first signal's symbol if it's different
                     if (signals[0].symbol !== currentSymbol) {
-                        fetchAndUpdateChart(signals[0].symbol, '5m');
+                        fetchAndUpdateChart(signals[0].symbol, signals[0].timeframe);
                     }
 
                 } else {
@@ -187,12 +277,11 @@
 
         // Initial load
         fetchActiveSignals();
-        fetchAndUpdateChart(); // Load default chart
+        fetchAndUpdateChart();
 
         // Fetch signals every 30 seconds
         setInterval(fetchActiveSignals, 30000);
         
-        // Resize chart on window resize
         window.addEventListener('resize', () => {
             chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
         });
