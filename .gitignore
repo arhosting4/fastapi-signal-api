@@ -1,4 +1,40 @@
-.env
+# .gitignore
+
+# Python - نظر انداز کرنے والی فائلیں اور فولڈرز
+# ==========================================
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-wheel-metadata/
+.idea/
+.vscode/
+
+# Build artifacts - بلڈ کے دوران بننے والی فائلیں
+# ==========================================
+/build/
+/dist/
+/downloads/
+/site/
+
+# Data, Cache, and Log files - ڈیٹا، کیشے اور لاگ فائلیں (سب سے اہم)
+# =================================================================
+/data/
+*.json
+*.sqlite3
+*.db
+*.log
+*.tmp
+*.swp
+
+# Render specific - Render کے لیے مخصوص
+# =================================
+.render/
+
+# Operating System files - آپریٹنگ سسٹم کی فائلیں
+# =======================================
+.DS_Store
+Thumbs.db
