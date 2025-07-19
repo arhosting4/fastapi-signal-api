@@ -1,73 +1,44 @@
 # filename: app.py
 
-# --- START: Python Path Injection (سب سے اہم تبدیلی) ---
+# --- START: Python Path Injection (اسے ابھی بھی رکھیں گے) ---
 import sys
 import os
-
-# اس سے Python کو بتایا جائے گا کہ وہ پروجیکٹ کی مرکزی ڈائرکٹری میں بھی ماڈیولز تلاش کرے۔
-# یہ ModuleNotFoundError کو حل کرنے کا سب سے مضبوط طریقہ ہے۔
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 # --- END: Python Path Injection ---
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from contextlib import asynccontextmanager
-from typing import List, Dict, Any
 
-# --- مقامی امپورٹس (اب یہ 100% کام کریں گے) ---
-from database_config import SessionLocal
-from database_models import create_db_and_tables
-import database_crud as crud
-from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job
-from sentinel import update_economic_calendar_cache
-from signal_tracker import get_active_signals
+# --- عارضی طور پر تمام پیچیدہ چیزیں ہٹا دی گئی ہیں ---
+# from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# from contextlib import asynccontextmanager
+# from database_config import SessionLocal
+# import database_crud as crud
+# from hunter import hunt_for_signals_job
+# ... اور دیگر تمام امپورٹس
 
-scheduler = AsyncIOScheduler()
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     print("--- Minimal Application Startup ---")
+#     # ابھی کوئی شیڈیولر یا ڈیٹا بیس نہیں
+#     yield
+#     print("--- Minimal Application Shutdown ---")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("--- Application Startup ---")
-    print(f"--- Python Path: {sys.path} ---") # ڈیبگنگ کے لیے
-    create_db_and_tables()
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), args=[SessionLocal], misfire_grace_time=60)
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), args=[SessionLocal], misfire_grace_time=30)
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=6), misfire_grace_time=300)
-    scheduler.start()
-    print("--- Scheduler Started ---")
-    yield
-    print("--- Application Shutdown ---")
-    scheduler.shutdown()
-
-app = FastAPI(lifespan=lifespan)
+# app = FastAPI(lifespan=lifespan) # ابھی سادہ FastAPI استعمال کریں
+app = FastAPI()
 
 @app.get("/health", status_code=200)
 async def health_check():
-    return {"status": "ok"}
+    # یہ سب سے اہم اینڈ پوائنٹ ہے۔ اگر یہ چل گیا تو مطلب سرور بوٹ ہو گیا ہے۔
+    print("--- Health check endpoint was called successfully! ---")
+    return {"status": "ok, minimalist server is running"}
 
-@app.get("/api/active-signals", response_model=List[Dict[str, Any]])
-async def get_live_signals_endpoint():
-    signals = get_active_signals()
-    return signals
+# ابھی کے لیے دوسرے تمام API اینڈ پوائنٹس کو غیر فعال کر دیں
+# @app.get("/api/active-signals")
+# ...
 
-@app.get("/api/completed-trades")
-async def get_completed_trades_endpoint():
-    db = SessionLocal()
-    try:
-        trades = crud.get_completed_trades_from_db(db, limit=50)
-        return trades
-    finally:
-        db.close()
-
-@app.get("/api/news")
-async def get_news_endpoint():
-    news = crud.get_news_from_cache()
-    if not news:
-        raise HTTPException(status_code=404, detail="Could not load news events.")
-    return news
-
-# یقینی بنائیں کہ 'frontend' فولڈر روٹ ڈائرکٹری میں ہے۔
+# صرف frontend کو فعال رکھیں تاکہ ہم دیکھ سکیں کہ کچھ چل رہا ہے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+
+print("--- app.py file has been loaded by Python ---")
