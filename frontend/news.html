@@ -4,13 +4,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ScalpMaster AI - Market News</title>
-    <!-- (یہاں وہی CSS اور فونٹس ہوں گے جو index.html میں ہیں) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        /* (وہی مشترکہ CSS کوڈ) */
-        .news-card { border-bottom: 1px solid var(--secondary-color); padding: 15px 5px; }
-        .news-title { font-size: 1.1em; font-weight: bold; color: #fff; }
-        .news-meta { font-size: 0.8em; color: #aaa; margin-top: 5px; }
-        .news-source { font-weight: bold; color: var(--accent-color); }
+        /* Common Styles (Same as other pages) */
+        :root {
+            --bg-color: #0a0f1e;
+            --primary-color: #1a233b;
+            --secondary-color: #2a3858;
+            --accent-color: #ffab00; /* Gold */
+            --text-color: #e0e0e0;
+            --buy-color: #00bfa5; /* Positive Sentiment */
+            --sell-color: #ff5252; /* Negative Sentiment */
+            --neutral-color: #9E9E9E; /* Neutral Sentiment */
+        }
+        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; }
+        .container { width: 95%; max-width: 1500px; margin: 0 auto; padding: 20px 0; }
+        .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        h2 { font-family: 'Teko', sans-serif; font-size: 1.8em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
+        
+        /* Header & Nav (Same as other pages) */
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: var(--primary-color); }
+        .header h1 { font-family: 'Teko', sans-serif; font-size: 2em; color: #fff; margin: 0; }
+        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 15px; font-weight: 500; border-radius: 6px; transition: background-color 0.3s; }
+        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); }
+
+        /* News Page Specific Styles */
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .news-card {
+            background-color: var(--primary-color);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .news-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.5);
+        }
+        .news-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        .news-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+        .news-title {
+            font-size: 1.2em;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        .news-snippet {
+            font-size: 0.9em;
+            line-height: 1.6;
+            flex-grow: 1;
+            margin-bottom: 15px;
+        }
+        .news-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8em;
+            color: #aaa;
+        }
+        .news-source {
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+        .read-more {
+            color: var(--accent-color);
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .sentiment {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: #fff;
+        }
+        .sentiment.positive { background-color: var(--buy-color); }
+        .sentiment.negative { background-color: var(--sell-color); }
+        .sentiment.neutral { background-color: var(--neutral-color); }
+
+        /* Responsive Design */
+        @media (max-width: 992px) {
+            .header { flex-direction: column; gap: 15px; }
+        }
+        @media (max-width: 576px) {
+            .navbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+            .navbar a { padding: 8px 10px; font-size: 0.9em; }
+        }
     </style>
 </head>
 <body>
@@ -25,30 +120,63 @@
 
     <div class="container">
         <div class="glass-panel">
-            <h2>Latest Economic News</h2>
-            <div id="news-container"></div>
+            <h2>Latest Market News</h2>
+            <div id="news-grid" class="news-grid">
+                <!-- News cards will be inserted here by JavaScript -->
+            </div>
         </div>
     </div>
 
     <script>
         async function fetchNews() {
-            const response = await fetch('/api/news');
-            const newsItems = await response.json();
-            const newsContainer = document.getElementById('news-container');
-            newsContainer.innerHTML = '';
-            newsItems.forEach(item => {
-                const card = document.createElement('div');
-                card.className = 'news-card';
-                card.innerHTML = `
-                    <div class="news-title">${item.title}</div>
-                    <div class="news-meta">
-                        Source: <span class="news-source">${item.source}</span> | 
-                        Published: ${new Date(item.published_at).toLocaleString()}
-                    </div>
-                `;
-                newsContainer.appendChild(card);
-            });
+            try {
+                const response = await fetch('/api/news');
+                const newsItems = await response.json();
+                const newsGrid = document.getElementById('news-grid');
+                newsGrid.innerHTML = ''; // Clear previous news
+
+                if (newsItems.length > 0) {
+                    newsItems.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = 'news-card';
+
+                        const sentimentScore = parseFloat(item.sentiment_score);
+                        let sentimentClass = 'neutral';
+                        let sentimentText = 'Neutral';
+                        if (sentimentScore > 0.35) {
+                            sentimentClass = 'positive';
+                            sentimentText = 'Positive';
+                        } else if (sentimentScore < -0.35) {
+                            sentimentClass = 'negative';
+                            sentimentText = 'Negative';
+                        }
+
+                        card.innerHTML = `
+                            <img src="${item.image_url || 'https://via.placeholder.com/400x200.png?text=No+Image'}" alt="News Image" class="news-image">
+                            <div class="news-content">
+                                <div class="news-title">${item.title}</div>
+                                <p class="news-snippet">${item.snippet}</p>
+                                <div class="news-footer">
+                                    <div>
+                                        Source: <span class="news-source">${item.source}</span>
+                                    </div>
+                                    <div class="sentiment ${sentimentClass}">${sentimentText}</div>
+                                </div>
+                                <a href="${item.url}" target="_blank" class="read-more" style="margin-top: 15px;">Read Full Story &rarr;</a>
+                            </div>
+                        `;
+                        newsGrid.appendChild(card);
+                    });
+                } else {
+                    newsGrid.innerHTML = '<p>No news found at the moment.</p>';
+                }
+            } catch (error) {
+                console.error('Error fetching news:', error);
+                document.getElementById('news-grid').innerHTML = '<p>Failed to load news. Please try again later.</p>';
+            }
         }
+        
+        // Initial load
         fetchNews();
     </script>
 </body>
