@@ -1,6 +1,4 @@
 # filename: app.py
-
-# --- Python Path Injection (اسے ہمیشہ رکھیں) ---
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -8,42 +6,50 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
-# --- مرحلہ 2: صرف ڈیٹا بیس کے امپورٹس کو واپس لانا ---
+# --- مقامی امپورٹس (فلیٹ اسٹرکچر) ---
 from database_config import SessionLocal
-from database_models import create_db_and_tables
+from models import create_db_and_tables # 'models' سے امپورٹ کریں
 import database_crud as crud
-# ابھی بھی شیڈیولر اور اس کے جابز کو امپورٹ نہیں کرنا
+from hunter import hunt_for_signals_job
+from feedback_checker import check_active_signals_job
+from sentinel import update_economic_calendar_cache
+from signal_tracker import get_active_signals
+
+scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("--- Application Startup with Database ---")
-    try:
-        # ڈیٹا بیس اور ٹیبلز بنانے کی کوشش کریں
-        create_db_and_tables()
-        print("--- Database and tables verified/created successfully. ---")
-    except Exception as e:
-        # اگر ڈیٹا بیس میں کوئی مسئلہ ہے تو لاگز میں واضح طور پر نظر آئے گا
-        print(f"--- CRITICAL ERROR DURING DB SETUP: {e} ---")
-        # یہاں ایک خرابی سرور کو بوٹ ہونے سے روک سکتی ہے
+    print("--- Application Startup ---")
+    create_db_and_tables()
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), args=[SessionLocal], misfire_grace_time=60)
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), args=[SessionLocal], misfire_grace_time=30)
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=6), misfire_grace_time=300)
+    scheduler.start()
+    print("--- Scheduler Started ---")
     yield
     print("--- Application Shutdown ---")
+    scheduler.shutdown()
 
 app = FastAPI(lifespan=lifespan)
 
 @app.get("/health", status_code=200)
 async def health_check():
-    print("--- Health check with DB connection was called successfully! ---")
-    return {"status": "ok, server with database is running"}
+    return {"status": "ok"}
 
-# --- اب ہم API اینڈ پوائنٹس کو واپس لا سکتے ہیں جو ڈیٹا بیس استعمال کرتے ہیں ---
+@app.get("/api/active-signals", response_model=List[Dict[str, Any]])
+async def get_live_signals_endpoint():
+    signals = get_active_signals()
+    return signals
+
 @app.get("/api/completed-trades")
 async def get_completed_trades_endpoint():
     db = SessionLocal()
     try:
-        # یہ چیک کرے گا کہ کیا ہم ڈیٹا بیس سے پڑھ سکتے ہیں
         trades = crud.get_completed_trades_from_db(db, limit=50)
         return trades
     finally:
@@ -51,12 +57,9 @@ async def get_completed_trades_endpoint():
 
 @app.get("/api/news")
 async def get_news_endpoint():
-    # یہ چیک کرے گا کہ کیا ہم نیوز کیشے سے پڑھ سکتے ہیں
     news = crud.get_news_from_cache()
     if not news:
         raise HTTPException(status_code=404, detail="Could not load news events.")
     return news
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-
-print("--- app.py with database connection has been loaded by Python ---")
