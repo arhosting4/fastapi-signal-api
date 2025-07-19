@@ -1,29 +1,47 @@
 # filename: database_crud.py
+
 import json
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from datetime import datetime
 
-# --- مقامی امپورٹس (فلیٹ اسٹرکچر) ---
+# مقامی امپورٹس
 from models import ActiveTrade, CompletedTrade
-
-# ... (باقی تمام کوڈ جیسا ہے ویسا ہی رہے گا، صرف امپورٹ کو یقینی بنانا تھا)
-# (The rest of the code in this file remains the same)
-# ... (I will include the full code to be safe)
 
 NEWS_CACHE_FILE = "data/news_cache.json"
 
 def add_active_trade_to_db(db: Session, signal_data: dict) -> bool:
-    existing_trade = db.query(ActiveTrade).filter(ActiveTrade.symbol == signal_data["symbol"]).first()
-    if existing_trade:
-        if existing_trade.signal == signal_data["signal"]:
-            print(f"--- INFO: Signal for {signal_data['symbol']} is already active. Not adding duplicate. ---")
-            return False
-        else:
-            print(f"--- INFO: Flipping signal for {signal_data['symbol']}. Removing old one. ---")
-            db.delete(existing_trade)
-            db.commit()
+    """
+    ایک فعال ٹریڈ کو ڈیٹا بیس میں شامل یا اپ ڈیٹ کرتا ہے۔
 
+    Returns:
+        bool: True اگر ٹریڈ نیا تھا یا اس کی سمت تبدیل ہوئی، False اگر کوئی تبدیلی نہیں ہوئی۔
+    """
+    # چیک کریں کہ آیا اسی جوڑے اور ٹائم فریم کے لیے پہلے سے کوئی ٹریڈ موجود ہے
+    existing_trade = db.query(ActiveTrade).filter(
+        ActiveTrade.symbol == signal_data["symbol"],
+        ActiveTrade.timeframe == signal_data["timeframe"]
+    ).first()
+
+    if existing_trade:
+        # اگر سگنل کی سمت وہی ہے، تو صرف تفصیلات اپ ڈیٹ کریں اور False لوٹائیں
+        if existing_trade.signal == signal_data["signal"]:
+            existing_trade.entry_price = signal_data["price"]
+            existing_trade.tp = signal_data["tp"]
+            existing_trade.sl = signal_data["sl"]
+            existing_trade.confidence = signal_data["confidence"]
+            existing_trade.reason = signal_data["reason"]
+            existing_trade.tier = signal_data["tier"]
+            db.commit()
+            print(f"--- DB INFO: Updated existing '{existing_trade.signal}' signal for {signal_data['symbol']} on {signal_data['timeframe']}. ---")
+            return False
+        # اگر سگنل کی سمت تبدیل ہو گئی ہے (buy سے sell یا sell سے buy)
+        else:
+            print(f"--- DB INFO: Flipping signal for {signal_data['symbol']} on {signal_data['timeframe']}. Removing old one. ---")
+            db.delete(existing_trade)
+            # نیا ٹریڈ نیچے شامل کیا جائے گا، اس لیے یہاں سے آگے بڑھیں
+    
+    # اگر کوئی موجودہ ٹریڈ نہیں تھا یا اسے حذف کر دیا گیا ہے، تو ایک نیا بنائیں
     new_trade = ActiveTrade(
         symbol=signal_data["symbol"],
         signal=signal_data["signal"],
@@ -37,8 +55,8 @@ def add_active_trade_to_db(db: Session, signal_data: dict) -> bool:
     )
     db.add(new_trade)
     db.commit()
-    print(f"--- SUCCESS: Added new active trade for {signal_data['symbol']} to DB. ---")
-    return True
+    print(f"--- DB SUCCESS: Added new active trade for {signal_data['symbol']} on {signal_data['timeframe']} to DB. ---")
+    return True # True لوٹائیں کیونکہ یہ ایک نیا یا پلٹا ہوا ٹریڈ ہے
 
 def get_all_active_trades_from_db(db: Session):
     return db.query(ActiveTrade).all()
