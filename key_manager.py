@@ -12,6 +12,7 @@ class KeyManager:
     def __init__(self):
         self.keys: List[str] = []
         self.limited_keys: Dict[str, float] = {}
+        # --- اہم تبدیلی: کلاس کے شروع ہوتے ہی کلیدوں کو لوڈ کریں ---
         self.load_keys()
 
     def load_keys(self):
@@ -20,23 +21,23 @@ class KeyManager:
         """
         api_keys_str = os.getenv("TWELVE_DATA_API_KEYS", "")
         self.keys = [key.strip() for key in api_keys_str.split(',') if key.strip()]
-        print(f"KeyManager: Found {len(self.keys)} API keys.")
+        print(f"--- KeyManager: Found {len(self.keys)} API keys. ---")
 
     def get_api_key(self) -> Optional[str]:
         """
         ایک دستیاب API کلید واپس کرتا ہے جو فی الحال شرح کی حد میں نہیں ہے۔
-        اگر کوئی کلید 60 سیکنڈ سے زیادہ کے لیے محدود ہو تو اسے دوبارہ قابل استعمال سمجھا جاتا ہے۔
         """
         current_time = time.time()
+        # تمام کلیدوں میں سے ایک دستیاب کلید تلاش کریں
         for key in self.keys:
             # اگر کلید محدود نہیں ہے، یا اگر اسے محدود ہوئے 60 سیکنڈ سے زیادہ ہو گئے ہیں
             if key not in self.limited_keys or current_time - self.limited_keys.get(key, 0) > 60:
-                # اگر یہ محدود فہرست میں تھی تو اسے ہٹا دیں
+                # اگر یہ محدود فہرست میں تھی تو اسے ہٹا دیں (اب یہ دوبارہ قابل استعمال ہے)
                 if key in self.limited_keys:
                     del self.limited_keys[key]
                 return key
         
-        print("--- KeyManager WARNING: All keys are currently rate-limited. Waiting for one to become available. ---")
+        print("--- KeyManager WARNING: All keys are currently rate-limited. ---")
         return None
 
     def mark_key_as_limited(self, key: str):
@@ -47,5 +48,6 @@ class KeyManager:
             print(f"--- KeyManager INFO: API key limit reached for key ending in ...{key[-4:]}. Rotating. ---")
             self.limited_keys[key] = time.time()
 
-# ایک عالمی مثال بنائیں تاکہ پوری ایپ اسے استعمال کر سکے
+# --- سب سے اہم تبدیلی: ایک عالمی مثال بنائیں تاکہ پوری ایپ اسے استعمال کر سکے ---
+# یہ یقینی بناتا ہے کہ key_manager صرف ایک بار بنتا ہے اور ہر جگہ ایک ہی حالت (state) کا اشتراک کرتا ہے۔
 key_manager = KeyManager()
