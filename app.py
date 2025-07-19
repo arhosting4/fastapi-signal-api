@@ -1,4 +1,4 @@
-# app.py
+# filename: app.py
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -8,10 +8,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
-# --- مقامی امپورٹس (آپ کے موجودہ src ڈھانچے کے مطابق) ---
-from src.database.config import SessionLocal
-from src.database.models import create_db_and_tables
-from src.database import crud
+# --- مقامی امپورٹس (آپ کے ہائبرڈ ڈھانچے کے مطابق) ---
+from database_config import SessionLocal
+from database_models import create_db_and_tables
+import database_crud as crud
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
