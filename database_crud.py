@@ -1,16 +1,15 @@
 # database_crud.py
 
 from sqlalchemy.orm import Session
+from sqlalchemy import desc # نزولی ترتیب کے لیے
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 # ہمارے ڈیٹا بیس کے ماڈلز
 from src.database.models import CompletedTrade, FeedbackEntry
 
 def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str):
     """ایک مکمل شدہ ٹریڈ کو ڈیٹا بیس میں شامل کرتا ہے۔"""
-        
-    # یہ یقینی بنائیں کہ تمام ضروری فیلڈز موجود ہیں
     required_keys = ['signal_id', 'symbol', 'timeframe', 'signal', 'price', 'tp', 'sl']
     if not all(key in signal_data for key in required_keys):
         print(f"--- DB_CRUD ERROR: Missing required keys in signal_data for add_completed_trade ---")
@@ -45,4 +44,13 @@ def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str):
     db.refresh(db_feedback)
     print(f"--- DB_CRUD SUCCESS: Added feedback '{feedback}' for {symbol} to database. ---")
     return db_feedback
+
+# --- نئی تبدیلی: تاریخ حاصل کرنے کا فنکشن ---
+def get_completed_trades(db: Session, limit: int = 100) -> List[CompletedTrade]:
+    """
+    ڈیٹا بیس سے تازہ ترین مکمل شدہ ٹریڈز حاصل کرتا ہے۔
+    """
+    print(f"--- DB_CRUD INFO: Fetching last {limit} completed trades from database. ---")
+    # تازہ ترین ٹریڈز کو سب سے اوپر دکھانے کے لیے نزولی ترتیب کا استعمال کریں
+    return db.query(CompletedTrade).order_by(desc(CompletedTrade.closed_at)).limit(limit).all()
 
