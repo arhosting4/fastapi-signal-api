@@ -52,4 +52,4 @@ async def generate_final_signal(db: Session, symbol: str, candles: list, timefra
         print(f"--- CRITICAL ERROR in fusion_engine for {symbol}: {e} ---")
         traceback.print_exc()
         return {"status": "error", "reason": f"Error in AI fusion for {symbol}: {e}"}
-        
+    
