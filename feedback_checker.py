@@ -1,4 +1,3 @@
-# filename: feedback_checker.py
 import httpx
 from datetime import datetime
 from sqlalchemy.orm import Session
