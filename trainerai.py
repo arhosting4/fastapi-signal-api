@@ -1,71 +1,77 @@
-import random
-from feedback_memory import get_feedback_stats # فیڈ بیک حاصل کرنے کے لیے امپورٹ کریں
+# trainerai.py
 
+import random
+from typing import List
+
+# --- نئی تبدیلی: ڈیٹا بیس کے لیے امپورٹس ---
+from sqlalchemy.orm import Session
+from src.database.models import FeedbackEntry
+
+# --- نئی تبدیلی: یہ فنکشن اب ڈیٹا بیس سیشن لے گا ---
+def get_feedback_stats_from_db(db: Session, symbol: str) -> dict:
+    """ڈیٹا بیس سے فیڈ بیک کے اعداد و شمار حاصل کرتا ہے۔"""
+    feedback_query = db.query(FeedbackEntry).filter(FeedbackEntry.symbol == symbol).all()
+    
+    if not feedback_query:
+        return {"total": 0, "accuracy": None, "correct": 0, "incorrect": 0, "missed": 0}
+
+    total = len(feedback_query)
+    correct = sum(1 for f in feedback_query if f.feedback == "correct")
+    incorrect = sum(1 for f in feedback_query if f.feedback == "incorrect")
+    missed = sum(1 for f in feedback_query if f.feedback == "missed")
+
+    accuracy = (correct / total) * 100 if total > 0 else None
+
+    return {
+        "total": total,
+        "correct": correct,
+        "incorrect": incorrect,
+        "missed": missed,
+        "accuracy": round(accuracy, 2) if accuracy is not None else None
+    }
+
+# --- نئی تبدیلی: یہ فنکشن بھی اب ڈیٹا بیس سیشن لے گا ---
 def get_confidence(
+    db: Session, #<-- نیا پیرامیٹر
     core_signal: str,
     pattern_signal_type: str,
     risk_status: str,
     news_impact: str,
-    symbol: str,
-    timeframe: str # --- نیا: ٹائم فریم بھی شامل کریں ---
+    symbol: str
 ) -> float:
-    """
-    سگنل کے اعتماد کا تخمینہ لگاتا ہے، اب ماضی کی کارکردگی کو بھی مدنظر رکھتے ہوئے۔
-    """
-    base_confidence = 55.0
+    """سگنل کے اعتماد کا تخمینہ لگاتا ہے۔"""
+    confidence = 55.0
 
-    # 1. تکنیکی عوامل (پہلے کی طرح)
     if core_signal == "buy" and pattern_signal_type == "bullish":
-        base_confidence += 15
+        confidence += 20
     elif core_signal == "sell" and pattern_signal_type == "bearish":
-        base_confidence += 15
+        confidence += 20
     elif (core_signal == "buy" and pattern_signal_type == "bearish") or \
          (core_signal == "sell" and pattern_signal_type == "bullish"):
-        base_confidence -= 20
+        confidence -= 25
 
     if risk_status == "High":
-        base_confidence -= 15
+        confidence -= 20
     elif risk_status == "Moderate":
-        base_confidence -= 7
+        confidence -= 5
 
     if news_impact == "High":
-        base_confidence -= 20
+        confidence -= 20
     elif news_impact == "Medium":
-        base_confidence -= 10
+        confidence -= 10
 
-    # --- 2. نیا اور اہم مرحلہ: فیڈ بیک لوپ ---
-    # ہم ایک منفرد شناخت کنندہ بنائیں گے، جیسے "XAU/USD_15m"
-    performance_key = f"{symbol}_{timeframe}"
-    stats = get_feedback_stats(performance_key)
-
-    if stats and stats["total"] >= 5: # کم از کم 5 ٹریڈز کے بعد سیکھنا شروع کریں
-        accuracy = stats.get("accuracy", 50.0) # اگر accuracy نہ ہو تو 50 مانیں
-        
-        print(f"Feedback Loop for {performance_key}: Accuracy is {accuracy}% over {stats['total']} trades.")
-
-        if accuracy > 75:
-            # بہت اچھی کارکردگی -> اعتماد میں بڑا اضافہ
-            base_confidence += 10
-            print(f"Applying +10 confidence boost for high accuracy.")
-        elif accuracy > 60:
-            # اچھی کارکردگی -> تھوڑا اضافہ
-            base_confidence += 5
-            print(f"Applying +5 confidence boost for good accuracy.")
+    # --- نئی تبدیلی: فیڈ بیک ڈیٹا بیس سے حاصل کریں ---
+    feedback = get_feedback_stats_from_db(db, symbol)
+    if feedback and feedback["total"] > 10:
+        accuracy = feedback.get("accuracy", 50)
+        if accuracy > 70:
+            confidence += 10
         elif accuracy < 40:
-            # بری کارکردگی -> اعتماد میں کمی
-            base_confidence -= 10
-            print(f"Applying -10 confidence penalty for low accuracy.")
-        elif accuracy < 25:
-            # بہت بری کارکردگی -> اعتماد میں بڑی کمی
-            base_confidence -= 15
-            print(f"Applying -15 confidence penalty for very low accuracy.")
-    
-    # اعتماد کو 0-100 کی حد میں رکھیں
-    final_confidence = max(0.0, min(100.0, base_confidence))
-    
-    # تھوڑا سا بے ترتیب عنصر شامل کریں تاکہ ہر بار ایک جیسی ویلیو نہ آئے
-    final_confidence += random.uniform(-1.5, 1.5)
-    final_confidence = max(0.0, min(100.0, final_confidence))
+            confidence -= 15
 
-    return round(final_confidence, 2)
+    confidence = max(0.0, min(100.0, confidence))
+    confidence += random.uniform(-2.0, 2.0)
+    confidence = max(0.0, min(100.0, confidence))
+
+    return round(confidence, 2)
     
