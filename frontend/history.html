@@ -21,7 +21,11 @@
         <header class="text-center mb-8">
             <h1 class="text-4xl font-bold text-amber-400">Performance History</h1>
             <p class="text-lg text-gray-400 mt-2">A transparent look at ScalpMaster AI's track record.</p>
-            <a href="/" class="text-indigo-400 hover:text-indigo-300 mt-4 inline-block">&larr; Back to Live Signal</a>
+            <!-- یہ نیا نیویگیشن سیکشن ہے -->
+            <div class="flex justify-center space-x-4 mt-4">
+                <a href="/" class="text-indigo-400 hover:text-indigo-300">&larr; Live Signal</a>
+                <a href="/news.html" class="text-indigo-400 hover:text-indigo-300">News Center &rarr;</a>
+            </div>
         </header>
 
         <!-- اعداد و شمار کا سیکشن -->
@@ -59,7 +63,6 @@
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
-                        <!-- ڈیٹا یہاں جاوا اسکرپٹ کے ذریعے بھرا جائے گا -->
                         <tr><td colspan="6" class="text-center p-8">Loading history...</td></tr>
                     </tbody>
                 </table>
@@ -72,6 +75,7 @@
     </main>
 
     <script>
+        // ... (جاوا اسکرپٹ کا کوڈ ویسے ہی رہے گا جیسا پچھلے جواب میں تھا) ...
         document.addEventListener('DOMContentLoaded', async () => {
             const tableBody = document.getElementById('history-table-body');
             try {
@@ -118,7 +122,6 @@
 
                 tableBody.innerHTML = tableHtml;
 
-                // اعداد و شمار کو اپ ڈیٹ کریں
                 const totalTrades = wins + losses;
                 document.getElementById('total-trades').textContent = history.length;
                 document.getElementById('total-wins').textContent = wins;
@@ -133,5 +136,4 @@
         });
     </script>
 </body>
-  </html>
-  
+</html>
