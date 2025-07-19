@@ -1,5 +1,4 @@
 # filename: app.py
-
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -12,10 +11,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
-# --- مقامی امپورٹس ---
 from database_config import SessionLocal
-# --- اہم ترین تبدیلی: 'database_models' کو 'models' سے تبدیل کیا گیا ---
-from models import create_db_and_tables 
+from models import create_db_and_tables
 import database_crud as crud
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
@@ -45,15 +42,13 @@ async def health_check():
 
 @app.get("/api/active-signals", response_model=List[Dict[str, Any]])
 async def get_live_signals_endpoint():
-    signals = get_active_signals()
-    return signals
+    return get_active_signals()
 
 @app.get("/api/completed-trades")
 async def get_completed_trades_endpoint():
     db = SessionLocal()
     try:
-        trades = crud.get_completed_trades_from_db(db, limit=50)
-        return trades
+        return crud.get_completed_trades_from_db(db, limit=50)
     finally:
         db.close()
 
