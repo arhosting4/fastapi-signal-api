@@ -1,181 +1,240 @@
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.cron import CronTrigger
-import uvicorn
 import os
-import atexit
+import asyncio
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from contextlib import asynccontextmanager
+from typing import List, Dict, Any
 
 # Import our modules
-from database_config import get_db
+from database_config import SessionLocal
 from models import create_db_and_tables
-from database_crud import get_all_active_trades_from_db, get_completed_trades_from_db, get_news_from_cache
-from signal_tracker import get_active_signals_from_json
-from hunter import hunt_for_signals_job
-from feedback_checker import check_feedback_job
-from sentinel import update_news_cache_job
-
-# Initialize FastAPI app
-app = FastAPI(title="ScalpMaster AI", description="Advanced Trading Signal Generator", version="1.0.0")
-
-# Mount static files (for serving HTML, CSS, JS)
-app.mount("/static", StaticFiles(directory="."), name="static")
-
-# Initialize database
-print("--- Initializing database... ---")
-create_db_and_tables()
-print("--- Database initialization completed ---")
+import database_crud as crud
+from hunter import hunt_for_signals_job, get_current_best_signal
+from feedback_checker import check_active_signals_job
+from sentinel import update_economic_calendar_cache
+from signal_tracker import get_active_signals
+from key_manager import key_manager
+from utils import test_api_connection, get_market_hours_status
 
 # Initialize scheduler
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 
-# Schedule jobs
-print("--- Setting up scheduled jobs... ---")
-
-# Hunter job: Every 5 minutes
-scheduler.add_job(
-    func=hunt_for_signals_job,
-    trigger=IntervalTrigger(minutes=5),
-    id='hunter_job',
-    name='Hunt for trading signals',
-    replace_existing=True
-)
-
-# Feedback checker job: Every 1 minute
-scheduler.add_job(
-    func=check_feedback_job,
-    trigger=IntervalTrigger(minutes=1),
-    id='feedback_job',
-    name='Check trade feedback',
-    replace_existing=True
-)
-
-# News update job: Every 30 minutes
-scheduler.add_job(
-    func=update_news_cache_job,
-    trigger=IntervalTrigger(minutes=30),
-    id='news_job',
-    name='Update news cache',
-    replace_existing=True
-)
-
-# Start scheduler
-scheduler.start()
-print("--- Background jobs scheduled and started ---")
-
-# Shut down scheduler when app exits
-atexit.register(lambda: scheduler.shutdown())
-
-# API Routes
-@app.get("/")
-async def read_root():
-    """Serve the main dashboard"""
-    return FileResponse('index.html')
-
-@app.get("/index.html")
-async def serve_index():
-    """Serve the main dashboard"""
-    return FileResponse('index.html')
-
-@app.get("/history.html")
-async def serve_history():
-    """Serve the trade history page"""
-    return FileResponse('history.html')
-
-@app.get("/news.html")
-async def serve_news():
-    """Serve the market news page"""
-    return FileResponse('news.html')
-
-@app.get("/api/active-signals")
-async def get_active_signals():
-    """Get all active trading signals"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    print("--- Application Startup ---")
+    
+    # Create database tables
     try:
-        # First try to get from JSON file (faster)
-        signals = get_active_signals_from_json()
-        if signals:
-            return signals
+        create_db_and_tables()
+        print("--- Database tables created/verified ---")
+    except Exception as e:
+        print(f"--- ERROR creating database tables: {e} ---")
+    
+    # Test API connection
+    try:
+        api_test = test_api_connection(key_manager)
+        print(f"--- API Connection Test: {api_test} ---")
+    except Exception as e:
+        print(f"--- ERROR testing API connection: {e} ---")
+    
+    # Start background jobs
+    try:
+        # Hunt for signals every 5 minutes
+        scheduler.add_job(
+            hunt_for_signals_job,
+            IntervalTrigger(minutes=5),
+            args=[SessionLocal],
+            misfire_grace_time=60,
+            id="signal_hunter"
+        )
         
-        # Fallback to database
-        db = next(get_db())
-        db_signals = get_all_active_trades_from_db(db)
+        # Check active signals every minute
+        scheduler.add_job(
+            check_active_signals_job,
+            IntervalTrigger(minutes=1),
+            args=[SessionLocal],
+            misfire_grace_time=30,
+            id="signal_checker"
+        )
         
-        # Convert database objects to dictionaries
-        signals_list = []
-        for signal in db_signals:
-            signals_list.append({
-                "id": signal.id,
-                "symbol": signal.symbol,
-                "signal": signal.signal,
-                "timeframe": signal.timeframe,
-                "price": signal.entry_price,
-                "tp": signal.tp,
-                "sl": signal.sl,
-                "confidence": signal.confidence,
-                "reason": signal.reason,
-                "tier": signal.tier,
-                "entry_time": signal.entry_time.isoformat() if signal.entry_time else None
-            })
+        # Update economic calendar every 6 hours
+        scheduler.add_job(
+            update_economic_calendar_cache,
+            IntervalTrigger(hours=6),
+            misfire_grace_time=300,
+            id="news_updater"
+        )
         
-        return signals_list
+        scheduler.start()
+        print("--- Background scheduler started ---")
         
     except Exception as e:
-        print(f"--- ERROR in get_active_signals: {e} ---")
-        return []
+        print(f"--- ERROR starting scheduler: {e} ---")
+    
+    yield
+    
+    # Shutdown
+    print("--- Application Shutdown ---")
+    try:
+        scheduler.shutdown()
+        print("--- Scheduler shutdown complete ---")
+    except Exception as e:
+        print(f"--- ERROR during scheduler shutdown: {e} ---")
+
+# Create FastAPI app
+app = FastAPI(lifespan=lifespan)
+
+# Health check endpoint (required for Render.com)
+@app.get("/health", status_code=200)
+async def health_check():
+    """Health check endpoint for deployment platforms"""
+    try:
+        # Test database connection
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        
+        # Test API key manager
+        key_status = key_manager.get_key_status()
+        
+        # Test market hours
+        market_status = get_market_hours_status()
+        
+        return {
+            "status": "ok",
+            "database": "connected",
+            "api_keys": key_status,
+            "market_status": market_status,
+            "scheduler": "running" if scheduler.running else "stopped"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+# API Endpoints
+@app.get("/api/active-signals", response_model=List[Dict[str, Any]])
+async def get_live_signals_endpoint():
+    """Get current active trading signals"""
+    try:
+        # Try to get from signal tracker first
+        signals = get_active_signals()
+        
+        if not signals:
+            # Fallback to getting the current best signal
+            best_signal = get_current_best_signal()
+            if best_signal:
+                signals = [best_signal]
+        
+        return signals if signals else []
+        
+    except Exception as e:
+        print(f"--- ERROR in get_live_signals_endpoint: {e} ---")
+        raise HTTPException(status_code=500, detail="Error fetching active signals")
 
 @app.get("/api/completed-trades")
-async def get_completed_trades(db: Session = Depends(get_db)):
+async def get_completed_trades_endpoint():
     """Get completed trades history"""
     try:
-        trades = get_completed_trades_from_db(db, limit=50)
-        
-        # Convert database objects to dictionaries
-        trades_list = []
-        for trade in trades:
-            trades_list.append({
-                "id": trade.id,
-                "symbol": trade.symbol,
-                "signal": trade.signal,
-                "entry_price": trade.entry_price,
-                "close_price": trade.close_price,
-                "tp": trade.tp,
-                "sl": trade.sl,
-                "outcome": trade.outcome,
-                "entry_time": trade.entry_time.isoformat() if trade.entry_time else None,
-                "close_time": trade.close_time.isoformat() if trade.close_time else None
-            })
-        
-        return trades_list
-        
+        db = SessionLocal()
+        trades = crud.get_completed_trades_from_db(db, limit=50)
+        db.close()
+        return trades
     except Exception as e:
-        print(f"--- ERROR in get_completed_trades: {e} ---")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        print(f"--- ERROR in get_completed_trades_endpoint: {e} ---")
+        raise HTTPException(status_code=500, detail="Error fetching completed trades")
 
 @app.get("/api/news")
-async def get_market_news():
-    """Get latest market news"""
+async def get_news_endpoint():
+    """Get economic news and events"""
     try:
-        news = get_news_from_cache()
+        news = crud.get_news_from_cache()
+        if not news:
+            raise HTTPException(status_code=404, detail="Could not load news events.")
         return news
+    except Exception as e:
+        print(f"--- ERROR in get_news_endpoint: {e} ---")
+        raise HTTPException(status_code=500, detail="Error fetching news")
+
+@app.get("/api/historical-data")
+async def get_historical_data_endpoint(
+    symbol: str = Query("XAUUSD"),
+    timeframe: str = Query("5m")
+):
+    """Get historical price data for charting"""
+    try:
+        from utils import fetch_historical_data_twelve_data
+        
+        historical_data = fetch_historical_data_twelve_data(symbol, timeframe, key_manager, days=7)
+        
+        if not historical_data:
+            raise HTTPException(status_code=404, detail="Could not fetch historical data")
+        
+        return historical_data
         
     except Exception as e:
-        print(f"--- ERROR in get_market_news: {e} ---")
-        return []
+        print(f"--- ERROR in get_historical_data_endpoint: {e} ---")
+        raise HTTPException(status_code=500, detail="Error fetching historical data")
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "scheduler_running": scheduler.running,
-        "jobs": [job.id for job in scheduler.get_jobs()]
-    }
+@app.get("/api/manual-signal")
+async def get_manual_signal_endpoint(
+    symbol: str = Query("XAUUSD"),
+    timeframe: str = Query("5m")
+):
+    """Manually generate a signal for testing purposes"""
+    try:
+        from hunter import manual_signal_hunt
+        
+        signal = await manual_signal_hunt(symbol, timeframe)
+        
+        if not signal:
+            raise HTTPException(status_code=404, detail="Could not generate signal")
+        
+        return signal
+        
+    except Exception as e:
+        print(f"--- ERROR in get_manual_signal_endpoint: {e} ---")
+        raise HTTPException(status_code=500, detail="Error generating manual signal")
 
-# Run the application
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
-                               
+@app.get("/api/system-status")
+async def get_system_status_endpoint():
+    """Get system status and statistics"""
+    try:
+        # Get key manager status
+        key_status = key_manager.get_key_status()
+        
+        # Get market status
+        market_status = get_market_hours_status()
+        
+        # Get scheduler status
+        scheduler_jobs = []
+        if scheduler.running:
+            for job in scheduler.get_jobs():
+                scheduler_jobs.append({
+                    "id": job.id,
+                    "next_run": str(job.next_run_time) if job.next_run_time else "None"
+                })
+        
+        return {
+            "api_keys": key_status,
+            "market_status": market_status,
+            "scheduler": {
+                "running": scheduler.running,
+                "jobs": scheduler_jobs
+            },
+            "database": "connected"
+        }
+        
+    except Exception as e:
+        print(f"--- ERROR in get_system_status_endpoint: {e} ---")
+        raise HTTPException(status_code=500, detail="Error getting system status")
+
+# Mount static files (frontend)
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+
+print("--- FastAPI application initialized ---")
