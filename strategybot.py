@@ -1,30 +1,54 @@
 import pandas_ta as ta
 import pandas as pd
-import numpy as np
+from typing import List, Dict, Tuple, Optional
 
-def calculate_tp_sl(candles: list, atr_multiplier: float = 2.0):
-    # ... (یہ فنکشن ویسے ہی رہے گا) ...
+def calculate_tp_sl(candles: List[Dict], tp_multiplier: float, sl_multiplier: float) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
+    """
+    ATR اور متحرک ضربوں کی بنیاد پر TP/SL کا حساب لگاتا ہے۔
+    
+    Parameters:
+        candles (list): OHLC کینڈلز کی فہرست۔
+        tp_multiplier (float): رسک گارڈین سے حاصل کردہ TP کا ضرب۔
+        sl_multiplier (float): رسک گارڈین سے حاصل کردہ SL کا ضرب۔
+
+    Returns:
+        ایک ٹوپل جس میں (buy_tp_sl, sell_tp_sl) شامل ہیں۔
+    """
     if not candles or len(candles) < 14:
         return None, None
+
     df = pd.DataFrame(candles)
     df['high'] = pd.to_numeric(df['high'])
     df['low'] = pd.to_numeric(df['low'])
     df['close'] = pd.to_numeric(df['close'])
+
+    # ATR (Average True Range) کا حساب لگائیں
     atr = ta.atr(df['high'], df['low'], df['close'], length=14)
     if atr is None or atr.empty or pd.isna(atr.iloc[-1]):
         return None, None
+
     last_atr = atr.iloc[-1]
     last_close = df['close'].iloc[-1]
-    tp_buy = last_close + (last_atr * atr_multiplier)
-    sl_buy = last_close - last_atr
-    tp_sell = last_close - (last_atr * atr_multiplier)
-    sl_sell = last_close + last_atr
+
+    # BUY سگنل کے لیے TP/SL
+    tp_buy = last_close + (last_atr * tp_multiplier)
+    sl_buy = last_close - (last_atr * sl_multiplier)
+
+    # SELL سگنل کے لیے TP/SL
+    tp_sell = last_close - (last_atr * tp_multiplier)
+    sl_sell = last_close + (last_atr * sl_multiplier)
+
     return (tp_buy, sl_buy), (tp_sell, sl_sell)
 
-def generate_core_signal(symbol: str, tf: str, candles: list):
+def generate_core_signal(symbol: str, tf: str, candles: List[Dict]) -> Dict[str, str]:
+    """
+    بنیادی تکنیکی اشاروں کی بنیاد پر سگنل پیدا کرتا ہے۔
+    (اس فنکشن میں کوئی تبدیلی نہیں)
+    """
     if len(candles) < 34:
         return {"signal": "wait"}
 
+    # ... (باقی تمام انڈیکیٹر کی منطق ویسی ہی رہے گی) ...
     closes = [c['close'] for c in candles]
     highs = [c['high'] for c in candles]
     lows = [c['low'] for c in candles]
@@ -33,7 +57,6 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
     high_series = pd.Series(highs)
     low_series = pd.Series(lows)
 
-    # --- Indicator Calculations ---
     sma_short = ta.sma(close_series, length=10)
     sma_long = ta.sma(close_series, length=30)
     rsi = ta.rsi(close_series, length=14)
@@ -48,7 +71,6 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
     buy_signals = 0
     sell_signals = 0
 
-    # ... (تمام سگنل کی منطق ویسی ہی رہے گی) ...
     if sma_short is not None and sma_long is not None and not sma_short.empty and not sma_long.empty:
         if sma_short.iloc[-1] > sma_long.iloc[-1] and sma_short.iloc[-2] <= sma_long.iloc[-2]:
             buy_signals += 1
@@ -77,19 +99,16 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
         elif stoch_k.iloc[-1] > 80:
             sell_signals += 1
 
-    # --- حتمی فیصلہ سازی کی منطق ---
     signal = "wait"
     if buy_signals > sell_signals:
         signal = "buy"
     elif sell_signals > buy_signals:
         signal = "sell"
-    # --- اہم ترین تبدیلی: ٹائی بریکر منطق ---
     elif macd_line is not None and macd_signal is not None:
-        # اگر سگنل برابر ہیں، تو MACD کے رجحان کو دیکھو
         if macd_line.iloc[-1] > macd_signal.iloc[-1]:
-            signal = "buy" # MACD مثبت رجحان دکھا رہا ہے
+            signal = "buy"
         else:
-            signal = "sell" # MACD منفی رجحان دکھا رہا ہے
+            signal = "sell"
             
     return {"signal": signal}
-        
+    
