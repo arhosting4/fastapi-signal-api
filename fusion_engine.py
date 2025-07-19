@@ -5,7 +5,7 @@ import pandas_ta as ta
 # ہمارے پروجیکٹ کے ایجنٹس
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
-from riskguardian import check_risk # اپ گریڈ شدہ رسک گارڈین
+from riskguardian import check_risk
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
@@ -122,4 +122,5 @@ async def generate_final_signal(symbol: str, candles: list, timeframe: str, shou
 
     except Exception as e:
         traceback.print_exc()
-        return {"signal": "wait", "reason": f"An error occurred during analysis: {e}"}```
+        return {"signal": "wait", "reason": f"An error occurred during analysis: {e}"}
+        
