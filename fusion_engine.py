@@ -1,11 +1,10 @@
 import traceback
-import httpx
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
-from strategybot import generate_core_signal, calculate_tp_sl, get_dynamic_atr_multiplier
+from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
-from riskguardian import check_risk
+from riskguardian import check_risk, get_dynamic_atr_multiplier
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
@@ -24,6 +23,9 @@ async def generate_final_signal(db: Session, symbol: str, candles: list, timefra
         risk_assessment = check_risk(candles)
         news_data = await get_news_analysis_for_symbol(symbol)
         market_structure = get_market_structure_analysis(candles)
+
+        if risk_assessment.get("status") == "High" or news_data.get("impact") == "High":
+            return {"status": "blocked", "reason": "High risk or high impact news."}
 
         confidence = get_confidence(db, core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data.get("impact"), symbol)
         tier = get_tier(confidence)
@@ -49,5 +51,5 @@ async def generate_final_signal(db: Session, symbol: str, candles: list, timefra
     except Exception as e:
         print(f"--- CRITICAL ERROR in fusion_engine for {symbol}: {e} ---")
         traceback.print_exc()
-        raise Exception(f"Error in AI fusion for {symbol}: {e}")
-        
+        return {"status": "error", "reason": f"Error in AI fusion for {symbol}: {e}"}
+    
