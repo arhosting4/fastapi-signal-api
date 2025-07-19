@@ -1,18 +1,11 @@
-# trainerai.py
-
 import random
 from sqlalchemy.orm import Session
-from typing import Dict
-
-# --- اہم تبدیلی: database_crud کو یہاں سے امپورٹ کریں ---
 import database_crud as crud
 
 def get_confidence(db: Session, core_signal: str, pattern_signal_type: str, risk_status: str, news_impact: str, symbol: str) -> float:
     """
-    سگنل کے اعتماد کا تخمینہ لگاتا ہے۔
-    یہ فنکشن اب براہ راست ڈیٹا بیس سیشن (db) کو بطور دلیل لیتا ہے۔
+    سگنل کے اعتماد کا تخمینہ لگاتا ہے، جس میں ڈیٹا بیس سے فیڈ بیک شامل ہے۔
     """
-    # بنیادی اعتماد
     confidence = 55.0
 
     # 1. بنیادی سگنل اور پیٹرن کی مطابقت
@@ -37,7 +30,6 @@ def get_confidence(db: Session, core_signal: str, pattern_signal_type: str, risk
         confidence -= 10
 
     # 4. فیڈ بیک لوپ کا اثر (ڈیٹا بیس سے)
-    # --- اہم تبدیلی: فیڈ بیک حاصل کرنے کے لیے crud ماڈیول کا استعمال کریں ---
     feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
     if feedback_stats and feedback_stats["total"] > 10:
         accuracy = feedback_stats.get("accuracy", 50.0)
