@@ -1,7 +1,7 @@
 import traceback
 import pandas as pd
 import pandas_ta as ta
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # ہمارے پروجیکٹ کے ایجنٹس
 from strategybot import generate_core_signal, calculate_tp_sl
@@ -16,19 +16,38 @@ from marketstructure import analyze_market_structure
 from supply_demand import find_zones, analyze_price_in_zones
 from utils import fetch_twelve_data_ohlc
 
-def get_higher_timeframe_trend(candles: List[Dict]) -> str:
-    if len(candles) < 50: return "neutral"
-    df = pd.DataFrame(candles)
-    df['close'] = pd.to_numeric(df['close'])
-    sma_fast = ta.sma(df['close'], length=20)
-    sma_slow = ta.sma(df['close'], length=50)
-    if sma_fast is None or sma_slow is None or sma_fast.empty or sma_slow.empty: return "neutral"
-    if sma_fast.iloc[-1] > sma_slow.iloc[-1]: return "up"
-    elif sma_fast.iloc[-1] < sma_slow.iloc[-1]: return "down"
-    else: return "neutral"
+def get_higher_timeframe_trend(candles: Optional[List[Dict]]) -> str:
+    # --- اہم تبدیلی: اگر کینڈلز نہ ملیں تو اسے سنبھالیں ---
+    if not candles or len(candles) < 50:
+        return "neutral"
+    
+    try:
+        df = pd.DataFrame(candles)
+        df['close'] = pd.to_numeric(df['close'])
+        sma_fast = ta.sma(df['close'], length=20)
+        sma_slow = ta.sma(df['close'], length=50)
+        
+        if sma_fast is None or sma_slow is None or sma_fast.empty or sma_slow.empty or pd.isna(sma_fast.iloc[-1]) or pd.isna(sma_slow.iloc[-1]):
+            return "neutral"
+            
+        if sma_fast.iloc[-1] > sma_slow.iloc[-1]:
+            return "up"
+        elif sma_fast.iloc[-1] < sma_slow.iloc[-1]:
+            return "down"
+        else:
+            return "neutral"
+    except Exception:
+        # اگر کوئی اور ایرر آئے تو بھی اسے سنبھالیں
+        return "neutral"
 
 async def generate_final_signal(symbol: str, candles: List[Dict], timeframe: str, should_save_active: bool = True):
     try:
+        # --- اہم تبدیلی: بنیادی چیکس کو شروع میں لے آئیں ---
+        if not candles or len(candles) < 50:
+            return {"signal": "wait", "reason": f"Insufficient data for {symbol} on {timeframe}."}
+
+        current_price = candles[-1]['close']
+        
         risk_assessment = check_risk(candles)
         news_data = get_news_analysis_for_symbol(symbol)
         if news_data.get("impact") == "High":
@@ -39,7 +58,6 @@ async def generate_final_signal(symbol: str, candles: List[Dict], timeframe: str
         if core_signal == "wait":
             return {"signal": "wait", "reason": "Primary indicators suggest no clear opportunity."}
 
-        current_price = candles[-1]['close']
         structure_analysis = analyze_market_structure(core_signal, current_price, candles)
         if structure_analysis.get("decision") == "block":
             return {"signal": "wait", "reason": structure_analysis.get('reason')}
@@ -48,8 +66,6 @@ async def generate_final_signal(symbol: str, candles: List[Dict], timeframe: str
         price_location = analyze_price_in_zones(current_price, zones)
         if core_signal == "buy" and price_location.get("in_supply"):
             return {"signal": "wait", "reason": "BUY signal blocked by supply zone."}
-        
-        # --- غلطی یہاں تھی: price_action کو price_location سے تبدیل کیا گیا ---
         if core_signal == "sell" and price_location.get("in_demand"):
             return {"signal": "wait", "reason": "SELL signal blocked by demand zone."}
 
@@ -58,7 +74,9 @@ async def generate_final_signal(symbol: str, candles: List[Dict], timeframe: str
         htf_trend = "neutral"
         if confirmation_tf:
             htf_candles = await fetch_twelve_data_ohlc(symbol, confirmation_tf)
-            if htf_candles: htf_trend = get_higher_timeframe_trend(htf_candles)
+            # --- اہم تبدیلی: htf_candles کی موجودگی کو چیک کریں ---
+            if htf_candles:
+                htf_trend = get_higher_timeframe_trend(htf_candles)
 
         if (core_signal == "buy" and htf_trend == "down") or (core_signal == "sell" and htf_trend == "up"):
             return {"signal": "wait", "reason": f"Signal blocked by opposing trend on {confirmation_tf}."}
@@ -106,6 +124,8 @@ async def generate_final_signal(symbol: str, candles: List[Dict], timeframe: str
         return final_result
 
     except Exception as e:
+        print(f"--- CRITICAL ERROR in generate_final_signal for {symbol} ---")
         traceback.print_exc()
-        return {"signal": "wait", "reason": f"An error occurred during analysis: {e}"}
-
+        # --- اہم تبدیلی: ایک واضح ایرر کا پیغام واپس کریں ---
+        return {"signal": "wait", "reason": f"An unexpected error occurred during analysis: {e}"}
+        
