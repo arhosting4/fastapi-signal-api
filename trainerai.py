@@ -1,4 +1,3 @@
-# filename: trainerai.py
 import random
 from sqlalchemy.orm import Session
 import database_crud as crud
