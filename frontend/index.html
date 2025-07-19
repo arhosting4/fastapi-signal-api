@@ -9,119 +9,28 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        /* Common Styles for all pages */
-        :root {
-            --bg-color: #0a0f1e;
-            --primary-color: #1a233b;
-            --secondary-color: #2a3858;
-            --accent-color: #ffab00; /* Gold */
-            --text-color: #e0e0e0;
-            --buy-color: #00bfa5; /* Teal */
-            --sell-color: #ff5252; /* Red */
-        }
-        body {
-            font-family: 'Roboto', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            width: 95%;
-            max-width: 1500px;
-            margin: 0 auto;
-            padding: 20px 0;
-        }
-        .glass-panel {
-            background: rgba(26, 35, 59, 0.5);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
-        h2 {
-            font-family: 'Teko', sans-serif;
-            font-size: 1.8em;
-            color: var(--accent-color);
-            margin-top: 0;
-            border-bottom: 1px solid var(--secondary-color);
-            padding-bottom: 10px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 12px 10px;
-            text-align: left;
-            border-bottom: 1px solid var(--secondary-color);
-        }
-        th {
-            font-weight: 700;
-            color: #fff;
-        }
-        .table-wrapper {
-            overflow-x: auto; /* Makes table scrollable on small screens */
-        }
-        
-        /* Header & Nav */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px 20px;
-            background-color: var(--primary-color);
-        }
-        .header h1 {
-            font-family: 'Teko', sans-serif;
-            font-size: 2em;
-            color: #fff;
-            margin: 0;
-        }
-        .navbar a {
-            color: var(--text-color);
-            text-decoration: none;
-            padding: 10px 15px;
-            font-weight: 500;
-            border-radius: 6px;
-            transition: background-color 0.3s;
-        }
-        .navbar a:hover, .navbar a.active {
-            background-color: var(--accent-color);
-            color: var(--bg-color);
-        }
-
-        /* Page-Specific Styles */
-        .content-grid {
-            display: grid;
-            grid-template-columns: 1.8fr 1.2fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        #chart-container {
-            height: 500px;
-        }
-        .no-signals {
-            text-align: center;
-            padding: 50px;
-            font-size: 1.2em;
-            color: #888;
-        }
+        /* (CSS کوڈ وہی رہے گا جیسا پچھلی بار تھا) */
+        :root { --bg-color: #0a0f1e; --primary-color: #1a233b; --secondary-color: #2a3858; --accent-color: #ffab00; --text-color: #e0e0e0; --buy-color: #00bfa5; --sell-color: #ff5252; }
+        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; }
+        .container { width: 95%; max-width: 1500px; margin: 0 auto; padding: 20px 0; }
+        .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        h2 { font-family: 'Teko', sans-serif; font-size: 1.8em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--secondary-color); }
+        th { font-weight: 700; color: #fff; }
+        .table-wrapper { overflow-x: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: var(--primary-color); }
+        .header h1 { font-family: 'Teko', sans-serif; font-size: 2em; color: #fff; margin: 0; }
+        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 15px; font-weight: 500; border-radius: 6px; transition: background-color 0.3s; }
+        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); }
+        .content-grid { display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; margin-top: 20px; }
+        #chart-container { height: 500px; }
+        .no-signals { text-align: center; padding: 50px; font-size: 1.2em; color: #888; }
         .signal-buy { color: var(--buy-color); font-weight: bold; }
         .signal-sell { color: var(--sell-color); font-weight: bold; }
         tbody tr:hover { background-color: var(--secondary-color); cursor: pointer; }
-
-        /* Responsive Design */
-        @media (max-width: 992px) {
-            .content-grid { grid-template-columns: 1fr; }
-            .header { flex-direction: column; gap: 15px; }
-        }
-        @media (max-width: 576px) {
-            .navbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
-            .navbar a { padding: 8px 10px; font-size: 0.9em; }
-            th, td { padding: 8px 5px; font-size: 0.85em; }
-        }
+        @media (max-width: 992px) { .content-grid { grid-template-columns: 1fr; } .header { flex-direction: column; gap: 15px; } }
+        @media (max-width: 576px) { .navbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; } .navbar a { padding: 8px 10px; font-size: 0.9em; } th, td { padding: 8px 5px; font-size: 0.85em; } }
     </style>
 </head>
 <body>
@@ -151,9 +60,7 @@
                                 <th>Confidence</th>
                             </tr>
                         </thead>
-                        <tbody id="signals-body">
-                            <!-- Live signals will be inserted here by JavaScript -->
-                        </tbody>
+                        <tbody id="signals-body"></tbody>
                     </table>
                 </div>
                 <div id="no-signals-message" class="no-signals" style="display: none;">
@@ -186,8 +93,17 @@
 
         async function fetchAndUpdateChart(symbol = 'XAU/USD', timeframe = '5m') {
             try {
-                // IMPORTANT: Replace with your actual Twelve Data API key
-                const response = await fetch(`https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${timeframe}&outputsize=120&apikey=YOUR_TWELVE_DATA_API_KEY`);
+                // ####################################################################
+                // ### اہم: یہاں اپنی Twelve Data کی API کلید ڈالیں ###
+                // ####################################################################
+                const apiKey = "YOUR_TWELVE_DATA_API_KEY"; // <--- اس لائن کو تبدیل کریں
+                
+                if (apiKey === "YOUR_TWELVE_DATA_API_KEY") {
+                    console.error("Please replace 'YOUR_TWELVE_DATA_API_KEY' in index.html");
+                    return;
+                }
+
+                const response = await fetch(`https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${timeframe}&outputsize=120&apikey=${apiKey}`);
                 const data = await response.json();
                 if (data.status === "ok" && data.values) {
                     const chartData = data.values.map(d => ({
@@ -197,6 +113,8 @@
                     })).reverse();
                     candleSeries.setData(chartData);
                     currentSymbol = symbol;
+                } else {
+                    console.error("Failed to fetch chart data:", data.message);
                 }
             } catch (error) {
                 console.error('Error fetching chart data:', error);
@@ -206,6 +124,10 @@
         async function fetchActiveSignals() {
             try {
                 const response = await fetch('/api/active-signals');
+                if (!response.ok) {
+                    console.error("Failed to fetch signals:", response.statusText);
+                    return;
+                }
                 const signals = await response.json();
                 const signalsBody = document.getElementById('signals-body');
                 const noSignalsMessage = document.getElementById('no-signals-message');
@@ -230,8 +152,8 @@
                         signalsBody.appendChild(row);
                     });
                     
-                    if (signals[0].symbol !== currentSymbol) {
-                        fetchAndUpdateChart(signals[0].symbol, signals[0].timeframe);
+                    if (signals.symbol !== currentSymbol) {
+                        fetchAndUpdateChart(signals.symbol, signals.timeframe);
                     }
                 } else {
                     noSignalsMessage.style.display = 'block';
