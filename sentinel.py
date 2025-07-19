@@ -1,15 +1,10 @@
-# filename: sentinel.py
 import os
 import httpx
 import json
 from datetime import datetime
 
 MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
-DATA_DIR = "data"
-NEWS_CACHE_FILE = os.path.join(DATA_DIR, "news_cache.json")
-
-# --- اہم ترین تبدیلی: یقینی بنائیں کہ 'data' فولڈر موجود ہے ---
-os.makedirs(DATA_DIR, exist_ok=True)
+NEWS_CACHE_FILE = "data/news_cache.json"
 
 async def update_economic_calendar_cache():
     if not MARKETAUX_API_TOKEN:
