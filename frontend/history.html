@@ -8,14 +8,15 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
     <style>
+        /* Common Styles */
         :root {
             --bg-color: #0a0f1e;
             --primary-color: #1a233b;
             --secondary-color: #2a3858;
-            --accent-color: #ffab00;
+            --accent-color: #ffab00; /* Gold */
             --text-color: #e0e0e0;
-            --buy-color: #00bfa5;
-            --sell-color: #ff5252;
+            --buy-color: #00bfa5; /* Teal for TP Hit */
+            --sell-color: #ff5252; /* Red for SL Hit */
         }
         body {
             font-family: 'Roboto', sans-serif;
@@ -60,8 +61,10 @@
             color: #fff;
         }
         .table-wrapper {
-            overflow-x: auto;
+            overflow-x: auto; /* Makes table scrollable on small screens */
         }
+        
+        /* Header & Nav */
         .header {
             display: flex;
             justify-content: space-between;
@@ -87,9 +90,13 @@
             background-color: var(--accent-color);
             color: var(--bg-color);
         }
+
+        /* Specific Styles */
         .outcome-tp_hit { color: var(--buy-color); font-weight: bold; }
         .outcome-sl_hit { color: var(--sell-color); font-weight: bold; }
         .no-history { text-align: center; padding: 50px; font-size: 1.2em; color: #888; }
+
+        /* Responsive Design */
         @media (max-width: 992px) {
             .header { flex-direction: column; gap: 15px; }
         }
@@ -126,7 +133,9 @@
                             <th>Close Time</th>
                         </tr>
                     </thead>
-                    <tbody id="history-body"></tbody>
+                    <tbody id="history-body">
+                        <!-- History rows will be inserted here by JavaScript -->
+                    </tbody>
                 </table>
             </div>
              <div id="no-history-message" class="no-history" style="display: none;">
@@ -143,16 +152,19 @@
                 const historyBody = document.getElementById('history-body');
                 const noHistoryMessage = document.getElementById('no-history-message');
                 
-                historyBody.innerHTML = '';
+                historyBody.innerHTML = ''; // Clear previous data
 
                 if (trades.length > 0) {
                     noHistoryMessage.style.display = 'none';
                     trades.forEach(trade => {
                         const row = document.createElement('tr');
                         const outcomeClass = `outcome-${trade.outcome}`;
+                        
+                        // Format dates for better readability
                         const entryTime = new Date(trade.entry_time + 'Z').toLocaleString();
                         const closeTime = new Date(trade.close_time + 'Z').toLocaleString();
 
+                        // اہم: یہاں trade.signal استعمال کیا گیا ہے (trade.signal_type نہیں)
                         row.innerHTML = `
                             <td><strong>${trade.symbol}</strong></td>
                             <td>${trade.signal.toUpperCase()}</td>
@@ -174,6 +186,7 @@
             }
         }
         
+        // Initial load
         fetchTradeHistory();
     </script>
 </body>
