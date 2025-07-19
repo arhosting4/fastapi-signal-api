@@ -3,6 +3,10 @@ import os
 from datetime import datetime
 
 SIGNALS_FILE = "active_signals.json"
+
+def save_signals_to_json(signals_list):
+    """
+    Active signals کو JSON file میں save کرتا ہے
     """
     try:
         # Create data directory if it doesn't exist
@@ -135,3 +139,4 @@ def clear_all_signals():
     except Exception as e:
         print(f"--- ERROR clearing signals: {e} ---")
         return False
+        
