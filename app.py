@@ -1,3 +1,5 @@
+# app.py
+
 import os
 import asyncio
 from fastapi import FastAPI, Depends, HTTPException
@@ -10,8 +12,8 @@ from typing import List, Optional
 # --- ڈیٹا بیس کے لیے امپورٹس ---
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
+# --- تبدیلی: اب SessionLocal یہاں سے امپورٹ ہوگا ---
 from src.database.models import create_db_and_tables, SessionLocal
-# --- نئی تبدیلی: CRUD فنکشنز اور ماڈلز امپورٹ کریں ---
 import database_crud as crud
 from src.database.models import CompletedTrade as CompletedTradeModel
 
@@ -37,7 +39,6 @@ scheduler = BackgroundScheduler()
 async def health_check(db: Session = Depends(get_db)):
     db_status = "ok"
     try:
-        # یہاں db انحصار کا استعمال کریں
         crud.get_completed_trades(db, limit=1) 
     except Exception:
         db_status = "error"
@@ -46,18 +47,12 @@ async def health_check(db: Session = Depends(get_db)):
 # --- API اینڈ پوائنٹس ---
 @app.get("/api/live-signal", response_class=JSONResponse)
 async def get_live_signal():
-    # ابھی بھی فرضی جواب
     return {"reason": "Database integration in progress..."}
 
-# --- نئی تبدیلی: تاریخ کا اینڈ پوائنٹ اب ڈیٹا بیس سے ڈیٹا لائے گا ---
 @app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
-    """
-    ڈیٹا بیس سے ٹریڈ کی تاریخ حاصل کرتا ہے۔
-    """
     try:
         trades = crud.get_completed_trades(db, limit=100)
-        # SQLAlchemy آبجیکٹس کو JSON کے لیے ڈکشنری میں تبدیل کریں
         return [
             {
                 "symbol": trade.symbol,
