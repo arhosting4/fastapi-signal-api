@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Performance History - ScalpMaster AI</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
+        .stat-card { background-color: #1f2937; border-radius: 0.75rem; padding: 1.5rem; text-align: center; }
+        .status-tp { color: #10B981; font-weight: 600; }
+        .status-sl { color: #EF4444; font-weight: 600; }
+        .status-expired { color: #F59E0B; font-weight: 600; }
+        th { background-color: #374151; }
+    </style>
+</head>
+<body class="antialiased">
+    <main class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-amber-400">Performance History</h1>
+            <p class="text-lg text-gray-400 mt-2">A transparent look at ScalpMaster AI's track record.</p>
+            <a href="/" class="text-indigo-400 hover:text-indigo-300 mt-4 inline-block">&larr; Back to Live Signal</a>
+        </header>
+
+        <!-- اعداد و شمار کا سیکشن -->
+        <section id="summary-stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="stat-card">
+                <h3 class="text-gray-400 text-sm font-medium">Total Trades</h3>
+                <p id="total-trades" class="text-2xl font-semibold text-white">0</p>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-gray-400 text-sm font-medium">Win Rate</h3>
+                <p id="win-rate" class="text-2xl font-semibold text-green-500">0%</p>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-gray-400 text-sm font-medium">Wins</h3>
+                <p id="total-wins" class="text-2xl font-semibold text-green-500">0</p>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-gray-400 text-sm font-medium">Losses</h3>
+                <p id="total-losses" class="text-2xl font-semibold text-red-500">0</p>
+            </div>
+        </section>
+
+        <!-- تاریخ کا ٹیبل -->
+        <section id="history-table-container" class="bg-gray-800 rounded-lg overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm text-left">
+                    <thead class="text-xs text-gray-300 uppercase">
+                        <tr>
+                            <th scope="col" class="px-4 py-3">Date</th>
+                            <th scope="col" class="px-4 py-3">Pair</th>
+                            <th scope="col" class="px-4 py-3">Signal</th>
+                            <th scope="col" class="px-4 py-3">Entry Price</th>
+                            <th scope="col" class="px-4 py-3">Outcome</th>
+                            <th scope="col" class="px-4 py-3">Closing Price</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                        <!-- ڈیٹا یہاں جاوا اسکرپٹ کے ذریعے بھرا جائے گا -->
+                        <tr><td colspan="6" class="text-center p-8">Loading history...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer class="text-center text-gray-500 mt-12 py-4 border-t border-gray-700">
+            <p>&copy; 2025 ScalpMaster AI. All rights reserved.</p>
+        </footer>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const tableBody = document.getElementById('history-table-body');
+            try {
+                const response = await fetch('/api/get_trade_history');
+                if (!response.ok) throw new Error('Failed to fetch history');
+                
+                const history = await response.json();
+                
+                if (history.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="6" class="text-center p-8">No trade history found yet.</td></tr>';
+                    return;
+                }
+
+                let tableHtml = '';
+                let wins = 0;
+                let losses = 0;
+
+                history.forEach(trade => {
+                    const outcome = trade.status || 'N/A';
+                    let outcomeClass = '';
+                    if (outcome === 'tp_hit') {
+                        outcomeClass = 'status-tp';
+                        wins++;
+                    } else if (outcome === 'sl_hit') {
+                        outcomeClass = 'status-sl';
+                        losses++;
+                    } else {
+                        outcomeClass = 'status-expired';
+                    }
+
+                    const signalTime = new Date(trade.timestamp).toLocaleString();
+                    
+                    tableHtml += `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="px-4 py-3">${signalTime}</td>
+                            <td class="px-4 py-3 font-medium">${trade.symbol} (${trade.timeframe})</td>
+                            <td class="px-4 py-3 font-bold ${trade.signal === 'buy' ? 'text-green-400' : 'text-red-400'}">${trade.signal.toUpperCase()}</td>
+                            <td class="px-4 py-3">${trade.price.toFixed(5)}</td>
+                            <td class="px-4 py-3 ${outcomeClass}">${outcome.replace('_', ' ').toUpperCase()}</td>
+                            <td class="px-4 py-3">${trade.closing_price ? trade.closing_price.toFixed(5) : 'N/A'}</td>
+                        </tr>
+                    `;
+                });
+
+                tableBody.innerHTML = tableHtml;
+
+                // اعداد و شمار کو اپ ڈیٹ کریں
+                const totalTrades = wins + losses;
+                document.getElementById('total-trades').textContent = history.length;
+                document.getElementById('total-wins').textContent = wins;
+                document.getElementById('total-losses').textContent = losses;
+                const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(1) : 0;
+                document.getElementById('win-rate').textContent = `${winRate}%`;
+
+            } catch (error) {
+                console.error("Error loading history:", error);
+                tableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-red-500">Error: Could not load trade history.</td></tr>`;
+            }
+        });
+    </script>
+</body>
+  </html>
+  
