@@ -1,73 +1,53 @@
-import pandas as pd
-from typing import List, Dict, Optional
+# supply_demand.py
 
-def find_zones(candles: List[Dict]) -> Dict[str, List[Dict]]:
+import pandas as pd
+
+def get_market_structure_analysis(candles: list, window: int = 10) -> dict:
     """
-    کینڈل ڈیٹا کا تجزیہ کرکے سپلائی اور ڈیمانڈ کے زونز تلاش کرتا ہے۔
+    کینڈلز کی بنیاد پر مارکیٹ کی ساخت (ٹرینڈ) اور سپلائی/ڈیمانڈ زونز کا تجزیہ کرتا ہے۔
     """
-    if len(candles) < 50:
-        return {"supply": [], "demand": []}
+    if len(candles) < window * 2:
+        return {"trend": "undetermined", "zone": "neutral", "reason": "Insufficient data for structure analysis."}
 
     df = pd.DataFrame(candles)
     df['high'] = pd.to_numeric(df['high'])
     df['low'] = pd.to_numeric(df['low'])
     df['close'] = pd.to_numeric(df['close'])
 
-    supply_zones = []
-    demand_zones = []
+    # سوئنگ ہائی اور لو کی شناخت کریں
+    df['swing_high'] = df['high'][(df['high'].shift(1) < df['high']) & (df['high'].shift(-1) < df['high'])]
+    df['swing_low'] = df['low'][(df['low'].shift(1) > df['low']) & (df['low'].shift(-1) > df['low'])]
 
-    # ایک سادہ لیکن موثر منطق: ہم ان علاقوں کو تلاش کریں گے جہاں ایک بڑی کینڈل کے بعد
-    # قیمت نے تیزی سے حرکت کی ہو۔
-    for i in range(1, len(df) - 1):
-        # سپلائی زون کی تلاش (Rally-Base-Drop)
-        # ایک مضبوط سبز کینڈل، اس کے بعد ایک چھوٹی کینڈل (بیس)، پھر ایک مضبوط سرخ کینڈل
-        is_rally = df['close'][i-1] > df['open'][i-1]
-        is_base = abs(df['close'][i] - df['open'][i]) < (df['high'][i] - df['low'][i]) * 0.5
-        is_drop = df['close'][i+1] < df['open'][i+1] and (df['open'][i+1] - df['close'][i+1]) > (df['high'][i-1] - df['low'][i-1])
+    recent_swings = df.tail(window * 2)
+    recent_highs = recent_swings['swing_high'].dropna()
+    recent_lows = recent_swings['swing_low'].dropna()
 
-        if is_rally and is_base and is_drop:
-            zone = {
-                "top": df['high'][i],
-                "bottom": df['low'][i],
-                "strength": (df['open'][i+1] - df['close'][i+1]) / df['close'][i] # گراوٹ کتنی مضبوط تھی
-            }
-            supply_zones.append(zone)
+    if recent_highs.empty or recent_lows.empty:
+        return {"trend": "ranging", "zone": "neutral", "reason": "No clear swing points recently."}
 
-        # ڈیمانڈ زون کی تلاش (Drop-Base-Rally)
-        # ایک مضبوط سرخ کینڈل، اس کے بعد ایک چھوٹی کینڈل (بیس)، پھر ایک مضبوط سبز کینڈل
-        is_drop_prev = df['close'][i-1] < df['open'][i-1]
-        # is_base پہلے سے کیلکولیٹڈ ہے
-        is_rally_next = df['close'][i+1] > df['open'][i+1] and (df['close'][i+1] - df['open'][i+1]) > (df['open'][i-1] - df['close'][i-1])
+    last_high = recent_highs.iloc[-1] # تازہ ترین سپلائی زون
+    last_low = recent_lows.iloc[-1]  # تازہ ترین ڈیمانڈ زون
+    last_close = df['close'].iloc[-1]
 
-        if is_drop_prev and is_base and is_rally_next:
-            zone = {
-                "top": df['high'][i],
-                "bottom": df['low'][i],
-                "strength": (df['close'][i+1] - df['open'][i+1]) / df['close'][i] # اضافہ کتنا مضبوط تھا
-            }
-            demand_zones.append(zone)
+    # قیمت کا زون سے فاصلہ
+    dist_to_demand = abs(last_close - last_low)
+    dist_to_supply = abs(last_close - last_high)
 
-    # سب سے مضبوط زونز کو فلٹر کریں
-    strong_supply = sorted([z for z in supply_zones if z['strength'] > 0.002], key=lambda x: x['strength'], reverse=True)
-    strong_demand = sorted([z for z in demand_zones if z['strength'] > 0.002], key=lambda x: x['strength'], reverse=True)
+    zone_status = "neutral"
+    if dist_to_demand < dist_to_supply:
+        zone_status = "near_demand"
+    elif dist_to_supply < dist_to_demand:
+        zone_status = "near_supply"
 
-    return {"supply": strong_supply[:3], "demand": strong_demand[:3]} # سب سے اوپر کے 3 زونز واپس کریں
+    # ٹرینڈ کی شناخت
+    trend = "ranging"
+    if len(recent_highs) >= 2 and len(recent_lows) >= 2:
+        # ہائر ہائی اور ہائر لو = اپ ٹرینڈ
+        if recent_highs.iloc[-1] > recent_highs.iloc[-2] and recent_lows.iloc[-1] > recent_lows.iloc[-2]:
+            trend = "uptrend"
+        # لوئر ہائی اور لوئر لو = ڈاؤن ٹرینڈ
+        elif recent_highs.iloc[-1] < recent_highs.iloc[-2] and recent_lows.iloc[-1] < recent_lows.iloc[-2]:
+            trend = "downtrend"
 
-def analyze_price_in_zones(price: float, zones: Dict[str, List[Dict]]) -> Dict[str, Optional[Dict]]:
-    """
-    یہ چیک کرتا ہے کہ آیا موجودہ قیمت کسی سپلائی یا ڈیمانڈ زون کے اندر ہے۔
-    """
-    analysis = {"in_supply": None, "in_demand": None}
-
-    for zone in zones.get("supply", []):
-        if zone['bottom'] <= price <= zone['top']:
-            analysis["in_supply"] = zone
-            break # جیسے ہی پہلا زون ملے، لوپ روک دیں
-
-    for zone in zones.get("demand", []):
-        if zone['bottom'] <= price <= zone['top']:
-            analysis["in_demand"] = zone
-            break
-
-    return analysis
-      
+    return {"trend": trend, "zone": zone_status, "reason": f"Price is {zone_status}. Current trend is {trend}."}
+    
