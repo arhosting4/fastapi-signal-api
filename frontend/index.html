@@ -37,8 +37,11 @@
         <header class="text-center mb-8">
             <h1 class="text-4xl font-bold text-amber-400">ScalpMaster AI</h1>
             <p class="text-lg text-gray-400 mt-2">Your Autonomous Signal Hunter</p>
-            <!-- یہ نیا لنک ہے -->
-            <a href="/history.html" class="text-indigo-400 hover:text-indigo-300 mt-4 inline-block">View Performance History &rarr;</a>
+            <!-- یہ نیا نیویگیشن سیکشن ہے -->
+            <div class="flex justify-center space-x-4 mt-4">
+                <a href="/history.html" class="text-indigo-400 hover:text-indigo-300">Performance History &rarr;</a>
+                <a href="/news.html" class="text-indigo-400 hover:text-indigo-300">News Center &rarr;</a>
+            </div>
         </header>
 
         <section id="dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -64,6 +67,7 @@
     </main>
 
     <script>
+        // ... (جاوا اسکرپٹ کا کوڈ ویسے ہی رہے گا جیسا پچھلے جواب میں تھا) ...
         const signalDisplay = document.getElementById('signal-display');
         const chartContainer = document.getElementById('chart-container');
         const chartTitle = document.getElementById('chart-title');
@@ -72,7 +76,7 @@
         let candlestickSeries = null;
 
         function initializeChart() {
-            if (chart) return; // اگر چارٹ پہلے سے موجود ہے تو دوبارہ نہ بنائیں
+            if (chart) return;
             try {
                 chartContainer.innerHTML = '';
                 chart = LightweightCharts.createChart(chartContainer, {
@@ -135,7 +139,7 @@
                         </div>`;
                     chartContainer.innerHTML = '<p class="text-center pt-16 text-gray-500">Chart data not available for this signal.</p>';
                     chartTitle.innerText = 'Market Chart';
-                    chart = null; // چارٹ کو ری سیٹ کریں
+                    chart = null;
                 } else {
                     signalDisplay.innerHTML = `
                         <div class="signal-card ${statusClass}">
@@ -171,7 +175,6 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             fetchAndDisplaySignal();
-            // ہر 60 سیکنڈ بعد سگنل کو خود بخود ریفریش کریں
             setInterval(fetchAndDisplaySignal, 60000);
         });
     </script>
