@@ -1,67 +1,85 @@
+# src/agents/feedback_memory.py
+
 import json
 import os
 
-FEEDBACK_FILE = "data/feedback_memory.json"
-os.makedirs("data", exist_ok=True)
+FEEDBACK_FILE = "feedback_memory.json"
+FEEDBACK_DIR = "data" # Directory to store feedback data
 
-# یقینی بنائیں کہ فائل موجود ہے
-if not os.path.exists(FEEDBACK_FILE):
+# Ensure the feedback directory exists
+os.makedirs(FEEDBACK_DIR, exist_ok=True)
+FEEDBACK_FILE_PATH = os.path.join(FEEDBACK_DIR, FEEDBACK_FILE)
+
+# Initialize memory file if not exist
+if not os.path.exists(FEEDBACK_FILE_PATH):
     try:
-        with open(FEEDBACK_FILE, "w") as f:
+        with open(FEEDBACK_FILE_PATH, "w") as f:
             json.dump({}, f)
-        print(f"✅ Created empty feedback memory file: {FEEDBACK_FILE}")
+        print(f"✅ Created empty feedback memory file: {FEEDBACK_FILE_PATH}")
     except Exception as e:
         print(f"⚠️ Error creating feedback memory file: {e}")
 
-def save_feedback(performance_key: str, feedback: str):
+def save_feedback(symbol: str, feedback: str):
     """
-    ایک مخصوص پرفارمنس کی (مثلاً 'XAU/USD_15m') کے لیے فیڈ بیک محفوظ کرتا ہے۔
+    Saves feedback for a given symbol.
+
+    Parameters:
+        symbol (str): The trading pair symbol.
+        feedback (str): The feedback string (e.g., "correct", "incorrect", "missed").
     """
     try:
-        with open(FEEDBACK_FILE, "r") as f:
+        with open(FEEDBACK_FILE_PATH, "r") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
+    except json.JSONDecodeError:
+        # Handle case where file might be empty or corrupted
         data = {}
-        print(f"⚠️ Feedback file was empty or corrupted, re-initializing.")
+        print(f"⚠️ Feedback file {FEEDBACK_FILE_PATH} was empty or corrupted, re-initializing.")
+    except FileNotFoundError:
+        data = {} # Should not happen if os.makedirs and initial dump worked
+        print(f"⚠️ Feedback file {FEEDBACK_FILE_PATH} not found, re-initializing.")
 
-    if performance_key not in data:
-        data[performance_key] = []
+    if symbol not in data:
+        data[symbol] = []
 
-    data[performance_key].append(feedback)
+    data[symbol].append(feedback)
 
     try:
-        with open(FEEDBACK_FILE, "w") as f:
+        with open(FEEDBACK_FILE_PATH, "w") as f:
             json.dump(data, f, indent=2)
-        print(f"✅ Feedback saved for '{performance_key}': {feedback}")
+        print(f"✅ Feedback saved for {symbol}: {feedback}")
     except Exception as e:
         print(f"⚠️ Error saving feedback: {e}")
 
-def get_feedback_stats(performance_key: str) -> dict:
+def get_feedback_stats(symbol: str) -> dict:
     """
-    ایک مخصوص پرفارمنس کی کے لیے فیڈ بیک کے اعداد و شمار حاصل کرتا ہے۔
+    Retrieves feedback statistics for a given symbol.
+
+    Parameters:
+        symbol (str): The trading pair symbol.
+
+    Returns:
+        dict: Statistics including total feedback and accuracy.
     """
     try:
-        with open(FEEDBACK_FILE, "r") as f:
+        with open(FEEDBACK_FILE_PATH, "r") as f:
             data = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        return {"total": 0, "accuracy": None, "correct": 0, "incorrect": 0}
+        return {"total": 0, "accuracy": None, "correct": 0, "incorrect": 0, "missed": 0}
 
-    if performance_key not in data or not data[performance_key]:
-        return {"total": 0, "accuracy": None, "correct": 0, "incorrect": 0}
+    if symbol not in data or len(data[symbol]) == 0:
+        return {"total": 0, "accuracy": None, "correct": 0, "incorrect": 0, "missed": 0}
 
-    feedback_list = data[performance_key]
-    total = len(feedback_list)
-    correct = feedback_list.count("correct")
-    incorrect = feedback_list.count("incorrect")
-    
-    # صرف 'correct' اور 'incorrect' کی بنیاد پر ایکوریسی کیلکولیٹ کریں
-    relevant_trades = correct + incorrect
-    accuracy = (correct / relevant_trades) * 100 if relevant_trades > 0 else 0
+    total = len(data[symbol])
+    correct = sum(1 for f in data[symbol] if f == "correct")
+    incorrect = sum(1 for f in data[symbol] if f == "incorrect")
+    missed = sum(1 for f in data[symbol] if f == "missed") # Assuming 'missed' is another feedback type
+
+    accuracy = (correct / total) * 100 if total > 0 else None
 
     return {
         "total": total,
         "correct": correct,
         "incorrect": incorrect,
-        "accuracy": round(accuracy, 2)
+        "missed": missed,
+        "accuracy": round(accuracy, 2) if accuracy is not None else None
     }
-    
