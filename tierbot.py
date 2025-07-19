@@ -1,6 +1,14 @@
+# src/agents/tierbot.py
+
 def get_tier(confidence: float) -> str:
     """
-    اعتماد کے اسکور کی بنیاد پر AI کا درجہ متعین کرتا ہے۔
+    Determines AI tier level based on confidence score.
+
+    Parameters:
+        confidence (float): Confidence level (0-100%).
+
+    Returns:
+        str: Tier level (e.g., "Tier 1 – Elite", "Tier 5 – Weak").
     """
     if confidence >= 90:
         return "Tier 1 – Elite"
