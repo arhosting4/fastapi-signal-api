@@ -1,5 +1,14 @@
 # filename: app.py
+
+# --- START: Python Path Injection (سب سے اہم تبدیلی) ---
+import sys
 import os
+
+# اس سے Python کو بتایا جائے گا کہ وہ پروجیکٹ کی مرکزی ڈائرکٹری میں بھی ماڈیولز تلاش کرے۔
+# یہ ModuleNotFoundError کو حل کرنے کا سب سے مضبوط طریقہ ہے۔
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# --- END: Python Path Injection ---
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -8,7 +17,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
-# --- مقامی امپورٹس (آپ کے ہائبرڈ ڈھانچے کے مطابق) ---
+# --- مقامی امپورٹس (اب یہ 100% کام کریں گے) ---
 from database_config import SessionLocal
 from database_models import create_db_and_tables
 import database_crud as crud
@@ -22,6 +31,7 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("--- Application Startup ---")
+    print(f"--- Python Path: {sys.path} ---") # ڈیبگنگ کے لیے
     create_db_and_tables()
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), args=[SessionLocal], misfire_grace_time=60)
     scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), args=[SessionLocal], misfire_grace_time=30)
@@ -59,4 +69,5 @@ async def get_news_endpoint():
         raise HTTPException(status_code=404, detail="Could not load news events.")
     return news
 
+# یقینی بنائیں کہ 'frontend' فولڈر روٹ ڈائرکٹری میں ہے۔
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
