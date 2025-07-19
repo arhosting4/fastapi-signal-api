@@ -1,5 +1,3 @@
-# app.py
-
 import os
 import asyncio
 from fastapi import FastAPI, Depends, HTTPException
@@ -7,23 +5,22 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from typing import List, Optional
 
-# --- ڈیٹا بیس کے لیے امپورٹس ---
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError
-# --- تبدیلی: اب SessionLocal یہاں سے امپورٹ ہوگا ---
 from src.database.models import create_db_and_tables, SessionLocal
 import database_crud as crud
-from src.database.models import CompletedTrade as CompletedTradeModel
+from signal_tracker import get_live_signal as get_cached_signal
 
-# .env فائل سے ویری ایبلز لوڈ کریں
+# --- ہمارے پس منظر کے کام ---
+from hunter import hunt_for_signals_job
+from feedback_checker import check_active_signals_job
+from sentinel import update_economic_calendar_cache
+
 load_dotenv()
-
-# FastAPI ایپ کی شروعات
 app = FastAPI(title="ScalpMaster AI API")
 
-# --- ڈیٹا بیس سیشن حاصل کرنے کا انحصار ---
 def get_db():
     db = SessionLocal()
     try:
@@ -31,10 +28,8 @@ def get_db():
     finally:
         db.close()
 
-# --- پس منظر کے کاموں کے لیے شیڈیولر ---
 scheduler = BackgroundScheduler()
 
-# --- ہیلتھ چیک اینڈ پوائنٹ ---
 @app.get("/health", status_code=200)
 async def health_check(db: Session = Depends(get_db)):
     db_status = "ok"
@@ -44,10 +39,12 @@ async def health_check(db: Session = Depends(get_db)):
         db_status = "error"
     return {"status": "ok", "database_status": db_status}
 
-# --- API اینڈ پوائنٹس ---
 @app.get("/api/live-signal", response_class=JSONResponse)
-async def get_live_signal():
-    return {"reason": "Database integration in progress..."}
+async def get_live_signal_api():
+    signal = get_cached_signal()
+    if not signal:
+        return {"reason": "AI is actively scanning the markets..."}
+    return signal
 
 @app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
@@ -55,29 +52,39 @@ async def get_history(db: Session = Depends(get_db)):
         trades = crud.get_completed_trades(db, limit=100)
         return [
             {
-                "symbol": trade.symbol,
-                "timeframe": trade.timeframe,
-                "signal_type": trade.signal_type,
-                "entry_price": trade.entry_price,
-                "outcome": trade.outcome,
-                "closed_at": trade.closed_at.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            for trade in trades
+                "symbol": trade.symbol, "timeframe": trade.timeframe,
+                "signal_type": trade.signal_type, "entry_price": trade.entry_price,
+                "outcome": trade.outcome, "closed_at": trade.closed_at.strftime("%Y-%m-%d %H:%M:%S")
+            } for trade in trades
         ]
     except Exception as e:
-        print(f"--- API ERROR in /api/history: {e} ---")
-        raise HTTPException(status_code=500, detail="Could not fetch trade history from database.")
+        raise HTTPException(status_code=500, detail="Could not fetch trade history.")
 
 @app.get("/api/news", response_class=JSONResponse)
-async def get_news():
-    return {}
+async def get_news(db: Session = Depends(get_db)):
+    try:
+        news_items = crud.get_cached_news(db)
+        return news_items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Could not fetch news.")
 
-# --- ایپ کے شروع اور بند ہونے پر ایونٹس ---
 @app.on_event("startup")
 async def startup_event():
     print("--- ScalpMaster AI Server is starting up... ---")
     create_db_and_tables()
-    print("--- Scheduler is paused during database setup. ---")
+    
+    # --- پس منظر کے کاموں کو دوبارہ شروع کریں ---
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=30), id="hunter_job", name="Signal Hunter")
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="feedback_job", name="Feedback Checker")
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_job", name="News Updater")
+    
+    # فوری طور پر ایک بار چلائیں تاکہ ایپ شروع ہوتے ہی ڈیٹا دستیاب ہو
+    await asyncio.sleep(2) # ایپ کو مکمل طور پر شروع ہونے دیں
+    scheduler.get_job("news_job").modify(next_run_time=datetime.now())
+    scheduler.get_job("hunter_job").modify(next_run_time=datetime.now())
+    
+    scheduler.start()
+    print("--- Scheduler started with all jobs. ---")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -85,5 +92,4 @@ async def shutdown_event():
     if scheduler.running:
         scheduler.shutdown()
 
-# --- اسٹیٹک فائلیں اور روٹ پیج (سب سے آخر میں) ---
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
