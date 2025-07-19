@@ -1,17 +1,11 @@
-# fusion_engine.py
-
 import traceback
 import httpx
 from typing import Dict, Any
-
-# --- نئی تبدیلی: ڈیٹا بیس سیشن کے لیے ---
 from sqlalchemy.orm import Session
 
-# ہمارے پروجیکٹ کے ماڈیولز
-# --- تبدیلی: get_dynamic_atr_multiplier کو strategybot سے امپورٹ کریں ---
 from strategybot import generate_core_signal, calculate_tp_sl, get_dynamic_atr_multiplier
 from patternai import detect_patterns
-from riskguardian import check_risk #<-- یہاں سے get_dynamic_atr_multiplier ہٹا دیا گیا ہے
+from riskguardian import check_risk
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
@@ -27,44 +21,31 @@ async def generate_final_signal(db: Session, symbol: str, candles: list, timefra
             return {"status": "no-signal", "reason": "Insufficient historical data."}
 
         pattern_data = detect_patterns(candles)
-        pattern_name = pattern_data.get("pattern", "No Specific Pattern")
-        pattern_type = pattern_data.get("type", "neutral")
-
         risk_assessment = check_risk(candles)
-        risk_status = risk_assessment.get("status", "Normal")
-        
         news_data = await get_news_analysis_for_symbol(symbol)
-        news_impact = news_data["impact"]
-
         market_structure = get_market_structure_analysis(candles)
 
-        confidence = get_confidence(db, core_signal, pattern_type, risk_status, news_impact, symbol)
-        
+        confidence = get_confidence(db, core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data.get("impact"), symbol)
         tier = get_tier(confidence)
-        reason = generate_reason(core_signal, pattern_data, risk_status, news_impact, confidence, market_structure)
+        reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data.get("impact"), confidence, market_structure)
 
-        # --- کوئی تبدیلی نہیں: یہ فنکشن اب strategybot سے آئے گا ---
-        atr_multiplier = get_dynamic_atr_multiplier(risk_status)
+        atr_multiplier = get_dynamic_atr_multiplier(risk_assessment.get("status"))
         tp_sl_data = calculate_tp_sl(candles, atr_multiplier=atr_multiplier)
         
-        tp, sl = None, None
+        tp, sl = (None, None)
         if tp_sl_data:
-            if core_signal == "buy":
-                tp, sl = tp_sl_data[0]
-            elif core_signal == "sell":
-                tp, sl = tp_sl_data[1]
+            if core_signal == "buy": tp, sl = tp_sl_data[0]
+            elif core_signal == "sell": tp, sl = tp_sl_data[1]
 
-        final_result = {
+        return {
             "status": "ok" if core_signal != "wait" else "no-signal",
-            "symbol": symbol, "signal": core_signal, "pattern": pattern_name,
-            "risk": risk_status, "news": news_impact, "reason": reason,
+            "symbol": symbol, "signal": core_signal, "pattern": pattern_data.get("pattern"),
+            "risk": risk_assessment.get("status"), "news": news_data.get("impact"), "reason": reason,
             "confidence": round(confidence, 2), "tier": tier, "timeframe": timeframe,
             "price": candles[-1]['close'] if candles else None,
             "tp": round(tp, 5) if tp is not None else None,
             "sl": round(sl, 5) if sl is not None else None,
         }
-        return final_result
-
     except Exception as e:
         print(f"--- CRITICAL ERROR in fusion_engine for {symbol}: {e} ---")
         traceback.print_exc()
