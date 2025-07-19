@@ -5,14 +5,6 @@ from typing import List, Dict, Tuple, Optional
 def calculate_tp_sl(candles: List[Dict], tp_multiplier: float, sl_multiplier: float) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """
     ATR اور متحرک ضربوں کی بنیاد پر TP/SL کا حساب لگاتا ہے۔
-    
-    Parameters:
-        candles (list): OHLC کینڈلز کی فہرست۔
-        tp_multiplier (float): رسک گارڈین سے حاصل کردہ TP کا ضرب۔
-        sl_multiplier (float): رسک گارڈین سے حاصل کردہ SL کا ضرب۔
-
-    Returns:
-        ایک ٹوپل جس میں (buy_tp_sl, sell_tp_sl) شامل ہیں۔
     """
     if not candles or len(candles) < 14:
         return None, None
@@ -22,7 +14,6 @@ def calculate_tp_sl(candles: List[Dict], tp_multiplier: float, sl_multiplier: fl
     df['low'] = pd.to_numeric(df['low'])
     df['close'] = pd.to_numeric(df['close'])
 
-    # ATR (Average True Range) کا حساب لگائیں
     atr = ta.atr(df['high'], df['low'], df['close'], length=14)
     if atr is None or atr.empty or pd.isna(atr.iloc[-1]):
         return None, None
@@ -30,11 +21,9 @@ def calculate_tp_sl(candles: List[Dict], tp_multiplier: float, sl_multiplier: fl
     last_atr = atr.iloc[-1]
     last_close = df['close'].iloc[-1]
 
-    # BUY سگنل کے لیے TP/SL
     tp_buy = last_close + (last_atr * tp_multiplier)
     sl_buy = last_close - (last_atr * sl_multiplier)
 
-    # SELL سگنل کے لیے TP/SL
     tp_sell = last_close - (last_atr * tp_multiplier)
     sl_sell = last_close + (last_atr * sl_multiplier)
 
@@ -43,12 +32,10 @@ def calculate_tp_sl(candles: List[Dict], tp_multiplier: float, sl_multiplier: fl
 def generate_core_signal(symbol: str, tf: str, candles: List[Dict]) -> Dict[str, str]:
     """
     بنیادی تکنیکی اشاروں کی بنیاد پر سگنل پیدا کرتا ہے۔
-    (اس فنکشن میں کوئی تبدیلی نہیں)
     """
     if len(candles) < 34:
         return {"signal": "wait"}
 
-    # ... (باقی تمام انڈیکیٹر کی منطق ویسی ہی رہے گی) ...
     closes = [c['close'] for c in candles]
     highs = [c['high'] for c in candles]
     lows = [c['low'] for c in candles]
