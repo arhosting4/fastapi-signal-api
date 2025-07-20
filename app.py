@@ -78,8 +78,8 @@ async def startup_event():
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_job", name="News Updater")
     
     scheduler.start()
-    # ابتدائی طور پر جابز کو فوری چلائیں
     await asyncio.sleep(2)
+    # UTC ٹائم زون کے ساتھ next_run_time سیٹ کریں
     scheduler.get_job("news_job").modify(next_run_time=datetime.now(scheduler.timezone))
     await asyncio.sleep(2)
     scheduler.get_job("hunter_job").modify(next_run_time=datetime.now(scheduler.timezone))
