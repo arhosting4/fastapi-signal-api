@@ -11,7 +11,6 @@ from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
-# --- اہم تبدیلی: market_structure کی جگہ supply_demand کو امپورٹ کریں ---
 from supply_demand import get_market_structure_analysis
 
 async def generate_final_signal(db: Session, symbol: str, candles: list, timeframe: str) -> Dict[str, Any]:
@@ -25,13 +24,12 @@ async def generate_final_signal(db: Session, symbol: str, candles: list, timefra
         pattern_data = detect_patterns(candles)
         risk_assessment = check_risk(candles)
         news_data = await get_news_analysis_for_symbol(symbol)
-        # --- اہم تبدیلی: یہاں بھی فنکشن کا نام وہی رہے گا ---
         market_structure = get_market_structure_analysis(candles)
 
         if risk_assessment.get("status") == "High" or news_data.get("impact") == "High":
             return {"status": "blocked", "reason": "High risk or high impact news."}
 
-        confidence = get_confidence(db, core_signal, pattern_data.get("type"), risk_assessment.get("status"), news_data.get("impact"), symbol)
+        confidence = get_confidence(db, core_signal, pattern_data.get("type", "neutral"), risk_assessment.get("status"), news_data.get("impact"), symbol)
         tier = get_tier(confidence)
         reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data.get("impact"), confidence, market_structure)
 
