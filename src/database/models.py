@@ -1,12 +1,20 @@
+# filename: src/database/models.py
+
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.sql import func
 import os
 
+# --- اہم تبدیلی: DATABASE_URL کو حاصل کریں اور اس کی موجودگی کو یقینی بنائیں ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set for models.")
 
+# --- اہم تبدیلی: Render.com اور دیگر ہوسٹنگ کے لیے PostgreSQL URL کو درست کریں ---
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# --- انجن کی تخلیق کو بہتر بنایا گیا ---
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
