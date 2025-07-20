@@ -55,7 +55,11 @@
             top: 0;
             z-index: 1000;
         }
-        .logo-container { display: flex; align-items: center; gap: 1.5rem; }
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
         .logo {
             font-family: 'Teko', sans-serif;
             font-size: 1.8rem;
@@ -65,9 +69,20 @@
         
         /* --- نیا: تھیم ٹوگل بٹن اسٹائل --- */
         #theme-toggle {
-            background: none; border: 1px solid var(--border); border-radius: 6px;
-            width: 40px; height: 40px; cursor: pointer;
-            color: var(--text-secondary); display: grid; place-items: center;
+            background: none; 
+            border: 1px solid var(--border); 
+            border-radius: 6px;
+            width: 40px; 
+            height: 40px; 
+            cursor: pointer;
+            color: var(--text-secondary); 
+            display: grid; 
+            place-items: center;
+            transition: all 0.3s ease;
+        }
+        #theme-toggle:hover {
+            border-color: var(--accent-gold);
+            color: var(--accent-gold);
         }
         #theme-toggle .fa-sun { display: none; }
         #theme-toggle .fa-moon { display: block; }
@@ -123,6 +138,9 @@
         tbody tr:last-child td {
             border-bottom: none;
         }
+        tbody tr:hover {
+            background-color: var(--secondary);
+        }
         .status-tag {
             padding: 0.3rem 0.8rem;
             border-radius: 15px;
@@ -165,16 +183,22 @@
             align-items: center;
             gap: 4px;
             font-size: 0.75rem;
+            transition: color 0.3s;
         }
         .mobile-nav a.active { color: var(--accent-gold); }
         .mobile-nav i { font-size: 1.2rem; }
 
         @media (max-width: 768px) {
-            .navbar-desktop, #theme-toggle { display: none; }
+            .navbar-desktop { display: none; }
             .mobile-nav { display: flex; }
             body { padding-bottom: 70px; }
             .main-container { padding: 1rem; }
             th, td { padding: 0.8rem 1rem; }
+            .logo-container { gap: 1rem; }
+            #theme-toggle { 
+                width: 35px; 
+                height: 35px; 
+            }
         }
     </style>
 </head>
@@ -239,59 +263,56 @@
 
     <script>
         // --- نیا: تھیم سوئچنگ کی منطق ---
-        const themeToggle = document.getElementById("theme-toggle");
+        const themeToggle = document.getElementById('theme-toggle');
         const docElement = document.documentElement;
 
         // صارف کی محفوظ کردہ ترجیح کو لوڈ کریں
-        const savedTheme = localStorage.getItem("theme") || "dark";
+        const savedTheme = localStorage.getItem('theme') || 'dark';
         docElement.className = savedTheme;
 
-        themeToggle.addEventListener("click", () => {
-            if (docElement.classList.contains("dark")) {
-                docElement.classList.remove("dark");
-                docElement.classList.add("light");
-                localStorage.setItem("theme", "light");
-            } else {
-                docElement.classList.remove("light");
-                docElement.classList.add("dark");
-                localStorage.setItem("theme", "dark");
-            }
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            docElement.classList.remove('dark', 'light');
+            docElement.classList.add(newTheme);
+            localStorage.setItem('theme', newTheme);
         });
 
         // --- پرانی ڈیٹا فیچنگ کی منطق ویسی ہی رہے گی --- 
         async function fetchTradeHistory() {
             try {
-                const response = await fetch("/api/history");
+                const response = await fetch('/api/history');
                 const trades = await response.json();
-                const historyBody = document.getElementById("history-body");
-                const noHistoryMessage = document.getElementById("no-history-message");
-                const historyTable = document.getElementById("history-table");
+                const historyBody = document.getElementById('history-body');
+                const noHistoryMessage = document.getElementById('no-history-message');
+                const historyTable = document.getElementById('history-table');
                 
-                historyBody.innerHTML = "";
+                historyBody.innerHTML = '';
 
                 if (trades && trades.length > 0) {
-                    noHistoryMessage.style.display = "none";
-                    historyTable.style.display = "table";
+                    noHistoryMessage.style.display = 'none';
+                    historyTable.style.display = 'table';
                     trades.forEach(trade => {
-                        const row = document.createElement("tr");
+                        const row = document.createElement('tr');
                         const outcomeClass = `status-${trade.outcome.toLowerCase()}`;
                         row.innerHTML = `
                             <td><strong>${trade.symbol}</strong><br><small>${trade.timeframe}</small></td>
                             <td>${trade.signal_type.toUpperCase()}</td>
                             <td>${trade.entry_price.toFixed(5)}</td>
-                            <td><span class="status-tag ${outcomeClass}">${trade.outcome.replace("_", " ").toUpperCase()}</span></td>
-                            <td>${new Date(trade.closed_at + "Z").toLocaleString()}</td>
+                            <td><span class="status-tag ${outcomeClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</span></td>
+                            <td>${new Date(trade.closed_at + 'Z').toLocaleString()}</td>
                         `;
                         historyBody.appendChild(row);
                     });
                 } else {
-                    noHistoryMessage.style.display = "block";
-                    historyTable.style.display = "none";
+                    noHistoryMessage.style.display = 'block';
+                    historyTable.style.display = 'none';
                 }
             } catch (error) {
-                console.error("Error fetching trade history:", error);
-                document.getElementById("no-history-message").innerHTML = "<h3><i class=\"fas fa-exclamation-triangle\"></i> Error</h3><p>Failed to load trade history.</p>";
-                document.getElementById("no-history-message").style.display = "block";
+                console.error('Error fetching trade history:', error);
+                document.getElementById('no-history-message').innerHTML = '<h3><i class="fas fa-exclamation-triangle"></i> Error</h3><p>Failed to load trade history.</p>';
+                document.getElementById('no-history-message').style.display = 'block';
             }
         }
         
@@ -301,4 +322,3 @@
 
 </body>
 </html>
-    
