@@ -69,9 +69,20 @@
         
         /* --- نیا: تھیم ٹوگل بٹن اسٹائل --- */
         #theme-toggle {
-            background: none; border: 1px solid var(--border); border-radius: 6px;
-            width: 40px; height: 40px; cursor: pointer;
-            color: var(--text-secondary); display: grid; place-items: center;
+            background: none; 
+            border: 1px solid var(--border); 
+            border-radius: 6px;
+            width: 40px; 
+            height: 40px; 
+            cursor: pointer;
+            color: var(--text-secondary); 
+            display: grid; 
+            place-items: center;
+            transition: all 0.3s ease;
+        }
+        #theme-toggle:hover {
+            border-color: var(--accent-gold);
+            color: var(--accent-gold);
         }
         #theme-toggle .fa-sun { display: none; }
         #theme-toggle .fa-moon { display: block; }
@@ -254,6 +265,7 @@
             align-items: center;
             gap: 4px;
             font-size: 0.75rem;
+            transition: color 0.3s;
         }
         .mobile-nav a.active { color: var(--accent-gold); }
         .mobile-nav i { font-size: 1.2rem; }
@@ -264,13 +276,18 @@
         }
 
         @media (max-width: 768px) {
-            .navbar-desktop, #theme-toggle { display: none; }
+            .navbar-desktop { display: none; }
             .mobile-nav { display: flex; }
             body { padding-bottom: 70px; }
             .main-container { padding: 1rem; }
             .summary-grid { grid-template-columns: 1fr 1fr; }
             .signals-grid { grid-template-columns: 1fr; }
             .signals-section-header { flex-direction: column; align-items: stretch; }
+            .logo-container { gap: 1rem; }
+            #theme-toggle { 
+                width: 35px; 
+                height: 35px; 
+            }
         }
     </style>
 </head>
@@ -333,15 +350,12 @@
         docElement.className = savedTheme;
 
         themeToggle.addEventListener('click', () => {
-            if (docElement.classList.contains('dark')) {
-                docElement.classList.remove('dark');
-                docElement.classList.add('light');
-                localStorage.setItem('theme', 'light');
-            } else {
-                docElement.classList.remove('light');
-                docElement.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
-            }
+            const currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            docElement.classList.remove('dark', 'light');
+            docElement.classList.add(newTheme);
+            localStorage.setItem('theme', newTheme);
         });
 
         // --- پرانی فلٹرنگ اور ڈیٹا فیچنگ کی منطق ویسی ہی رہے گی --- 
@@ -471,57 +485,5 @@
     </script>
 
 </body>
-</html>
-
----
-
-### **2. `history.html` (تھیم ٹوگل کے ساتھ مکمل)**
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trade History - ScalpMaster AI</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <style>
-        /* --- نیا: لائٹ اور ڈارک تھیم کے متغیرات --- */
-        :root {
-            --bg-dark: #0d1117; --primary-dark: #161b22; --secondary-dark: #21262d; --border-dark: #30363d;
-            --text-primary-dark: #c9d1d9; --text-secondary-dark: #8b949e;
-
-            --bg-light: #f6f8fa; --primary-light: #ffffff; --secondary-light: #f6f8fa; --border-light: #d0d7de;
-            --text-primary-light: #24292f; --text-secondary-light: #57606a;
-            
-            --accent-gold: #ffab00;
-            --status-success: #238636;
-            --status-fail: #da3633;
-            --status-expired: #a37100;
-        }
+        </html>
         
-        html.dark {
-            --bg: var(--bg-dark); --primary: var(--primary-dark); --secondary: var(--secondary-dark); --border: var(--border-dark);
-            --text-primary: var(--text-primary-dark); --text-secondary: var(--text-secondary-dark);
-        }
-        html.light {
-            --bg: var(--bg-light); --primary: var(--primary-light); --secondary: var(--secondary-light); --border: var(--border-light);
-            --text-primary: var(--text-primary-light); --text-secondary: var(--text-secondary-light);
-        }
-        
-        html {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg);
-            color: var(--text-primary);
-            transition: background-color 0.3s, color 0.3s;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-        }
-
-       
