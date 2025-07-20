@@ -3,12 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI</title>
+    <title>ScalpMaster AI - Live Signals</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
-    <!-- اہم: چارٹ لائبریری کو مستحکم CDN سے لوڈ کریں -->
-    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
             --bg-color: #0a0f1e; --primary-color: #1a233b; --secondary-color: #2a3858;
@@ -16,23 +14,34 @@
             --buy-color: #00bfa5; --sell-color: #ff5252; --wait-color: #ffc107;
         }
         body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
-        .container { max-width: 900px; margin: auto; }
+        .container { max-width: 1200px; margin: auto; }
         .header { text-align: center; margin-bottom: 20px; }
         .header h1 { font-family: 'Teko', sans-serif; font-size: 3em; color: var(--accent-color); margin: 0; }
         .navbar { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; }
         .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 20px; border-radius: 6px; transition: all 0.3s; }
         .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); font-weight: bold; }
-        .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
-        .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: center; }
-        .signal-type { font-size: 3.5em; font-weight: bold; text-align: center; padding: 20px; border-radius: 8px; }
+        
+        /* --- اہم تبدیلی: سگنل گرڈ لے آؤٹ --- */
+        #signals-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .signal-card {
+            background: rgba(26, 35, 59, 0.7); backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
+            padding: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            display: flex; flex-direction: column;
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; margin-bottom: 15px; }
+        .card-header .symbol { font-family: 'Teko', sans-serif; font-size: 2em; }
+        .card-header .signal-type { font-size: 1.5em; font-weight: bold; padding: 5px 10px; border-radius: 6px; }
         .signal-type.buy { background-color: var(--buy-color); }
         .signal-type.sell { background-color: var(--sell-color); }
-        .signal-type.wait { background-color: var(--wait-color); color: var(--bg-color); }
-        .details p { margin: 10px 0; font-size: 1.1em; }
-        .details strong { color: #fff; float: right; }
-        .reason { margin-top: 15px; font-style: italic; color: #ccc; }
-        .last-updated { text-align: center; margin-top: 20px; color: #888; }
-        @media (max-width: 768px) { .signal-grid { grid-template-columns: 1fr; } }
+        .details p { margin: 8px 0; font-size: 1em; display: flex; justify-content: space-between; }
+        .details strong { color: #fff; }
+        .reason { margin-top: 15px; font-style: italic; color: #ccc; font-size: 0.9em; }
+        .no-signals { text-align: center; padding: 50px; font-size: 1.5em; color: #888; grid-column: 1 / -1; }
     </style>
 </head>
 <body>
@@ -41,39 +50,18 @@
             <h1>SCALPMASTER AI</h1>
         </header>
         <nav class="navbar">
-            <a href="index.html" class="active">Live Signal</a>
+            <a href="index.html" class="active">Live Signals</a>
             <a href="history.html">Trade History</a>
             <a href="news.html">Market News</a>
         </nav>
-        <div class="glass-panel">
-            <div class="signal-grid">
-                <div id="signal-type-container" class="signal-type wait">WAIT</div>
-                <div class="details">
-                    <p>Symbol: <strong id="signal-symbol">N/A</strong></p>
-                    <p>Timeframe: <strong id="signal-timeframe">N/A</strong></p>
-                    <p>Entry Price: <strong id="signal-price">N/A</strong></p>
-                    <p>Take Profit: <strong id="signal-tp">N/A</strong></p>
-                    <p>Stop Loss: <strong id="signal-sl">N/A</strong></p>
-                    <p>Confidence: <strong id="signal-confidence">N/A</strong></p>
-                    <p>AI Tier: <strong id="signal-tier">N/A</strong></p>
-                </div>
-            </div>
-            <p class="reason"><strong>AI Reason:</strong> <span id="signal-reason">AI is actively scanning the markets...</span></p>
+        <!-- --- اہم تبدیلی: سگنلز کے لیے کنٹینر --- -->
+        <div id="signals-container">
+            <!-- سگنل کارڈز یہاں JavaScript کے ذریعے ڈالے جائیں گے -->
         </div>
-        <p class="last-updated">Last Updated: <span id="last-updated-time">Never</span></p>
     </div>
 
     <script>
-        const symbolEl = document.getElementById('signal-symbol');
-        const timeframeEl = document.getElementById('signal-timeframe');
-        const priceEl = document.getElementById('signal-price');
-        const tpEl = document.getElementById('signal-tp');
-        const slEl = document.getElementById('signal-sl');
-        const confidenceEl = document.getElementById('signal-confidence');
-        const tierEl = document.getElementById('signal-tier');
-        const reasonEl = document.getElementById('signal-reason');
-        const typeContainerEl = document.getElementById('signal-type-container');
-        const lastUpdatedEl = document.getElementById('last-updated-time');
+        const signalsContainer = document.getElementById('signals-container');
 
         function formatPrice(symbol, price) {
             if (typeof price !== 'number') return 'N/A';
@@ -81,50 +69,55 @@
             return price.toFixed(isCrypto ? 2 : 5);
         }
 
-        async function fetchLiveSignal() {
-            try {
-                // --- اہم تبدیلی: API اینڈ پوائنٹ کو درست کیا گیا ---
-                const response = await fetch('/api/live-signal');
-                const signal = await response.json();
+        function createSignalCard(signal) {
+            const card = document.createElement('div');
+            card.className = 'signal-card';
 
-                if (signal && signal.symbol) {
-                    symbolEl.textContent = signal.symbol;
-                    timeframeEl.textContent = signal.timeframe;
-                    priceEl.textContent = formatPrice(signal.symbol, signal.price);
-                    tpEl.textContent = formatPrice(signal.symbol, signal.tp);
-                    slEl.textContent = formatPrice(signal.symbol, signal.sl);
-                    // --- اہم تبدیلی: اعتماد کو فیصد میں دکھایا گیا ---
-                    confidenceEl.textContent = `${signal.confidence}%`;
-                    tierEl.textContent = signal.tier;
-                    reasonEl.textContent = signal.reason;
-                    
-                    typeContainerEl.textContent = signal.signal.toUpperCase();
-                    typeContainerEl.className = `signal-type ${signal.signal.toLowerCase()}`;
+            const signalTypeClass = signal.signal.toLowerCase();
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <div class="symbol">${signal.symbol} (${signal.timeframe})</div>
+                    <div class="signal-type ${signalTypeClass}">${signal.signal.toUpperCase()}</div>
+                </div>
+                <div class="details">
+                    <p>Entry Price: <strong>${formatPrice(signal.symbol, signal.price)}</strong></p>
+                    <p>Take Profit: <strong>${formatPrice(signal.symbol, signal.tp)}</strong></p>
+                    <p>Stop Loss: <strong>${formatPrice(signal.symbol, signal.sl)}</strong></p>
+                    <p>Confidence: <strong>${signal.confidence}%</strong></p>
+                    <p>AI Tier: <strong>${signal.tier}</strong></p>
+                </div>
+                <p class="reason"><strong>AI Reason:</strong> ${signal.reason}</p>
+            `;
+            return card;
+        }
+
+        async function fetchLiveSignals() {
+            try {
+                // --- اہم تبدیلی: نئے API اینڈ پوائنٹ کو کال کریں ---
+                const response = await fetch('/api/live-signals');
+                const data = await response.json();
+                
+                signalsContainer.innerHTML = ''; // پرانے کارڈز کو صاف کریں
+
+                if (Array.isArray(data) && data.length > 0) {
+                    data.forEach(signal => {
+                        const card = createSignalCard(signal);
+                        signalsContainer.appendChild(card);
+                    });
                 } else {
-                    reasonEl.textContent = signal.reason || "AI is actively scanning the markets...";
-                    typeContainerEl.textContent = 'WAIT';
-                    typeContainerEl.className = 'signal-type wait';
-                    symbolEl.textContent = 'N/A';
-                    timeframeEl.textContent = 'N/A';
-                    priceEl.textContent = 'N/A';
-                    tpEl.textContent = 'N/A';
-                    slEl.textContent = 'N/A';
-                    confidenceEl.textContent = 'N/A';
-                    tierEl.textContent = 'N/A';
+                    // اگر کوئی سگنل نہیں ہے تو پیغام دکھائیں
+                    signalsContainer.innerHTML = \`<div class="no-signals">${data.message || 'AI is actively scanning the markets...'}</div>\`;
                 }
             } catch (error) {
-                console.error('Error fetching live signal:', error);
-                reasonEl.textContent = 'Failed to connect to the server.';
-                typeContainerEl.textContent = 'ERROR';
-                typeContainerEl.className = 'signal-type sell';
-            } finally {
-                lastUpdatedEl.textContent = new Date().toLocaleTimeString();
+                console.error('Error fetching live signals:', error);
+                signalsContainer.innerHTML = '<div class="no-signals">Failed to connect to the server. Please try again later.</div>';
             }
         }
 
-        // Fetch data on load and then every 15 seconds
-        fetchLiveSignal();
-        setInterval(fetchLiveSignal, 15000);
+        // پیج لوڈ ہونے پر اور پھر ہر 30 سیکنڈ بعد ڈیٹا حاصل کریں
+        fetchLiveSignals();
+        setInterval(fetchLiveSignals, 30000);
     </script>
 </body>
 </html>
