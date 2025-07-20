@@ -1,74 +1,205 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI - Market News</title>
+    <title>Market News - ScalpMaster AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* --- مشترکہ اسٹائلز --- */
         :root {
-            --bg-color: #0a0f1e;
-            --primary-color: #1a233b;
-            --secondary-color: #2a3858;
-            --accent-color: #ffab00;
-            --text-color: #e0e0e0;
+            --bg-dark: #0d1117;
+            --primary-dark: #161b22;
+            --secondary-dark: #21262d;
+            --border-dark: #30363d;
+            --text-primary-dark: #c9d1d9;
+            --text-secondary-dark: #8b949e;
+            --accent-gold: #ffab00;
         }
-        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; }
-        .container { width: 95%; max-width: 1200px; margin: 20px auto; }
-        .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
-        h2 { font-family: 'Teko', sans-serif; font-size: 2.2em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
         
-        /* --- ہیڈر اور نیویگیشن بار --- */
-        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: var(--primary-color); }
-        .header h1 { font-family: 'Teko', sans-serif; font-size: 2em; color: #fff; margin: 0; }
-        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 15px; font-weight: 500; border-radius: 6px; transition: background-color 0.3s, color 0.3s; }
-        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); }
+        html {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary-dark);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* --- ہیڈر (ڈیش بورڈ جیسا) --- */
+        .header {
+            background-color: var(--primary-dark);
+            border-bottom: 1px solid var(--border-dark);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .logo {
+            font-family: 'Teko', sans-serif;
+            font-size: 1.8rem;
+            color: var(--accent-gold);
+            letter-spacing: 1px;
+        }
+        .navbar-desktop a {
+            color: var(--text-secondary-dark);
+            text-decoration: none;
+            margin-left: 1.5rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        .navbar-desktop a:hover, .navbar-desktop a.active {
+            color: var(--text-primary-dark);
+        }
+        .mobile-menu-button { display: none; }
+
+        /* --- مین کنٹینر --- */
+        .main-container {
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .page-header {
+            font-family: 'Teko', sans-serif;
+            font-size: 2rem;
+            color: var(--text-primary-dark);
+            margin-bottom: 1.5rem;
+        }
 
         /* --- نیوز گرڈ --- */
-        .news-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 25px; }
-        .news-card { background-color: var(--primary-color); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.3s, box-shadow 0.3s; border: 1px solid var(--secondary-color); }
-        .news-card:hover { transform: translateY(-5px); box-shadow: 0 12px 24px rgba(0,0,0,0.5); }
-        .news-content { padding: 20px; display: flex; flex-direction: column; flex-grow: 1; }
-        .news-title { font-size: 1.3em; font-weight: 700; color: #fff; margin-bottom: 10px; line-height: 1.3; }
-        .news-snippet { font-size: 1em; line-height: 1.6; flex-grow: 1; margin-bottom: 15px; color: #c0c0c0; }
-        .news-footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; color: #aaa; }
-        .news-source { font-weight: bold; color: var(--accent-color); }
-        .read-more { color: var(--accent-color); text-decoration: none; font-weight: bold; align-self: flex-start; margin-top: 15px; padding: 8px 12px; border: 1px solid var(--accent-color); border-radius: 5px; transition: background-color 0.3s, color 0.3s; }
-        .read-more:hover { background-color: var(--accent-color); color: var(--bg-color); }
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+        .news-card {
+            background-color: var(--primary-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .news-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .news-content {
+            padding: 1.5rem;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .news-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 0 0 0.5rem 0;
+        }
+        .news-source {
+            color: var(--text-secondary-dark);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        .news-snippet {
+            color: var(--text-secondary-dark);
+            line-height: 1.6;
+            flex-grow: 1;
+        }
+        .read-more {
+            color: var(--accent-gold);
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 1rem;
+            align-self: flex-start;
+        }
+        
+        .no-data-message {
+            background-color: var(--primary-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            color: var(--text-secondary-dark);
+        }
 
-        /* --- رسپانسیو ڈیزائن --- */
+        /* --- موبائل نیویگیشن (ڈیش بورڈ جیسا) --- */
+        .mobile-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: var(--primary-dark);
+            border-top: 1px solid var(--border-dark);
+            justify-content: space-around;
+            padding: 0.5rem 0;
+            z-index: 1000;
+        }
+        .mobile-nav a {
+            color: var(--text-secondary-dark);
+            text-decoration: none;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.75rem;
+        }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+
         @media (max-width: 768px) {
-            .header { flex-direction: column; gap: 10px; }
-            .container { width: 100%; padding: 10px; margin: 10px 0; }
-            .glass-panel { padding: 15px; }
-            h2 { font-size: 1.8em; }
+            .navbar-desktop { display: none; }
+            .mobile-nav { display: flex; }
+            body { padding-bottom: 70px; }
+            .main-container { padding: 1rem; }
             .news-grid { grid-template-columns: 1fr; }
-            .news-title { font-size: 1.1em; }
-            .news-snippet { font-size: 0.9em; }
         }
     </style>
 </head>
 <body>
+
     <header class="header">
-        <h1>SCALPMASTER AI</h1>
-        <nav class="navbar">
-            <a href="index.html">Live Signals</a>
-            <a href="history.html">Trade History</a>
-            <a href="news.html" class="active">Market News</a>
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html">Dashboard</a>
+            <a href="history.html">History</a>
+            <a href="news.html" class="active">News</a>
         </nav>
     </header>
 
-    <div class="container">
-        <div class="glass-panel">
-            <h2>Latest Market News</h2>
-            <div id="news-grid" class="news-grid">
-                <!-- نیوز کارڈز یہاں شامل کیے جائیں گے -->
-            </div>
+    <main class="main-container">
+        <h2 class="page-header">Latest Market News</h2>
+        <div class="news-grid" id="news-grid">
+            <!-- نیوز کارڈز یہاں جاوا اسکرپٹ سے شامل ہوں گے -->
         </div>
-    </div>
+        <div class="no-data-message" id="no-news-message" style="display: none;">
+            <h3><i class="fas fa-search"></i> No News Found</h3>
+            <p>Could not retrieve market news at this time.</p>
+        </div>
+    </main>
+
+    <nav class="mobile-nav">
+        <a href="index.html">
+            <i class="fas fa-chart-line"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="history.html">
+            <i class="fas fa-history"></i>
+            <span>History</span>
+        </a>
+        <a href="news.html" class="active">
+            <i class="fas fa-newspaper"></i>
+            <span>News</span>
+        </a>
+    </nav>
 
     <script>
         async function fetchNews() {
@@ -76,40 +207,41 @@
                 const response = await fetch('/api/news');
                 const newsData = await response.json();
                 const newsGrid = document.getElementById('news-grid');
-                newsGrid.innerHTML = ''; 
+                const noNewsMessage = document.getElementById('no-news-message');
+                newsGrid.innerHTML = '';
 
                 const articles = newsData.articles || [];
 
                 if (articles.length > 0) {
+                    noNewsMessage.style.display = 'none';
+                    newsGrid.style.display = 'grid';
                     articles.forEach(item => {
                         const card = document.createElement('div');
                         card.className = 'news-card';
                         const snippet = item.snippet || item.title || 'No summary available.';
                         card.innerHTML = `
                             <div class="news-content">
-                                <div class="news-title">${item.title || 'No Title'}</div>
+                                <h3 class="news-title">${item.title || 'No Title'}</h3>
+                                <p class="news-source">${item.source || 'Unknown Source'}</p>
                                 <p class="news-snippet">${snippet.substring(0, 150)}...</p>
-                                <div class="news-footer">
-                                    <div>
-                                        Source: <span class="news-source">${item.source || 'Unknown'}</span>
-                                    </div>
-                                </div>
-                                <a href="${item.url || '#'}" target="_blank" class="read-more">Read Full Story &rarr;</a>
+                                <a href="${item.url || '#'}" target="_blank" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
                             </div>
                         `;
                         newsGrid.appendChild(card);
                     });
                 } else {
-                    newsGrid.innerHTML = '<p>No news found at the moment. The AI is working.</p>';
+                    noNewsMessage.style.display = 'block';
+                    newsGrid.style.display = 'none';
                 }
             } catch (error) {
                 console.error('Error fetching news:', error);
-                document.getElementById('news-grid').innerHTML = '<p>Failed to load news. Please try again later.</p>';
+                document.getElementById('no-news-message').style.display = 'block';
             }
         }
         
         fetchNews();
-        setInterval(fetchNews, 15 * 60 * 1000);
+        setInterval(fetchNews, 15 * 60 * 1000); // ہر 15 منٹ بعد تازہ کریں
     </script>
+
 </body>
 </html>
