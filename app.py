@@ -1,3 +1,5 @@
+# filename: app.py
+
 import os
 import asyncio
 from datetime import datetime
@@ -13,13 +15,14 @@ from sqlalchemy.orm import Session
 # ہمارے پروجیکٹ کے ماڈیولز
 from src.database.models import create_db_and_tables, SessionLocal
 import database_crud as crud
-from signal_tracker import get_live_signal as get_cached_signal
+# --- اہم تبدیلی: signal_tracker سے نیا فنکشن امپورٹ کیا گیا ---
+from signal_tracker import get_live_signals
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 
 load_dotenv()
-app = FastAPI(title="ScalpMaster AI API")
+app = FastAPI(title="ScalpMaster AI API - Multi-Signal Edition")
 
 def get_db():
     db = SessionLocal()
@@ -32,14 +35,21 @@ scheduler = BackgroundScheduler(timezone="UTC")
 
 @app.get("/health", status_code=200)
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "mode": "multi-signal"}
 
-@app.get("/api/live-signal", response_class=JSONResponse)
-async def get_live_signal_api():
-    signal = get_cached_signal()
-    if not signal:
-        return {"reason": "AI is actively scanning the markets..."}
-    return signal
+# --- اہم تبدیلی: یہ اینڈ پوائنٹ اب سگنلز کی فہرست لوٹاتا ہے ---
+@app.get("/api/live-signals", response_class=JSONResponse)
+async def get_live_signals_api():
+    """
+    تمام فعال، اعلیٰ اعتماد والے سگنلز کی فہرست فراہم کرتا ہے۔
+    """
+    signals = get_live_signals()
+    if not signals:
+        return JSONResponse(
+            content={"message": "AI is actively scanning the markets. No high-confidence signals at the moment."},
+            status_code=200
+        )
+    return signals
 
 @app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
@@ -70,11 +80,13 @@ async def startup_event():
     print("--- ScalpMaster AI Server is starting up... ---")
     create_db_and_tables()
     
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=45), id="hunter_job", name="Signal Hunter")
+    # --- تبدیلی: ہنٹر جاب کو کم وقفے سے چلایا جا رہا ہے ---
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunter_job", name="Signal Hunter")
     scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="feedback_job", name="Feedback Checker")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_job", name="News Updater")
     
     await asyncio.sleep(2)
+    # پہلی بار فوری طور پر چلائیں
     scheduler.get_job("news_job").modify(next_run_time=datetime.now())
     scheduler.get_job("hunter_job").modify(next_run_time=datetime.now())
     
@@ -87,4 +99,5 @@ async def shutdown_event():
         scheduler.shutdown()
     print("--- ScalpMaster AI Server is shutting down. ---")
 
+# فرنٹ اینڈ فائلوں کو پیش کرنے کے لیے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
