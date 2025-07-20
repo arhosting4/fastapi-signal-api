@@ -1,52 +1,50 @@
-import os
 import httpx
-from datetime import datetime, time
+import asyncio
+from datetime import datetime
+from sqlalchemy.orm import Session
 
-MARKETAUX_API_TOKEN = os.getenv("MARKETAUX_API_TOKEN")
+from utils import key_manager
+from database_crud import update_news_cache, get_cached_news
+from src.database.models import SessionLocal
 
-# --- اہم تبدیلی: یہاں client پیرامیٹر شامل کریں ---
-async def check_news(symbol: str, client: httpx.AsyncClient) -> dict:
-    """
-    Checks for high-impact news events using the Marketaux API.
-    """
-    # اگر API ٹوکن سیٹ نہیں ہے تو ایک عمومی جواب واپس کریں
-    if not MARKETAUX_API_TOKEN:
-        print("⚠️ Marketaux API token not set. Skipping news check.")
-        return {"impact": "Clear", "reason": "News analysis is disabled."}
+async def update_economic_calendar_cache():
+    print("--- SENTINEL: Updating economic calendar cache... ---")
+    api_key = key_manager.get_api_key()
+    if not api_key: return
 
-    # کرنسی پیئرز سے بنیادی کرنسی نکالیں (مثلاً، EUR/USD -> EUR,USD)
-    currencies = symbol.replace('/', ',').split(',')[0:2]
-    currency_filter = ",".join(currencies)
-
-    url = f"https://api.marketaux.com/v1/news/all?symbols={currency_filter}&filter_entities=true&group=sentiment&api_token={MARKETAUX_API_TOKEN}"
-
+    url = f"https://api.twelvedata.com/economic_calendar?country=US,GB,DE,JP,CN&apikey={api_key}"
     try:
-        response = await client.get(url, timeout=10)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=20)
+        if response.status_code == 429:
+            key_manager.mark_key_as_limited(api_key)
+            return
         response.raise_for_status()
         data = response.json()
-
-        if not data or not data.get("data"):
-            return {"impact": "Clear", "reason": "No significant news found."}
-
-        # خبروں کے سینٹیمنٹ کا تجزیہ کریں
-        high_impact_score = 0
-        for news_item in data["data"]:
-            # 'sentiment_score' کی موجودگی کو چیک کریں
-            if 'sentiment_score' in news_item:
-                # اگر سینٹیمنٹ بہت زیادہ مثبت یا منفی ہے تو اسے ہائی امپیکٹ سمجھیں
-                if abs(news_item["sentiment_score"]) > 0.6:
-                    high_impact_score += 1
-        
-        if high_impact_score >= 2: # اگر 2 یا زیادہ ہائی امپیکٹ خبریں ہیں
-            return {"impact": "High", "reason": f"High-impact news detected for {currency_filter}."}
-        elif high_impact_score == 1:
-            return {"impact": "Medium", "reason": f"Medium-impact news detected for {currency_filter}."}
-        else:
-            return {"impact": "Clear", "reason": "No significant market-moving news found."}
-
-    except httpx.RequestError as e:
-        print(f"⚠️ News API request failed: {e}")
-        return {"impact": "Clear", "reason": "Could not fetch news data."}
+        db = SessionLocal()
+        try:
+            update_news_cache(db, data)
+            print("--- SENTINEL: News cache updated successfully. ---")
+        finally:
+            db.close()
     except Exception as e:
-        print(f"⚠️ An unexpected error occurred during news check: {e}")
-        return {"impact": "Clear", "reason": "An error occurred during news analysis."}
+        print(f"--- SENTINEL CRITICAL ERROR: Could not update news cache: {e} ---")
+
+async def get_news_analysis_for_symbol(symbol: str):
+    db = SessionLocal()
+    try:
+        all_events = get_cached_news(db)
+        if not all_events or 'events' not in all_events:
+            return {"impact": "Clear", "reason": "News cache is empty."}
+    finally:
+        db.close()
+
+    symbol_base = symbol.split('/')[0]
+    high_impact_events = [
+        event for event in all_events['events']
+        if event.get('importance') == 'high' and symbol_base in event.get('currency', '')
+    ]
+    if high_impact_events:
+        return {"impact": "High", "reason": f"High-impact news for {symbol_base} is scheduled."}
+    return {"impact": "Clear", "reason": "No high-impact news scheduled for this symbol."}
+    
