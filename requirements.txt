@@ -9,7 +9,7 @@ requests==2.32.3
 # Data and AI
 numpy==1.26.4
 pandas==2.2.2
-pandas_ta
+pandas-ta==0.3.12b
 TA-Lib
 
 # Scheduling and Background Tasks
