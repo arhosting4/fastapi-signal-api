@@ -9,6 +9,7 @@ requests==2.32.3
 # Data and AI
 numpy==1.26.4
 pandas==2.2.2
+pandas_ta
 
 # Scheduling and Background Tasks
 apscheduler==3.10.4
