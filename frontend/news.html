@@ -52,7 +52,11 @@
             top: 0;
             z-index: 1000;
         }
-        .logo-container { display: flex; align-items: center; gap: 1.5rem; }
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
         .logo {
             font-family: 'Teko', sans-serif;
             font-size: 1.8rem;
@@ -230,60 +234,60 @@
 
     <script>
         // --- نیا: تھیم سوئچنگ کی منطق ---
-        const themeToggle = document.getElementById('theme-toggle');
+        const themeToggle = document.getElementById("theme-toggle");
         const docElement = document.documentElement;
 
         // صارف کی محفوظ کردہ ترجیح کو لوڈ کریں
-        const savedTheme = localStorage.getItem('theme') || 'dark';
+        const savedTheme = localStorage.getItem("theme") || "dark";
         docElement.className = savedTheme;
 
-        themeToggle.addEventListener('click', () => {
-            if (docElement.classList.contains('dark')) {
-                docElement.classList.remove('dark');
-                docElement.classList.add('light');
-                localStorage.setItem('theme', 'light');
+        themeToggle.addEventListener("click", () => {
+            if (docElement.classList.contains("dark")) {
+                docElement.classList.remove("dark");
+                docElement.classList.add("light");
+                localStorage.setItem("theme", "light");
             } else {
-                docElement.classList.remove('light');
-                docElement.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
+                docElement.classList.remove("light");
+                docElement.classList.add("dark");
+                localStorage.setItem("theme", "dark");
             }
         });
 
         // --- پرانی نیوز فیچنگ کی منطق ویسی ہی رہے گی ---
         async function fetchNews() {
             try {
-                const response = await fetch('/api/news');
+                const response = await fetch("/api/news");
                 const newsData = await response.json();
-                const newsGrid = document.getElementById('news-grid');
-                const noNewsMessage = document.getElementById('no-news-message');
-                newsGrid.innerHTML = '';
+                const newsGrid = document.getElementById("news-grid");
+                const noNewsMessage = document.getElementById("no-news-message");
+                newsGrid.innerHTML = "";
 
                 const articles = newsData.articles || [];
 
                 if (articles.length > 0) {
-                    noNewsMessage.style.display = 'none';
-                    newsGrid.style.display = 'grid';
+                    noNewsMessage.style.display = "none";
+                    newsGrid.style.display = "grid";
                     articles.forEach(item => {
-                        const card = document.createElement('div');
-                        card.className = 'news-card';
-                        const snippet = item.snippet || item.title || 'No summary available.';
+                        const card = document.createElement("div");
+                        card.className = "news-card";
+                        const snippet = item.snippet || item.title || "No summary available.";
                         card.innerHTML = `
                             <div class="news-content">
-                                <h3 class="news-title">${item.title || 'No Title'}</h3>
-                                <p class="news-source">${item.source || 'Unknown Source'}</p>
+                                <h3 class="news-title">${item.title || "No Title"}</h3>
+                                <p class="news-source">${item.source || "Unknown Source"}</p>
                                 <p class="news-snippet">${snippet.substring(0, 150)}...</p>
-                                <a href="${item.url || '#'}" target="_blank" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
+                                <a href="${item.url || "#"}" target="_blank" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
                             </div>
                         `;
                         newsGrid.appendChild(card);
                     });
                 } else {
-                    noNewsMessage.style.display = 'block';
-                    newsGrid.style.display = 'none';
+                    noNewsMessage.style.display = "block";
+                    newsGrid.style.display = "none";
                 }
             } catch (error) {
-                console.error('Error fetching news:', error);
-                document.getElementById('no-news-message').style.display = 'block';
+                console.error("Error fetching news:", error);
+                document.getElementById("no-news-message").style.display = "block";
             }
         }
         
