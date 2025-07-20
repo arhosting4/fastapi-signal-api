@@ -1,94 +1,30 @@
-import json
-import os
 from datetime import datetime
+from typing import List, Dict, Optional, Any
 
-TRACKER_FILE = "signal_tracker.json"
-TRACKER_DIR = "data" # Directory to store tracker data
+LIVE_SIGNAL_CACHE: Dict[str, Any] = {}
+ACTIVE_SIGNALS_CACHE: List[Dict[str, Any]] = []
 
-# Ensure the tracker directory exists
-os.makedirs(TRACKER_DIR, exist_ok=True)
-TRACKER_FILE_PATH = os.path.join(TRACKER_DIR, TRACKER_FILE)
+def set_live_signal(signal_data: Dict[str, Any]):
+    global LIVE_SIGNAL_CACHE
+    LIVE_SIGNAL_CACHE = signal_data
 
-# Initialize tracker file if not exist
-if not os.path.exists(TRACKER_FILE_PATH):
-    try:
-        with open(TRACKER_FILE_PATH, "w") as f:
-            json.dump([], f) # Initialize with an empty list
-        print(f"✅ Created empty signal tracker file: {TRACKER_FILE_PATH}")
-    except Exception as e:
-        print(f"⚠️ Error creating signal tracker file: {e}")
+def get_live_signal() -> Optional[Dict[str, Any]]:
+    return LIVE_SIGNAL_CACHE
 
-def add_active_signal(signal_data: dict):
-    """
-    Adds a new active signal to the tracker.
-
-    Parameters:
-        signal_data (dict): The dictionary containing the signal result from fusion_engine.
-    """
-    try:
-        with open(TRACKER_FILE_PATH, "r") as f:
-            active_signals = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        active_signals = []
-        print(f"⚠️ Signal tracker file {TRACKER_FILE_PATH} was empty or corrupted, re-initializing.")
-
-    # Add a unique ID and timestamp to the signal
-    signal_id = f"{signal_data['symbol'].replace('/', '_')}_{datetime.utcnow().timestamp()}"
-    signal_data['id'] = signal_id
-    signal_data['status'] = 'active' # Set initial status to active
+def add_active_signal(signal_data: Dict[str, Any]):
+    global ACTIVE_SIGNALS_CACHE
+    signal_id = f"{signal_data['symbol']}_{datetime.utcnow().timestamp()}"
+    signal_data['signal_id'] = signal_id
     signal_data['timestamp'] = datetime.utcnow().isoformat()
+    ACTIVE_SIGNALS_CACHE.append(signal_data)
 
-    active_signals.append(signal_data)
+def remove_active_signal(signal_id: str):
+    global ACTIVE_SIGNALS_CACHE
+    ACTIVE_SIGNALS_CACHE = [s for s in ACTIVE_SIGNALS_CACHE if s.get('signal_id') != signal_id]
 
-    try:
-        with open(TRACKER_FILE_PATH, "w") as f:
-            json.dump(active_signals, f, indent=2)
-        print(f"✅ New active signal added to tracker: {signal_id}")
-    except Exception as e:
-        print(f"⚠️ Error saving active signal: {e}")
+def get_all_signals() -> List[Dict[str, Any]]:
+    return list(ACTIVE_SIGNALS_CACHE)
 
-def get_active_signals() -> list:
-    """
-    Retrieves all active signals from the tracker.
-
-    Returns:
-        list: A list of active signal dictionaries.
-    """
-    try:
-        with open(TRACKER_FILE_PATH, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        return []
-
-def update_signal_status(signal_id: str, new_status: str):
-    """
-    Updates the status of a signal in the tracker (e.g., to 'correct', 'incorrect', 'expired').
-
-    Parameters:
-        signal_id (str): The unique ID of the signal.
-        new_status (str): The new status of the signal.
-    """
-    try:
-        with open(TRACKER_FILE_PATH, "r") as f:
-            active_signals = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        return
-
-    # Find the signal and update its status
-    signal_found = False
-    for signal in active_signals:
-        if signal.get('id') == signal_id:
-            signal['status'] = new_status
-            signal_found = True
-            break
+def get_active_signals_count() -> int:
+    return len(ACTIVE_SIGNALS_CACHE)
     
-    # Remove non-active signals from the tracker
-    updated_signals = [s for s in active_signals if s.get('status') == 'active']
-
-    if signal_found:
-        try:
-            with open(TRACKER_FILE_PATH, "w") as f:
-                json.dump(updated_signals, f, indent=2)
-            print(f"✅ Signal {signal_id} status updated to {new_status} and removed from active list.")
-        except Exception as e:
-            print(f"⚠️ Error updating signal status: {e}")
