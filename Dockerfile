@@ -8,12 +8,11 @@ WORKDIR /app
 COPY requirements.txt .
 
 # پائیتھن کے انحصار کو انسٹال کریں
-# اب TA-Lib کی کوئی پیچیدگی نہیں ہے
 RUN pip install --no-cache-dir -r requirements.txt
 
 # باقی پروجیکٹ فائلوں کو کاپی کریں
 COPY . .
 
 # ایپلیکیشن کو چلانے کے لیے کمانڈ
-# Render اس کمانڈ کو خود سنبھالے گا اگر اس کی سیٹنگز میں وضاحت کی گئی ہے
-# CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app"]
+# Render.com اس کمانڈ کو خود سنبھالے گا اگر اس کی سیٹنگز میں وضاحت کی گئی ہے
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app"]
