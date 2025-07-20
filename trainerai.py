@@ -1,3 +1,5 @@
+# filename: trainerai.py
+
 import random
 from sqlalchemy.orm import Session
 import database_crud as crud
@@ -30,6 +32,7 @@ def get_confidence(db: Session, core_signal: str, pattern_signal_type: str, risk
         confidence -= 10
 
     # 4. فیڈ بیک لوپ کا اثر (ڈیٹا بیس سے)
+    # --- اہم تبدیلی: غلط فنکشن نام کو درست کیا گیا ---
     feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
     if feedback_stats and feedback_stats["total"] > 10:
         accuracy = feedback_stats.get("accuracy", 50.0)
