@@ -1,127 +1,370 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark"> <!-- پہلے سے ڈارک موڈ فعال -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScalpMaster AI - Live Signals</title>
+    <title>Dashboard - ScalpMaster AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <!-- آئیکنز کے لیے Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* --- مشترکہ اسٹائلز --- */
         :root {
-            --bg-color: #0a0f1e;
-            --primary-color: #1a233b;
-            --secondary-color: #2a3858;
-            --accent-color: #ffab00;
-            --text-color: #e0e0e0;
-            --buy-color: #00bfa5;
-            --sell-color: #ff5252;
+            --bg-dark: #0d1117;
+            --primary-dark: #161b22;
+            --secondary-dark: #21262d;
+            --border-dark: #30363d;
+            --text-primary-dark: #c9d1d9;
+            --text-secondary-dark: #8b949e;
+            --accent-gold: #ffab00;
+            --signal-buy: #238636;
+            --signal-sell: #da3633;
         }
-        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; }
-        .container { width: 95%; max-width: 1200px; margin: 20px auto; }
-        .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
-        h2 { font-family: 'Teko', sans-serif; font-size: 2.2em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
         
-        /* --- ہیڈر اور نیویگیشن بار --- */
-        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: var(--primary-color); }
-        .header h1 { font-family: 'Teko', sans-serif; font-size: 2em; color: #fff; margin: 0; }
-        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 15px; font-weight: 500; border-radius: 6px; transition: background-color 0.3s, color 0.3s; }
-        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); }
+        html {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary-dark);
+            scroll-behavior: smooth;
+        }
 
-        /* --- سگنل سیکشن --- */
-        .signals-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 25px; }
-        .signal-card { background-color: var(--primary-color); border-radius: 10px; padding: 20px; border-left: 5px solid var(--secondary-color); }
-        .signal-card.buy { border-left-color: var(--buy-color); }
-        .signal-card.sell { border-left-color: var(--sell-color); }
-        .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .signal-symbol { font-family: 'Teko', sans-serif; font-size: 1.8em; color: #fff; }
-        .signal-action { font-size: 1.2em; font-weight: bold; padding: 5px 10px; border-radius: 5px; color: #fff; }
-        .signal-action.buy { background-color: var(--buy-color); }
-        .signal-action.sell { background-color: var(--sell-color); }
-        .signal-details p { margin: 8px 0; font-size: 1em; color: #c0c0c0; }
-        .signal-details strong { color: var(--text-color); }
-        .no-signals { text-align: center; padding: 50px; font-size: 1.2em; color: #888; }
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* --- ہیڈر --- */
+        .header {
+            background-color: var(--primary-dark);
+            border-bottom: 1px solid var(--border-dark);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .logo {
+            font-family: 'Teko', sans-serif;
+            font-size: 1.8rem;
+            color: var(--accent-gold);
+            letter-spacing: 1px;
+        }
+        .navbar-desktop a {
+            color: var(--text-secondary-dark);
+            text-decoration: none;
+            margin-left: 1.5rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        .navbar-desktop a:hover, .navbar-desktop a.active {
+            color: var(--text-primary-dark);
+        }
+        .mobile-menu-button {
+            display: none; /* ڈیسک ٹاپ پر چھپا ہوا */
+            background: none;
+            border: none;
+            color: var(--text-primary-dark);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        /* --- مین کنٹینر --- */
+        .main-container {
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* --- خلاصہ سیکشن --- */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .summary-card {
+            background-color: var(--primary-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .summary-card h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            color: var(--text-secondary-dark);
+            font-weight: 500;
+        }
+        .summary-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary-dark);
+        }
+
+        /* --- سگنلز سیکشن --- */
+        .signals-section h2 {
+            font-family: 'Teko', sans-serif;
+            font-size: 2rem;
+            color: var(--text-primary-dark);
+            margin-bottom: 1.5rem;
+        }
+        .signals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+        .signal-card {
+            background-color: var(--primary-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+            animation: fadeIn 0.5s ease-out;
+        }
+        .signal-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .signal-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        .signal-pair {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        .signal-tag {
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        .tag-buy { background-color: var(--signal-buy); }
+        .tag-sell { background-color: var(--signal-sell); }
+        
+        .confidence-circle {
+            position: relative;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: conic-gradient(var(--accent-gold) 0deg, var(--secondary-dark) 0deg);
+            margin-bottom: 1rem;
+        }
+        .confidence-value {
+            position: relative;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        
+        .signal-details {
+            border-top: 1px solid var(--border-dark);
+            padding-top: 1rem;
+        }
+        .signal-details p {
+            display: flex;
+            justify-content: space-between;
+            margin: 0.5rem 0;
+            color: var(--text-secondary-dark);
+        }
+        .signal-details span {
+            color: var(--text-primary-dark);
+            font-weight: 500;
+        }
+        .no-signals {
+            background-color: var(--primary-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            color: var(--text-secondary-dark);
+        }
+
+        /* --- موبائل نیویگیشن --- */
+        .mobile-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: var(--primary-dark);
+            border-top: 1px solid var(--border-dark);
+            justify-content: space-around;
+            padding: 0.5rem 0;
+            z-index: 1000;
+        }
+        .mobile-nav a {
+            color: var(--text-secondary-dark);
+            text-decoration: none;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.75rem;
+        }
+        .mobile-nav a.active {
+            color: var(--accent-gold);
+        }
+        .mobile-nav i {
+            font-size: 1.2rem;
+        }
+
+        /* --- اینیمیشن --- */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
         /* --- رسپانسیو ڈیزائن --- */
         @media (max-width: 768px) {
-            .header { flex-direction: column; gap: 10px; }
-            .container { width: 100%; padding: 10px; margin: 10px 0; }
-            .glass-panel { padding: 15px; }
-            h2 { font-size: 1.8em; }
-            .signals-container { grid-template-columns: 1fr; }
+            .navbar-desktop { display: none; }
+            .mobile-menu-button { display: block; } /* یہ بٹن مستقبل کے ڈراور کے لیے ہے */
+            .mobile-nav { display: flex; }
+            body { padding-bottom: 70px; } /* نیچے نیویگیشن بار کے لیے جگہ */
+            .main-container { padding: 1rem; }
+            .summary-grid { grid-template-columns: 1fr 1fr; }
+            .signals-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
+
     <header class="header">
-        <h1>SCALPMASTER AI</h1>
-        <nav class="navbar">
-            <a href="index.html" class="active">Live Signals</a>
-            <a href="history.html">Trade History</a>
-            <a href="news.html">Market News</a>
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html" class="active">Dashboard</a>
+            <a href="history.html">History</a>
+            <a href="news.html">News</a>
         </nav>
+        <button class="mobile-menu-button"><i class="fas fa-bars"></i></button>
     </header>
 
-    <div class="container">
-        <div class="glass-panel">
-            <h2>Live Trading Signals</h2>
-            <div id="signals-container" class="signals-container">
-                <!-- سگنل کارڈز یہاں شامل کیے جائیں گے -->
+    <main class="main-container">
+        <!-- خلاصہ سیکشن -->
+        <section class="summary-grid">
+            <div class="summary-card">
+                <h3>Active Signals</h3>
+                <p class="value" id="summary-active-signals">0</p>
             </div>
-            <div id="no-signals-message" class="no-signals" style="display: none;">
-                <p>AI is actively scanning the markets... No high-confidence signals at the moment.</p>
+            <div class="summary-card">
+                <h3>Today's P/L</h3>
+                <p class="value" id="summary-today-pl">N/A</p>
             </div>
-        </div>
-    </div>
+            <div class="summary-card">
+                <h3>Win Rate (24h)</h3>
+                <p class="value" id="summary-win-rate">N/A</p>
+            </div>
+            <div class="summary-card">
+                <h3>AI Status</h3>
+                <p class="value" style="color: var(--signal-buy); font-size: 1.5rem;">Online</p>
+            </div>
+        </section>
+
+        <!-- لائیو سگنلز سیکشن -->
+        <section class="signals-section">
+            <h2>Live Signals</h2>
+            <div class="signals-grid" id="signals-grid">
+                <!-- سگنل کارڈز یہاں جاوا اسکرپٹ سے شامل ہوں گے -->
+            </div>
+            <div class="no-signals" id="no-signals-message" style="display: none;">
+                <h3><i class="fas fa-search"></i> Scanning Markets...</h3>
+                <p>No high-confidence trading opportunities found at the moment.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- موبائل کے لیے نیچے نیویگیشن بار -->
+    <nav class="mobile-nav">
+        <a href="index.html" class="active">
+            <i class="fas fa-chart-line"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="history.html">
+            <i class="fas fa-history"></i>
+            <span>History</span>
+        </a>
+        <a href="news.html">
+            <i class="fas fa-newspaper"></i>
+            <span>News</span>
+        </a>
+    </nav>
 
     <script>
+        function renderSignals(signals) {
+            const grid = document.getElementById('signals-grid');
+            const noSignalsMessage = document.getElementById('no-signals-message');
+            grid.innerHTML = '';
+
+            if (!signals || signals.length === 0) {
+                grid.style.display = 'none';
+                noSignalsMessage.style.display = 'block';
+                document.getElementById('summary-active-signals').textContent = '0';
+                return;
+            }
+
+            grid.style.display = 'grid';
+            noSignalsMessage.style.display = 'none';
+            document.getElementById('summary-active-signals').textContent = signals.length;
+
+            signals.forEach(signal => {
+                const card = document.createElement('div');
+                card.className = 'signal-card';
+
+                const signalType = signal.signal.toLowerCase();
+                const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
+                const confidence = parseFloat(signal.confidence);
+
+                card.innerHTML = `
+                    <div class="signal-card-header">
+                        <div>
+                            <p class="signal-pair">${signal.symbol}</p>
+                            <p style="color: var(--text-secondary-dark); margin:0;">${signal.timeframe}</p>
+                        </div>
+                        <div class="signal-tag ${tagClass}">${signalType.toUpperCase()}</div>
+                    </div>
+                    
+                    <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary-dark) 0deg);">
+                        <div class="confidence-value">${confidence.toFixed(0)}%</div>
+                    </div>
+
+                    <div class="signal-details">
+                        <p>Entry Price: <span>${signal.price.toFixed(5)}</span></p>
+                        <p>Take Profit: <span>${signal.tp.toFixed(5)}</span></p>
+                        <p>Stop Loss: <span>${signal.sl.toFixed(5)}</span></p>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
         async function fetchLiveSignals() {
             try {
                 const response = await fetch('/api/live-signals');
                 const data = await response.json();
-                const container = document.getElementById('signals-container');
-                const noSignalsMessage = document.getElementById('no-signals-message');
-                container.innerHTML = '';
-
-                if (data.message || data.length === 0) {
-                    noSignalsMessage.style.display = 'block';
-                    container.style.display = 'none';
+                
+                if (data.message) {
+                    renderSignals([]);
                 } else {
-                    noSignalsMessage.style.display = 'none';
-                    container.style.display = 'grid';
-                    
-                    data.forEach(signal => {
-                        const card = document.createElement('div');
-                        const signalType = signal.signal.toLowerCase();
-                        card.className = `signal-card ${signalType}`;
-                        
-                        card.innerHTML = `
-                            <div class="signal-header">
-                                <div class="signal-symbol">${signal.symbol} (${signal.timeframe})</div>
-                                <div class="signal-action ${signalType}">${signalType.toUpperCase()}</div>
-                            </div>
-                            <div class="signal-details">
-                                <p><strong>Entry:</strong> ${signal.price.toFixed(5)}</p>
-                                <p><strong>Take Profit:</strong> ${signal.tp.toFixed(5)}</p>
-                                <p><strong>Stop Loss:</strong> ${signal.sl.toFixed(5)}</p>
-                                <p><strong>Confidence:</strong> ${signal.confidence.toFixed(2)}%</p>
-                                <p><strong>Reason:</strong> ${signal.reason}</p>
-                            </div>
-                        `;
-                        container.appendChild(card);
-                    });
+                    renderSignals(data);
                 }
             } catch (error) {
-                console.error('Error fetching live signals:', error);
-                const noSignalsMessage = document.getElementById('no-signals-message');
-                noSignalsMessage.style.display = 'block';
-                noSignalsMessage.innerHTML = '<p>Failed to load signals. Please try again later.</p>';
+                console.error('Error fetching signals:', error);
+                renderSignals([]);
             }
         }
 
+        // ابتدائی لوڈ اور ہر 30 سیکنڈ بعد اپ ڈیٹ
         fetchLiveSignals();
-        setInterval(fetchLiveSignals, 30 * 1000); // ہر 30 سیکنڈ بعد تازہ کریں
+        setInterval(fetchLiveSignals, 30000);
     </script>
+
 </body>
-</html>
+                               </html>
+    
