@@ -2,11 +2,10 @@
 
 import os
 import time
-# --- اہم اور حتمی اصلاح: 'Optional' کو 'typing' سے امپورٹ کیا گیا ---
 from typing import List, Optional, Dict
 import httpx
 import asyncio
-from datetime import datetime # --- datetime کو بھی امپورٹ کیا گیا ---
+from datetime import datetime
 
 class KeyManager:
     def __init__(self):
@@ -43,12 +42,11 @@ class KeyManager:
     def get_marketaux_api_key(self) -> Optional[str]:
         return self.marketaux_api_key
 
-# key_manager کا ایک واحد انسٹنس بنائیں
 key_manager = KeyManager()
 
 def get_available_pairs():
     today = datetime.utcnow().weekday()
-    if today >= 5: # ہفتہ (5) اور اتوار (6)
+    if today >= 5:
         return ["BTC/USD"]
     return ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
 
@@ -94,4 +92,4 @@ async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) 
         return float(data.get("price")) if data.get("price") else None
     except Exception:
         return None
-            
+        
