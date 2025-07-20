@@ -1,77 +1,107 @@
 # filename: hunter.py
 
 import asyncio
-from datetime import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from utils import fetch_twelve_data_ohlc, get_available_pairs
 from fusion_engine import generate_final_signal
-# --- اہم اصلاح: signal_tracker سے درست فنکشنز امپورٹ کیے گئے ---
 from signal_tracker import add_active_signal, get_active_signals_count
 from messenger import send_telegram_alert
 from src.database.models import SessionLocal
 
-CONFIDENCE_THRESHOLD = 40.0
+# --- "اسمارٹ ہنٹنگ" کی نئی ترتیبات ---
+PRIMARY_TIMEFRAME = "15m"
+SECONDARY_TIMEFRAMES = ["5m", "30m"]
+SCOUTING_THRESHOLD = 55.0  # اسکاؤٹنگ کے لیے کم از کم اعتماد
+CONFLUENCE_BONUS = 15.0     # ہم آہنگی کی صورت میں بونس
+FINAL_CONFIDENCE_THRESHOLD = 70.0 # حتمی سگنل کے لیے کم از کم اعتماد (اسے بعد میں بڑھایا جا سکتا ہے)
 MAX_ACTIVE_SIGNALS = 5
 
-async def analyze_pair(db: Session, pair: str, tf: str) -> Optional[Dict[str, Any]]:
-    """ایک مخصوص جوڑے اور ٹائم فریم کا تجزیہ کرتا ہے اور اگر معیار پر پورا اترے تو سگنل لوٹاتا ہے۔"""
+async def analyze_pair_timeframe(db: Session, pair: str, tf: str) -> Optional[Dict[str, Any]]:
+    """ایک مخصوص جوڑے اور ٹائم فریم کا تجزیہ کرتا ہے۔"""
     try:
         candles = await fetch_twelve_data_ohlc(pair, tf, 100)
         if not candles or len(candles) < 34:
             return None
         
+        # generate_final_signal کو درست پیرامیٹرز کے ساتھ کال کریں
         signal_result = await generate_final_signal(db, pair, candles, tf)
-
+        
         if signal_result and signal_result.get("status") == "ok":
-            confidence = signal_result.get("confidence", 0)
-            if confidence >= CONFIDENCE_THRESHOLD:
-                print(f"--- Signal Found: {pair} ({tf}) with confidence {confidence:.2f}% (Threshold: {CONFIDENCE_THRESHOLD}%) ---")
-                return signal_result
-            else:
-                print(f"--- Signal Discarded: {pair} ({tf}) confidence {confidence:.2f}% is below threshold {CONFIDENCE_THRESHOLD}%. ---")
-
+            return signal_result
     except Exception as e:
-        print(f"--- Hunter ERROR processing {pair} ({tf}): {e} ---")
-    
+        print(f"--- Hunter Sub-Process ERROR processing {pair} ({tf}): {e} ---")
     return None
 
 async def hunt_for_signals_job():
-    """مارکیٹ میں اعلیٰ معیار کے تجارتی سگنلز تلاش کرتا ہے اور انہیں ٹریکنگ کے لیے شامل کرتا ہے۔"""
-    print(f"--- [{datetime.now()}] Running Signal Hunter Job (Multi-Signal Mode) ---")
+    """
+    "اسمارٹ ہنٹنگ" کی حکمت عملی کا استعمال کرتے ہوئے سگنلز تلاش کرتا ہے۔
+    مرحلہ 1: بنیادی ٹائم فریم پر اسکاؤٹنگ۔
+    مرحلہ 2: بہترین مواقع کے لیے ثانوی ٹائم فریمز پر گہرا غوطہ۔
+    مرحلہ 3: ہم آہنگی کی بنیاد پر اعتماد کو بڑھانا۔
+    """
+    print(f"--- Running Smart Hunting Job (Primary TF: {PRIMARY_TIMEFRAME}) ---")
     
     if get_active_signals_count() >= MAX_ACTIVE_SIGNALS:
         print(f"--- Hunter paused: Maximum active signals ({MAX_ACTIVE_SIGNALS}) reached. ---")
         return
 
     available_pairs = get_available_pairs()
-    tasks = []
-    
+    final_signals_to_consider = []
     db = SessionLocal()
-    try:
-        for pair in available_pairs:
-            for tf in ["1m", "5m", "15m"]:
-                tasks.append(analyze_pair(db, pair, tf))
-        
-        potential_signals = await asyncio.gather(*tasks)
-        
-        valid_signals = [s for s in potential_signals if s is not None]
 
-        if valid_signals:
-            valid_signals.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+    try:
+        # --- مرحلہ 1: اسکاؤٹنگ رن ---
+        print(f"--- [Scouting Phase] Analyzing all pairs on {PRIMARY_TIMEFRAME}... ---")
+        scouted_opportunities = []
+        for pair in available_pairs:
+            primary_signal = await analyze_pair_timeframe(db, pair, PRIMARY_TIMEFRAME)
+            if primary_signal and primary_signal.get("confidence", 0) >= SCOUTING_THRESHOLD:
+                scouted_opportunities.append(primary_signal)
+                print(f"--- [Scouting] Opportunity found for {pair} on {PRIMARY_TIMEFRAME}. Confidence: {primary_signal['confidence']}% ---")
+        
+        if not scouted_opportunities:
+            print("--- [Scouting Phase] No significant opportunities found. Ending hunt. ---")
+            return
+
+        # --- مرحلہ 2 & 3: گہرا غوطہ اور ہم آہنگی کی جانچ ---
+        print(f"--- [Deep Dive Phase] Analyzing scouted opportunities on {SECONDARY_TIMEFRAMES}... ---")
+        for primary_signal in scouted_opportunities:
+            pair = primary_signal["symbol"]
+            primary_direction = primary_signal["signal"]
             
-            for signal in valid_signals:
-                if get_active_signals_count() < MAX_ACTIVE_SIGNALS:
-                    print(f"--- !!! High-Confidence Signal ACCEPTED: {signal['symbol']} ({signal['timeframe']}) at {signal['confidence']:.2f}%. Making it live. !!! ---")
-                    add_active_signal(signal)
-                    await send_telegram_alert(signal)
-                else:
-                    print("--- Max active signals reached. No more signals will be added in this cycle. ---")
+            confluence_found = True
+            for tf in SECONDARY_TIMEFRAMES:
+                secondary_signal = await analyze_pair_timeframe(db, pair, tf)
+                # اگر کسی بھی ثانوی ٹائم فریم پر سگنل کی سمت مختلف ہو تو ہم آہنگی ناکام ہو جاتی ہے
+                if not secondary_signal or secondary_signal.get("signal") != primary_direction:
+                    confluence_found = False
+                    print(f"--- [Deep Dive] No confluence for {pair} on {tf}. ---")
                     break
-        else:
-            print("--- No signals found meeting the confidence threshold in this hunt. ---")
             
+            # --- مرحلہ 4: اعتماد میں اضافہ ---
+            if confluence_found:
+                print(f"--- [Confluence Found!] Strong agreement for {pair} across all timeframes. Applying bonus. ---")
+                primary_signal["confidence"] += CONFLUENCE_BONUS
+                primary_signal["reason"] += f" Multi-timeframe confluence ({PRIMARY_TIMEFRAME}, {', '.join(SECONDARY_TIMEFRAMES)}) provides strong confirmation."
+                final_signals_to_consider.append(primary_signal)
+
+        # --- حتمی فیصلہ ---
+        if not final_signals_to_consider:
+            print("--- [Final Decision] No signals passed the deep dive phase. ---")
+            return
+            
+        # تمام اہل سگنلز کو بھیجیں جو حتمی حد سے تجاوز کرتے ہیں
+        for signal in final_signals_to_consider:
+            if signal["confidence"] >= FINAL_CONFIDENCE_THRESHOLD:
+                print(f"--- !!! HIGH-CONFIDENCE SIGNAL FOUND: {signal['symbol']} ({signal['timeframe']}) at {signal['confidence']:.2f}%. Sending alert. !!! ---")
+                add_active_signal(signal)
+                await send_telegram_alert(signal)
+            else:
+                print(f"--- Signal for {signal['symbol']} did not meet final threshold of {FINAL_CONFIDENCE_THRESHOLD}%. Confidence was {signal['confidence']:.2f}%. ---")
+
     finally:
         db.close()
+        print("--- Smart Hunting Job Finished. ---")
         
