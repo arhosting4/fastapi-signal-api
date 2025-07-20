@@ -8,116 +8,39 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        /* Common Styles */
         :root {
-            --bg-color: #0a0f1e;
-            --primary-color: #1a233b;
-            --secondary-color: #2a3858;
-            --accent-color: #ffab00; /* Gold */
-            --text-color: #e0e0e0;
-            --buy-color: #00bfa5; /* Teal for TP Hit */
-            --sell-color: #ff5252; /* Red for SL Hit */
+            --bg-color: #0a0f1e; --primary-color: #1a233b; --secondary-color: #2a3858;
+            --accent-color: #ffab00; --text-color: #e0e0e0;
+            --buy-color: #00bfa5; --sell-color: #ff5252;
         }
-        body {
-            font-family: 'Roboto', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            width: 95%;
-            max-width: 1500px;
-            margin: 0 auto;
-            padding: 20px 0;
-        }
-        .glass-panel {
-            background: rgba(26, 35, 59, 0.5);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
-        h2 {
-            font-family: 'Teko', sans-serif;
-            font-size: 1.8em;
-            color: var(--accent-color);
-            margin-top: 0;
-            border-bottom: 1px solid var(--secondary-color);
-            padding-bottom: 10px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 12px 10px;
-            text-align: left;
-            border-bottom: 1px solid var(--secondary-color);
-        }
-        th {
-            font-weight: 700;
-            color: #fff;
-        }
-        .table-wrapper {
-            overflow-x: auto; /* Makes table scrollable on small screens */
-        }
-        
-        /* Header & Nav */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px 20px;
-            background-color: var(--primary-color);
-        }
-        .header h1 {
-            font-family: 'Teko', sans-serif;
-            font-size: 2em;
-            color: #fff;
-            margin: 0;
-        }
-        .navbar a {
-            color: var(--text-color);
-            text-decoration: none;
-            padding: 10px 15px;
-            font-weight: 500;
-            border-radius: 6px;
-            transition: background-color 0.3s;
-        }
-        .navbar a:hover, .navbar a.active {
-            background-color: var(--accent-color);
-            color: var(--bg-color);
-        }
-
-        /* Specific Styles */
+        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 { font-family: 'Teko', sans-serif; font-size: 3em; color: var(--accent-color); margin: 0; }
+        .navbar { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; }
+        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 20px; border-radius: 6px; transition: all 0.3s; }
+        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); font-weight: bold; }
+        .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        h2 { font-family: 'Teko', sans-serif; font-size: 1.8em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--secondary-color); }
+        th { font-weight: 700; color: #fff; }
+        .table-wrapper { overflow-x: auto; }
         .outcome-tp_hit { color: var(--buy-color); font-weight: bold; }
         .outcome-sl_hit { color: var(--sell-color); font-weight: bold; }
         .no-history { text-align: center; padding: 50px; font-size: 1.2em; color: #888; }
-
-        /* Responsive Design */
-        @media (max-width: 992px) {
-            .header { flex-direction: column; gap: 15px; }
-        }
-        @media (max-width: 576px) {
-            .navbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
-            .navbar a { padding: 8px 10px; font-size: 0.9em; }
-            th, td { padding: 8px 5px; font-size: 0.85em; }
-        }
     </style>
 </head>
 <body>
-    <header class="header">
-        <h1>SCALPMASTER AI</h1>
+    <div class="container">
+        <header class="header">
+            <h1>SCALPMASTER AI</h1>
+        </header>
         <nav class="navbar">
-            <a href="index.html">Live Signals</a>
+            <a href="index.html">Live Signal</a>
             <a href="history.html" class="active">Trade History</a>
             <a href="news.html">Market News</a>
         </nav>
-    </header>
-
-    <div class="container">
         <div class="glass-panel">
             <h2>Completed Trades History</h2>
             <div class="table-wrapper">
@@ -125,12 +48,11 @@
                     <thead>
                         <tr>
                             <th>Symbol</th>
+                            <th>Timeframe</th>
                             <th>Signal</th>
                             <th>Entry Price</th>
-                            <th>Close Price</th>
                             <th>Outcome</th>
-                            <th>Entry Time</th>
-                            <th>Close Time</th>
+                            <th>Closed At</th>
                         </tr>
                     </thead>
                     <tbody id="history-body">
@@ -147,31 +69,29 @@
     <script>
         async function fetchTradeHistory() {
             try {
-                const response = await fetch('/api/completed-trades');
+                // --- اہم تبدیلی: API اینڈ پوائنٹ کو درست کیا گیا ---
+                const response = await fetch('/api/history');
                 const trades = await response.json();
                 const historyBody = document.getElementById('history-body');
                 const noHistoryMessage = document.getElementById('no-history-message');
                 
-                historyBody.innerHTML = ''; // Clear previous data
+                historyBody.innerHTML = '';
 
-                if (trades.length > 0) {
+                if (trades && trades.length > 0) {
                     noHistoryMessage.style.display = 'none';
                     trades.forEach(trade => {
                         const row = document.createElement('tr');
-                        const outcomeClass = `outcome-${trade.outcome}`;
+                        const outcomeClass = `outcome-${trade.outcome.toLowerCase()}`;
                         
-                        // Format dates for better readability
-                        const entryTime = new Date(trade.entry_time + 'Z').toLocaleString();
-                        const closeTime = new Date(trade.close_time + 'Z').toLocaleString();
+                        // --- اہم تبدیلی: تاریخ کو پڑھنے کے قابل فارمیٹ میں دکھایا گیا ---
+                        const closeTime = new Date(trade.closed_at).toLocaleString();
 
-                        // اہم: یہاں trade.signal استعمال کیا گیا ہے (trade.signal_type نہیں)
                         row.innerHTML = `
                             <td><strong>${trade.symbol}</strong></td>
-                            <td>${trade.signal.toUpperCase()}</td>
+                            <td>${trade.timeframe}</td>
+                            <td>${trade.signal_type.toUpperCase()}</td>
                             <td>${trade.entry_price.toFixed(5)}</td>
-                            <td>${trade.close_price.toFixed(5)}</td>
                             <td class="${outcomeClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</td>
-                            <td>${entryTime}</td>
                             <td>${closeTime}</td>
                         `;
                         historyBody.appendChild(row);
@@ -181,12 +101,12 @@
                 }
             } catch (error) {
                 console.error('Error fetching trade history:', error);
-                document.getElementById('no-history-message').innerText = 'Failed to load trade history.';
-                document.getElementById('no-history-message').style.display = 'block';
+                const noHistoryMessage = document.getElementById('no-history-message');
+                noHistoryMessage.innerText = 'Failed to load trade history.';
+                noHistoryMessage.style.display = 'block';
             }
         }
         
-        // Initial load
         fetchTradeHistory();
     </script>
 </body>
