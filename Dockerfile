@@ -1,22 +1,34 @@
-# Use a modern and stable Python runtime as a parent image
-FROM python:3.9-slim-bookworm
+# Python کا بنیادی امیج منتخب کریں
+FROM python:3.9-slim
 
-# Set the working directory in the container
+# ورکنگ ڈائرکٹری سیٹ کریں
 WORKDIR /app
 
-# --- کوئی TA-Lib انسٹالیشن کی ضرورت نہیں ---
+# --- اہم اور حتمی اصلاح: TA-Lib کو انسٹال کریں ---
+# 1. TA-Lib کو کمپائل کرنے کے لیے ضروری پیکیجز انسٹال کریں
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
+# 2. TA-Lib کو ڈاؤن لوڈ، کمپائل اور انسٹال کریں
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+
+# requirements.txt کو کاپی کریں
 COPY requirements.txt .
 
-# Install the Python dependencies
+# --- پائیتھن کے انحصار کو انسٹال کریں (بشمول TA-Lib ریپر) ---
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the container
+# باقی پروجیکٹ فائلوں کو کاپی کریں
 COPY . .
 
-# Expose the port the app runs on
-EXPOSE 8000
-
-# Command to run the application using Gunicorn
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:8000"]
+# ایپلیکیشن کو چلانے کے لیے کمانڈ
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app"]
