@@ -2,15 +2,16 @@
 
 import os
 import time
+# --- اہم اور حتمی اصلاح: 'Optional' کو 'typing' سے امپورٹ کیا گیا ---
 from typing import List, Optional, Dict
 import httpx
 import asyncio
+from datetime import datetime # --- datetime کو بھی امپورٹ کیا گیا ---
 
 class KeyManager:
     def __init__(self):
         self.twelve_data_keys: List[str] = []
         self.limited_keys: Dict[str, float] = {}
-        # --- اہم اضافہ: MarketAux API کلید کو لوڈ کریں ---
         self.marketaux_api_key: Optional[str] = os.getenv("MARKETAUX_API_TOKEN", None)
         self.load_twelve_data_keys()
 
@@ -19,7 +20,6 @@ class KeyManager:
         self.twelve_data_keys = [key.strip() for key in api_keys_str.split(',') if key.strip()]
         if not hasattr(self, '_printed_key_count'):
             print(f"--- KeyManager Initialized: Found {len(self.twelve_data_keys)} Twelve Data key(s). ---")
-            # --- MarketAux کلید کی موجودگی کی تصدیق ---
             if self.marketaux_api_key:
                 print("--- KeyManager Initialized: MarketAux API key FOUND. ---")
             else:
@@ -40,11 +40,10 @@ class KeyManager:
             print(f"--- KeyManager INFO: Twelve Data API key limit reached for key ending in ...{key[-4:]}. Rotating. ---")
             self.limited_keys[key] = time.time()
             
-    # --- نیا فنکشن: MarketAux کلید حاصل کرنے کے لیے ---
     def get_marketaux_api_key(self) -> Optional[str]:
         return self.marketaux_api_key
 
-# --- key_manager کا ایک واحد انسٹنس بنائیں ---
+# key_manager کا ایک واحد انسٹنس بنائیں
 key_manager = KeyManager()
 
 def get_available_pairs():
@@ -95,4 +94,4 @@ async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) 
         return float(data.get("price")) if data.get("price") else None
     except Exception:
         return None
-    
+            
