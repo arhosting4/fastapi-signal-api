@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,20 +9,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
+        /* --- نیا: لائٹ اور ڈارک تھیم کے متغیرات --- */
         :root {
-            --bg-dark: #0d1117;
-            --primary-dark: #161b22;
-            --secondary-dark: #21262d;
-            --border-dark: #30363d;
-            --text-primary-dark: #c9d1d9;
-            --text-secondary-dark: #8b949e;
+            --bg-dark: #0d1117; --primary-dark: #161b22; --secondary-dark: #21262d; --border-dark: #30363d;
+            --text-primary-dark: #c9d1d9; --text-secondary-dark: #8b949e;
+
+            --bg-light: #f6f8fa; --primary-light: #ffffff; --secondary-light: #f6f8fa; --border-light: #d0d7de;
+            --text-primary-light: #24292f; --text-secondary-light: #57606a;
+            
             --accent-gold: #ffab00;
+        }
+        
+        html.dark {
+            --bg: var(--bg-dark); --primary: var(--primary-dark); --secondary: var(--secondary-dark); --border: var(--border-dark);
+            --text-primary: var(--text-primary-dark); --text-secondary: var(--text-secondary-dark);
+        }
+        html.light {
+            --bg: var(--bg-light); --primary: var(--primary-light); --secondary: var(--secondary-light); --border: var(--border-light);
+            --text-primary: var(--text-primary-light); --text-secondary: var(--text-secondary-light);
         }
         
         html {
             font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-primary-dark);
+            background-color: var(--bg);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
         }
 
         body {
@@ -30,10 +41,9 @@
             padding: 0;
         }
 
-        /* --- ہیڈر (ڈیش بورڈ جیسا) --- */
         .header {
-            background-color: var(--primary-dark);
-            border-bottom: 1px solid var(--border-dark);
+            background-color: var(--primary);
+            border-bottom: 1px solid var(--border);
             padding: 1rem 1.5rem;
             display: flex;
             justify-content: space-between;
@@ -42,25 +52,36 @@
             top: 0;
             z-index: 1000;
         }
+        .logo-container { display: flex; align-items: center; gap: 1.5rem; }
         .logo {
             font-family: 'Teko', sans-serif;
             font-size: 1.8rem;
             color: var(--accent-gold);
             letter-spacing: 1px;
         }
+        
+        /* --- نیا: تھیم ٹوگل بٹن اسٹائل --- */
+        #theme-toggle {
+            background: none; border: 1px solid var(--border); border-radius: 6px;
+            width: 40px; height: 40px; cursor: pointer;
+            color: var(--text-secondary); display: grid; place-items: center;
+        }
+        #theme-toggle .fa-sun { display: none; }
+        #theme-toggle .fa-moon { display: block; }
+        html.light #theme-toggle .fa-sun { display: block; }
+        html.light #theme-toggle .fa-moon { display: none; }
+
         .navbar-desktop a {
-            color: var(--text-secondary-dark);
+            color: var(--text-secondary);
             text-decoration: none;
             margin-left: 1.5rem;
             font-weight: 500;
             transition: color 0.3s;
         }
         .navbar-desktop a:hover, .navbar-desktop a.active {
-            color: var(--text-primary-dark);
+            color: var(--text-primary);
         }
-        .mobile-menu-button { display: none; }
-
-        /* --- مین کنٹینر --- */
+        
         .main-container {
             padding: 1.5rem;
             max-width: 1400px;
@@ -69,19 +90,18 @@
         .page-header {
             font-family: 'Teko', sans-serif;
             font-size: 2rem;
-            color: var(--text-primary-dark);
+            color: var(--text-primary);
             margin-bottom: 1.5rem;
         }
 
-        /* --- نیوز گرڈ --- */
         .news-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 1.5rem;
         }
         .news-card {
-            background-color: var(--primary-dark);
-            border: 1px solid var(--border-dark);
+            background-color: var(--primary);
+            border: 1px solid var(--border);
             border-radius: 8px;
             display: flex;
             flex-direction: column;
@@ -101,14 +121,15 @@
             font-size: 1.2rem;
             font-weight: 600;
             margin: 0 0 0.5rem 0;
+            color: var(--text-primary);
         }
         .news-source {
-            color: var(--text-secondary-dark);
+            color: var(--text-secondary);
             font-size: 0.9rem;
             margin-bottom: 1rem;
         }
         .news-snippet {
-            color: var(--text-secondary-dark);
+            color: var(--text-secondary);
             line-height: 1.6;
             flex-grow: 1;
         }
@@ -121,29 +142,28 @@
         }
         
         .no-data-message {
-            background-color: var(--primary-dark);
-            border: 1px solid var(--border-dark);
+            background-color: var(--primary);
+            border: 1px solid var(--border);
             border-radius: 8px;
             padding: 3rem;
             text-align: center;
-            color: var(--text-secondary-dark);
+            color: var(--text-secondary);
         }
 
-        /* --- موبائل نیویگیشن (ڈیش بورڈ جیسا) --- */
         .mobile-nav {
             display: none;
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            background-color: var(--primary-dark);
-            border-top: 1px solid var(--border-dark);
+            background-color: var(--primary);
+            border-top: 1px solid var(--border);
             justify-content: space-around;
             padding: 0.5rem 0;
             z-index: 1000;
         }
         .mobile-nav a {
-            color: var(--text-secondary-dark);
+            color: var(--text-secondary);
             text-decoration: none;
             padding: 0.5rem;
             display: flex;
@@ -156,7 +176,7 @@
         .mobile-nav i { font-size: 1.2rem; }
 
         @media (max-width: 768px) {
-            .navbar-desktop { display: none; }
+            .navbar-desktop, #theme-toggle { display: none; }
             .mobile-nav { display: flex; }
             body { padding-bottom: 70px; }
             .main-container { padding: 1rem; }
@@ -167,7 +187,14 @@
 <body>
 
     <header class="header">
-        <div class="logo">SCALPMASTER AI</div>
+        <div class="logo-container">
+            <div class="logo">SCALPMASTER AI</div>
+            <!-- نیا تھیم ٹوگل بٹن -->
+            <button id="theme-toggle" title="Toggle theme">
+                <i class="fas fa-sun"></i>
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
         <nav class="navbar-desktop">
             <a href="index.html">Dashboard</a>
             <a href="history.html">History</a>
@@ -202,6 +229,27 @@
     </nav>
 
     <script>
+        // --- نیا: تھیم سوئچنگ کی منطق ---
+        const themeToggle = document.getElementById('theme-toggle');
+        const docElement = document.documentElement;
+
+        // صارف کی محفوظ کردہ ترجیح کو لوڈ کریں
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        docElement.className = savedTheme;
+
+        themeToggle.addEventListener('click', () => {
+            if (docElement.classList.contains('dark')) {
+                docElement.classList.remove('dark');
+                docElement.classList.add('light');
+                localStorage.setItem('theme', 'light');
+            } else {
+                docElement.classList.remove('light');
+                docElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+
+        // --- پرانی نیوز فیچنگ کی منطق ویسی ہی رہے گی ---
         async function fetchNews() {
             try {
                 const response = await fetch('/api/news');
