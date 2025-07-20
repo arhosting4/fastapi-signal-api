@@ -7,7 +7,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-from apscheduler.schedulers.background import BackgroundScheduler
+# --- اہم اور حتمی اصلاح: BackgroundScheduler کی بجائے AsyncIOScheduler کا استعمال کریں ---
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from typing import List
 from sqlalchemy.orm import Session
@@ -15,7 +16,6 @@ from sqlalchemy.orm import Session
 # ہمارے پروجیکٹ کے ماڈیولز
 from src.database.models import create_db_and_tables, SessionLocal
 import database_crud as crud
-# --- اہم تبدیلی: signal_tracker سے نیا فنکشن امپورٹ کیا گیا ---
 from signal_tracker import get_live_signals
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
@@ -31,18 +31,15 @@ def get_db():
     finally:
         db.close()
 
-scheduler = BackgroundScheduler(timezone="UTC")
+# --- تبدیلی: AsyncIOScheduler کا استعمال ---
+scheduler = AsyncIOScheduler(timezone="UTC")
 
 @app.get("/health", status_code=200)
 async def health_check():
     return {"status": "ok", "mode": "multi-signal"}
 
-# --- اہم تبدیلی: یہ اینڈ پوائنٹ اب سگنلز کی فہرست لوٹاتا ہے ---
 @app.get("/api/live-signals", response_class=JSONResponse)
 async def get_live_signals_api():
-    """
-    تمام فعال، اعلیٰ اعتماد والے سگنلز کی فہرست فراہم کرتا ہے۔
-    """
     signals = get_live_signals()
     if not signals:
         return JSONResponse(
@@ -78,20 +75,22 @@ async def get_news(db: Session = Depends(get_db)):
 @app.on_event("startup")
 async def startup_event():
     print("--- ScalpMaster AI Server is starting up... ---")
+    # ڈیٹا بیس ٹیبلز کو یقینی بنائیں
     create_db_and_tables()
     
-    # --- تبدیلی: ہنٹر جاب کو کم وقفے سے چلایا جا رہا ہے ---
+    # تمام جابز کو شیڈول کریں
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunter_job", name="Signal Hunter")
     scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="feedback_job", name="Feedback Checker")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_job", name="News Updater")
     
-    await asyncio.sleep(2)
-    # پہلی بار فوری طور پر چلائیں
-    scheduler.get_job("news_job").modify(next_run_time=datetime.now())
-    scheduler.get_job("hunter_job").modify(next_run_time=datetime.now())
+    # پہلی بار چلانے کے لیے جابز کو فوری طور پر ٹریگر کریں
+    scheduler.get_job("news_job").modify(next_run_time=datetime.now(scheduler.timezone))
+    scheduler.get_job("hunter_job").modify(next_run_time=datetime.now(scheduler.timezone))
     
-    scheduler.start()
-    print("--- Scheduler started with all jobs. ---")
+    # شیڈولر کو شروع کریں
+    if not scheduler.running:
+        scheduler.start()
+        print("--- Scheduler started with all jobs. ---")
 
 @app.on_event("shutdown")
 async def shutdown_event():
