@@ -8,59 +8,76 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&family=Teko:wght@400;600&display=swap" rel="stylesheet">
     <style>
+        /* --- مشترکہ اسٹائلز --- */
         :root {
-            --bg-color: #0a0f1e; --primary-color: #1a233b; --secondary-color: #2a3858;
-            --accent-color: #ffab00; --text-color: #e0e0e0;
-            --buy-color: #00bfa5; --sell-color: #ff5252;
+            --bg-color: #0a0f1e;
+            --primary-color: #1a233b;
+            --secondary-color: #2a3858;
+            --accent-color: #ffab00;
+            --text-color: #e0e0e0;
+            --buy-color: #00bfa5;
+            --sell-color: #ff5252;
         }
-        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
-        .container { max-width: 1200px; margin: auto; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .header h1 { font-family: 'Teko', sans-serif; font-size: 3em; color: var(--accent-color); margin: 0; }
-        .navbar { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; }
-        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 20px; border-radius: 6px; transition: all 0.3s; }
-        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); font-weight: bold; }
+        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; }
+        .container { width: 95%; max-width: 1200px; margin: 20px auto; }
         .glass-panel { background: rgba(26, 35, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 25px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
-        h2 { font-family: 'Teko', sans-serif; font-size: 1.8em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--secondary-color); }
-        th { font-weight: 700; color: #fff; }
+        h2 { font-family: 'Teko', sans-serif; font-size: 2.2em; color: var(--accent-color); margin-top: 0; border-bottom: 1px solid var(--secondary-color); padding-bottom: 10px; }
+        
+        /* --- ہیڈر اور نیویگیشن بار --- */
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: var(--primary-color); }
+        .header h1 { font-family: 'Teko', sans-serif; font-size: 2em; color: #fff; margin: 0; }
+        .navbar a { color: var(--text-color); text-decoration: none; padding: 10px 15px; font-weight: 500; border-radius: 6px; transition: background-color 0.3s, color 0.3s; }
+        .navbar a:hover, .navbar a.active { background-color: var(--accent-color); color: var(--bg-color); }
+
+        /* --- ہسٹری ٹیبل --- */
         .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--secondary-color); }
+        th { font-weight: 700; color: #fff; }
         .outcome-tp_hit { color: var(--buy-color); font-weight: bold; }
         .outcome-sl_hit { color: var(--sell-color); font-weight: bold; }
         .no-history { text-align: center; padding: 50px; font-size: 1.2em; color: #888; }
+
+        /* --- رسپانسیو ڈیزائن --- */
+        @media (max-width: 768px) {
+            .header { flex-direction: column; gap: 10px; }
+            .container { width: 100%; padding: 10px; margin: 10px 0; }
+            .glass-panel { padding: 15px; }
+            h2 { font-size: 1.8em; }
+            th, td { padding: 8px 5px; font-size: 0.9em; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1>SCALPMASTER AI</h1>
-        </header>
+    <header class="header">
+        <h1>SCALPMASTER AI</h1>
         <nav class="navbar">
-            <a href="index.html">Live Signal</a>
+            <a href="index.html">Live Signals</a>
             <a href="history.html" class="active">Trade History</a>
             <a href="news.html">Market News</a>
         </nav>
+    </header>
+
+    <div class="container">
         <div class="glass-panel">
             <h2>Completed Trades History</h2>
             <div class="table-wrapper">
-                <table>
+                <table id="history-table">
                     <thead>
                         <tr>
                             <th>Symbol</th>
-                            <th>Timeframe</th>
                             <th>Signal</th>
                             <th>Entry Price</th>
                             <th>Outcome</th>
-                            <th>Closed At</th>
+                            <th>Close Time</th>
                         </tr>
                     </thead>
                     <tbody id="history-body">
-                        <!-- History rows will be inserted here by JavaScript -->
+                        <!-- ہسٹری یہاں شامل کی جائے گی -->
                     </tbody>
                 </table>
             </div>
-             <div id="no-history-message" class="no-history" style="display: none;">
+            <div id="no-history-message" class="no-history" style="display: none;">
                 <p>No completed trades found yet. The AI is working.</p>
             </div>
         </div>
@@ -69,7 +86,6 @@
     <script>
         async function fetchTradeHistory() {
             try {
-                // --- اہم تبدیلی: API اینڈ پوائنٹ کو درست کیا گیا ---
                 const response = await fetch('/api/history');
                 const trades = await response.json();
                 const historyBody = document.getElementById('history-body');
@@ -77,37 +93,34 @@
                 
                 historyBody.innerHTML = '';
 
-                if (trades && trades.length > 0) {
+                if (trades.length > 0) {
                     noHistoryMessage.style.display = 'none';
+                    document.getElementById('history-table').style.display = 'table';
                     trades.forEach(trade => {
                         const row = document.createElement('tr');
                         const outcomeClass = `outcome-${trade.outcome.toLowerCase()}`;
-                        
-                        // --- اہم تبدیلی: تاریخ کو پڑھنے کے قابل فارمیٹ میں دکھایا گیا ---
-                        const closeTime = new Date(trade.closed_at).toLocaleString();
-
                         row.innerHTML = `
-                            <td><strong>${trade.symbol}</strong></td>
-                            <td>${trade.timeframe}</td>
+                            <td><strong>${trade.symbol}</strong> (${trade.timeframe})</td>
                             <td>${trade.signal_type.toUpperCase()}</td>
                             <td>${trade.entry_price.toFixed(5)}</td>
                             <td class="${outcomeClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</td>
-                            <td>${closeTime}</td>
+                            <td>${new Date(trade.closed_at + 'Z').toLocaleString()}</td>
                         `;
                         historyBody.appendChild(row);
                     });
                 } else {
                     noHistoryMessage.style.display = 'block';
+                    document.getElementById('history-table').style.display = 'none';
                 }
             } catch (error) {
                 console.error('Error fetching trade history:', error);
-                const noHistoryMessage = document.getElementById('no-history-message');
-                noHistoryMessage.innerText = 'Failed to load trade history.';
-                noHistoryMessage.style.display = 'block';
+                document.getElementById('no-history-message').innerText = 'Failed to load trade history.';
+                document.getElementById('no-history-message').style.display = 'block';
             }
         }
         
         fetchTradeHistory();
+        setInterval(fetchTradeHistory, 60 * 1000); // ہر منٹ تازہ کریں
     </script>
 </body>
 </html>
