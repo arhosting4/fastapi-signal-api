@@ -66,9 +66,20 @@
         
         /* --- نیا: تھیم ٹوگل بٹن اسٹائل --- */
         #theme-toggle {
-            background: none; border: 1px solid var(--border); border-radius: 6px;
-            width: 40px; height: 40px; cursor: pointer;
-            color: var(--text-secondary); display: grid; place-items: center;
+            background: none; 
+            border: 1px solid var(--border); 
+            border-radius: 6px;
+            width: 40px; 
+            height: 40px; 
+            cursor: pointer;
+            color: var(--text-secondary); 
+            display: grid; 
+            place-items: center;
+            transition: all 0.3s ease;
+        }
+        #theme-toggle:hover {
+            border-color: var(--accent-gold);
+            color: var(--accent-gold);
         }
         #theme-toggle .fa-sun { display: none; }
         #theme-toggle .fa-moon { display: block; }
@@ -110,6 +121,7 @@
             display: flex;
             flex-direction: column;
             transition: transform 0.3s, box-shadow 0.3s;
+            overflow: hidden;
         }
         .news-card:hover {
             transform: translateY(-5px);
@@ -126,23 +138,29 @@
             font-weight: 600;
             margin: 0 0 0.5rem 0;
             color: var(--text-primary);
+            line-height: 1.4;
         }
         .news-source {
             color: var(--text-secondary);
             font-size: 0.9rem;
             margin-bottom: 1rem;
+            font-weight: 500;
         }
         .news-snippet {
             color: var(--text-secondary);
             line-height: 1.6;
             flex-grow: 1;
+            margin-bottom: 1rem;
         }
         .read-more {
             color: var(--accent-gold);
             text-decoration: none;
             font-weight: 600;
-            margin-top: 1rem;
             align-self: flex-start;
+            transition: color 0.3s;
+        }
+        .read-more:hover {
+            color: var(--text-primary);
         }
         
         .no-data-message {
@@ -175,16 +193,22 @@
             align-items: center;
             gap: 4px;
             font-size: 0.75rem;
+            transition: color 0.3s;
         }
         .mobile-nav a.active { color: var(--accent-gold); }
         .mobile-nav i { font-size: 1.2rem; }
 
         @media (max-width: 768px) {
-            .navbar-desktop, #theme-toggle { display: none; }
+            .navbar-desktop { display: none; }
             .mobile-nav { display: flex; }
             body { padding-bottom: 70px; }
             .main-container { padding: 1rem; }
             .news-grid { grid-template-columns: 1fr; }
+            .logo-container { gap: 1rem; }
+            #theme-toggle { 
+                width: 35px; 
+                height: 35px; 
+            }
         }
     </style>
 </head>
@@ -234,60 +258,57 @@
 
     <script>
         // --- نیا: تھیم سوئچنگ کی منطق ---
-        const themeToggle = document.getElementById("theme-toggle");
+        const themeToggle = document.getElementById('theme-toggle');
         const docElement = document.documentElement;
 
         // صارف کی محفوظ کردہ ترجیح کو لوڈ کریں
-        const savedTheme = localStorage.getItem("theme") || "dark";
+        const savedTheme = localStorage.getItem('theme') || 'dark';
         docElement.className = savedTheme;
 
-        themeToggle.addEventListener("click", () => {
-            if (docElement.classList.contains("dark")) {
-                docElement.classList.remove("dark");
-                docElement.classList.add("light");
-                localStorage.setItem("theme", "light");
-            } else {
-                docElement.classList.remove("light");
-                docElement.classList.add("dark");
-                localStorage.setItem("theme", "dark");
-            }
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            docElement.classList.remove('dark', 'light');
+            docElement.classList.add(newTheme);
+            localStorage.setItem('theme', newTheme);
         });
 
         // --- پرانی نیوز فیچنگ کی منطق ویسی ہی رہے گی ---
         async function fetchNews() {
             try {
-                const response = await fetch("/api/news");
+                const response = await fetch('/api/news');
                 const newsData = await response.json();
-                const newsGrid = document.getElementById("news-grid");
-                const noNewsMessage = document.getElementById("no-news-message");
-                newsGrid.innerHTML = "";
+                const newsGrid = document.getElementById('news-grid');
+                const noNewsMessage = document.getElementById('no-news-message');
+                newsGrid.innerHTML = '';
 
                 const articles = newsData.articles || [];
 
                 if (articles.length > 0) {
-                    noNewsMessage.style.display = "none";
-                    newsGrid.style.display = "grid";
+                    noNewsMessage.style.display = 'none';
+                    newsGrid.style.display = 'grid';
                     articles.forEach(item => {
-                        const card = document.createElement("div");
-                        card.className = "news-card";
-                        const snippet = item.snippet || item.title || "No summary available.";
+                        const card = document.createElement('div');
+                        card.className = 'news-card';
+                        const snippet = item.snippet || item.title || 'No summary available.';
                         card.innerHTML = `
                             <div class="news-content">
-                                <h3 class="news-title">${item.title || "No Title"}</h3>
-                                <p class="news-source">${item.source || "Unknown Source"}</p>
+                                <h3 class="news-title">${item.title || 'No Title'}</h3>
+                                <p class="news-source">${item.source || 'Unknown Source'}</p>
                                 <p class="news-snippet">${snippet.substring(0, 150)}...</p>
-                                <a href="${item.url || "#"}" target="_blank" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
+                                <a href="${item.url || '#'}" target="_blank" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
                             </div>
                         `;
                         newsGrid.appendChild(card);
                     });
                 } else {
-                    noNewsMessage.style.display = "block";
-                    newsGrid.style.display = "none";
+                    noNewsMessage.style.display = 'block';
+                    newsGrid.style.display = 'none';
                 }
             } catch (error) {
-                console.error("Error fetching news:", error);
-                document.getElementById("no-news-message").style.display = "block";
+                console.error('Error fetching news:', error);
+                document.getElementById('no-news-message').style.display = 'block';
             }
         }
         
