@@ -1,81 +1,54 @@
-from datetime import datetime
 from sqlalchemy.orm import Session
 from src.database.models import CompletedTrade, FeedbackEntry, CachedNews, LiveSignal
-from src.database.database import SessionLocal
+from datetime import datetime
 
 
-# ✅ Save completed trade
-def save_completed_trade(trade: dict):
-    db: Session = SessionLocal()
-    try:
-        new_trade = CompletedTrade(
-            symbol=trade["symbol"],
-            entry_price=trade["entry_price"],
-            exit_price=trade["exit_price"],
-            profit=trade["profit"],
-            timestamp=datetime.utcnow(),
-        )
-        db.add(new_trade)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Error saving trade: {e}")
-    finally:
-        db.close()
+# ✅ Save a new completed trade
+def save_trade(db: Session, trade_data: dict):
+    trade = CompletedTrade(**trade_data)
+    db.add(trade)
+    db.commit()
+    db.refresh(trade)
+    return trade
+
+
+# ✅ Get all completed trades
+def get_all_trades(db: Session):
+    return db.query(CompletedTrade).order_by(CompletedTrade.timestamp.desc()).all()
 
 
 # ✅ Save feedback entry
-def save_feedback(feedback: dict):
-    db: Session = SessionLocal()
-    try:
-        entry = FeedbackEntry(
-            username=feedback["username"],
-            message=feedback["message"],
-            timestamp=datetime.utcnow(),
-        )
-        db.add(entry)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Error saving feedback: {e}")
-    finally:
-        db.close()
+def save_feedback(db: Session, feedback_data: dict):
+    feedback = FeedbackEntry(**feedback_data)
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    return feedback
 
 
-# ✅ Update or create news cache (used by sentinel.py)
-def update_news_cache(news_list: list[dict]):
-    db: Session = SessionLocal()
-    try:
-        db.query(CachedNews).delete()  # Clear old cache
-        for item in news_list:
-            cached = CachedNews(
-                title=item.get("title"),
-                content=item.get("content"),
-                source=item.get("source", "Unknown"),
-                published_at=item.get("published_at", datetime.utcnow()),
-            )
-            db.add(cached)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Error updating news cache: {e}")
-    finally:
-        db.close()
+# ✅ Save cached news
+def cache_news_item(db: Session, news_data: dict):
+    news_item = CachedNews(**news_data)
+    db.add(news_item)
+    db.commit()
+    db.refresh(news_item)
+    return news_item
 
 
-# ✅ Retrieve cached news
-def get_cached_news():
-    db: Session = SessionLocal()
-    try:
-        return db.query(CachedNews).order_by(CachedNews.published_at.desc()).all()
-    finally:
-        db.close()
+# ✅ Get cached news
+def get_cached_news(db: Session, limit: int = 10):
+    return db.query(CachedNews).order_by(CachedNews.published_at.desc()).limit(limit).all()
+
+
+# ✅ Save live signal (if needed)
+def save_live_signal(db: Session, signal_data: dict):
+    signal = LiveSignal(**signal_data)
+    db.add(signal)
+    db.commit()
+    db.refresh(signal)
+    return signal
 
 
 # ✅ Get all live signals
-def get_all_signals():
-    db: Session = SessionLocal()
-    try:
-        return db.query(LiveSignal).order_by(LiveSignal.timestamp.desc()).all()
-    finally:
-        db.close()
+def get_all_live_signals(db: Session):
+    return db.query(LiveSignal).order_by(LiveSignal.created_at.desc()).all()
