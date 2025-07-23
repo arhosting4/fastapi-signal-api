@@ -3,18 +3,21 @@ import logging
 import uuid
 from typing import Dict, Any, Optional
 
-from ..utils import get_available_pairs, fetch_twelve_data_ohlc
-from . import strategybot, patternai, riskguardian, fusion_engine
-from ..database.database_crud import add_active_signal
-from ..messenger import send_telegram_alert
-from ..database.database_config import SessionLocal
+# --- Corrected imports for your flat structure ---
+import utils
+import strategybot
+import patternai
+import riskguardian
+import fusion_engine
+import messenger
+from src.database import database_crud as crud
+from database_config import SessionLocal
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 async def process_single_pair_timeframe(pair: str, timeframe: str) -> Optional[Dict[str, Any]]:
-    """Asynchronously processes a single pair and timeframe to generate a signal."""
     logging.info(f"Processing {pair} on {timeframe}...")
-    candles = await fetch_twelve_data_ohlc(pair, timeframe, 200)
+    candles = await utils.fetch_twelve_data_ohlc(pair, timeframe, 200)
     if not candles or len(candles) < 50:
         logging.warning(f"Insufficient data for {pair} on {timeframe}.")
         return None
@@ -32,15 +35,14 @@ async def process_single_pair_timeframe(pair: str, timeframe: str) -> Optional[D
             final_signal.update({
                 'symbol': pair,
                 'timeframe': timeframe,
-                'signal_id': str(uuid.uuid4()) # Generate a unique ID for the signal
+                'signal_id': str(uuid.uuid4())
             })
             return final_signal
     return None
 
 async def hunt_for_signals():
-    """Main function to hunt for signals across all pairs and timeframes in parallel."""
     logging.info("Starting new signal hunting cycle...")
-    supported_pairs = get_available_pairs()
+    supported_pairs = utils.get_available_pairs()
     timeframes = ["15min", "1h", "4h"]
     
     tasks = [process_single_pair_timeframe(pair, tf) for pair in supported_pairs for tf in timeframes]
@@ -56,7 +58,6 @@ async def hunt_for_signals():
                 logging.error(f"A task failed during execution: {result}", exc_info=False)
             elif result:
                 try:
-                    # Prepare data for ActiveSignal model
                     signal_data_for_db = {
                         'signal_id': result['signal_id'],
                         'symbol': result['symbol'],
@@ -68,12 +69,12 @@ async def hunt_for_signals():
                         'confidence': result['confidence'],
                         'reason': result.get('reason', '')
                     }
-                    add_active_signal(db_session, signal_data_for_db)
+                    crud.add_active_signal(db_session, signal_data_for_db)
                     logging.info(f"Signal for {result['symbol']} added to active signals DB.")
-                    await send_telegram_alert(result)
+                    await messenger.send_telegram_alert(result)
                 except Exception as e:
                     logging.error(f"Error saving signal or sending alert for {result.get('symbol')}: {e}")
     finally:
         db_session.close()
     logging.info("Signal hunting cycle finished.")
-                        
+    
