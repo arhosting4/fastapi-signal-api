@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 
-from src.database.models import CompletedTrade, FeedbackEntry, CachedNews
+from src.database.models import CompletedTrade, FeedbackEntry, NewsItem
 
 # ✅ Get trade history from DB
 def get_completed_trades(db: Session) -> List[dict]:
