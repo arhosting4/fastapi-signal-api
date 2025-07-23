@@ -11,3 +11,4 @@ apscheduler==3.10.4
 sqlalchemy==2.0.31
 psycopg2-binary==2.9.9
 alembic==1.13.2
+tenacity
