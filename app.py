@@ -3,7 +3,7 @@ import os
 import logging
 from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse # Import FileResponse
+from fastapi.responses import HTMLResponse # Import HTMLResponse instead of FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -28,7 +28,7 @@ except Exception as e:
 
 app = FastAPI(
     title="ScalpMaster AI API", 
-    version="2.0.0", # Final Production Version
+    version="2.1.0", # Final Production Version
     description="A high-performance API for AI-driven scalping signals."
 )
 
@@ -54,6 +54,7 @@ def shutdown_event():
 def health_check():
     return {"status": "ok", "message": "API is running"}
 
+# ... (باقی تمام API اینڈ پوائنٹس ویسے ہی رہیں گے) ...
 @app.get("/api/live-signals", response_model=List[api_schemas.ActiveSignal], tags=["Data"])
 def get_live_signals(db: Session = Depends(get_db)):
     return crud.get_all_active_signals(db)
@@ -82,21 +83,25 @@ app.mount("/css", StaticFiles(directory="frontend/css"), name="css")
 app.mount("/js", StaticFiles(directory="frontend/js"), name="js")
 
 # This will serve the main index.html for the root URL
-@app.get("/", response_class=FileResponse)
+@app.get("/", response_class=HTMLResponse)
 async def read_index():
-    return "frontend/index.html"
+    with open("frontend/index.html") as f:
+        return HTMLResponse(content=f.read(), status_code=200)
 
 # This will serve the other HTML pages
-@app.get("/{page_name}", response_class=FileResponse)
+@app.get("/{page_name}", response_class=HTMLResponse)
 async def read_page(page_name: str):
-    # Basic security to prevent directory traversal
-    if ".." in page_name or "/" in page_name:
-        return "frontend/index.html" # or raise a 404 error
-    
     file_path = f"frontend/{page_name}"
-    if os.path.exists(file_path) and file_path.endswith(".html"):
-        return file_path
+    # Basic security to prevent directory traversal
+    if ".." in page_name or not page_name.endswith(".html"):
+        with open("frontend/index.html") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    
+    if os.path.exists(file_path):
+        with open(file_path) as f:
+            return HTMLResponse(content=f.read(), status_code=200)
     
     # Fallback to index.html if page not found
-    return "frontend/index.html"
+    with open("frontend/index.html") as f:
+        return HTMLResponse(content=f.read(), status_code=404)
 
