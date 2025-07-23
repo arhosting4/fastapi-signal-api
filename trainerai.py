@@ -32,7 +32,6 @@ def get_confidence(db: Session, core_signal: str, pattern_signal_type: str, risk
         confidence -= 10
 
     # 4. فیڈ بیک لوپ کا اثر (ڈیٹا بیس سے)
-    # --- اہم تبدیلی: غلط فنکشن نام کو درست کیا گیا ---
     feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
     if feedback_stats and feedback_stats["total"] > 10:
         accuracy = feedback_stats.get("accuracy", 50.0)
@@ -43,8 +42,7 @@ def get_confidence(db: Session, core_signal: str, pattern_signal_type: str, risk
 
     # اعتماد کو 0-100 کی حد میں رکھیں
     confidence = max(0.0, min(100.0, confidence))
-    confidence += random.uniform(-1.5, 1.5) # تھوڑا سا بے ترتیب پن
+    confidence += random.uniform(-1.5, 1.5)  # تھوڑا سا بے ترتیب پن
     confidence = max(0.0, min(100.0, confidence))
 
     return round(confidence, 2)
-    
