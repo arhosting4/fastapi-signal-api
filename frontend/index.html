@@ -4,20 +4,73 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - ScalpMaster AI</title>
-    
-    <!-- === THE CORRECTED LINKS === -->
-    <link rel="stylesheet" href="css/main.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@700&display=swap" rel="stylesheet">
-    
-    <!-- REMOVED <style> block from here -->
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
 
-    <!-- ... (HTML کا باقی تمام مواد ویسا ہی رہے گا) ... -->
+    <!-- Header -->
+    <header class="p-4 flex justify-between items-center bg-white dark:bg-gray-800 shadow-md">
+        <div class="flex items-center">
+            <h1 class="text-2xl font-teko text-yellow-500">SCALPMASTER AI</h1>
+        </div>
+        <nav class="hidden md:flex space-x-4">
+            <a href="/" class="text-yellow-500 font-bold">Dashboard</a>
+            <a href="/history.html" class="hover:text-yellow-500">History</a>
+            <a href="/news.html" class="hover:text-yellow-500">News</a>
+        </nav>
+        <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+            <i class="fas fa-moon"></i>
+        </button>
+    </header>
 
-    <!-- === THE CORRECTED SCRIPTS === -->
-    <script src="js/main.js"></script>
-    <script src="js/dashboard.js"></script>
+    <!-- Main Content -->
+    <main class="p-4 md:p-8">
+        <!-- Summary Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                <h2 class="text-lg font-semibold mb-2">24h Win Rate</h2>
+                <p id="win-rate" class="text-3xl font-bold text-green-500">--%</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                <h2 class="text-lg font-semibold mb-2">Today's P/L</h2>
+                <p id="pnl" class="text-3xl font-bold text-gray-500">$--</p>
+            </div>
+        </div>
+
+        <!-- Live Signals Section -->
+        <div>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Live Signals</h2>
+                <!-- Filter will be implemented later -->
+            </div>
+            <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Signals will be injected here by JavaScript -->
+                <p id="loading-signals">No active signals found. The AI is scanning the markets.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Mobile Navigation -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 flex justify-around p-2 border-t dark:border-gray-700">
+        <a href="/" class="flex flex-col items-center text-yellow-500">
+            <i class="fas fa-chart-line"></i>
+            <span class="text-xs">Dashboard</span>
+        </a>
+        <a href="/history.html" class="flex flex-col items-center hover:text-yellow-500">
+            <i class="fas fa-history"></i>
+            <span class="text-xs">History</span>
+        </a>
+        <a href="/news.html" class="flex flex-col items-center hover:text-yellow-500">
+            <i class="fas fa-newspaper"></i>
+            <span class="text-xs">News</span>
+        </a>
+    </nav>
+
+    <!-- CRITICAL FIX: Add script tags to load JavaScript -->
+    <script src="/js/main.js"></script>
+    <script src="/js/dashboard.js"></script>
+
 </body>
 </html>
