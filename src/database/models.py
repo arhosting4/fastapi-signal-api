@@ -53,6 +53,18 @@ class FeedbackEntry(Base):
 
 # ✅ 4. Economic News Cache Table (Optional)
 class NewsItem(Base):
+    from sqlalchemy import Column, Integer, String, Text, DateTime
+from datetime import datetime
+from .database import Base
+
+class CachedNews(Base):
+    __tablename__ = "cached_news"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    source = Column(String(100), default="Unknown")
+    published_at = Column(DateTime, default=datetime.utcnow)
     __tablename__ = "news"
 
     id = Column(Integer, primary_key=True, index=True)
