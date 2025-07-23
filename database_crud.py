@@ -1,54 +1,101 @@
+# filename: database_crud.py
+
 from sqlalchemy.orm import Session
-from src.database.models import CompletedTrade, FeedbackEntry, CachedNews, LiveSignal
+from sqlalchemy import desc, func
 from datetime import datetime
+from typing import Dict, Any, List, Optional
+import logging
 
+from src.database.models import CompletedTrade, FeedbackEntry, CachedNews
 
-# ✅ Save a new completed trade
-def save_trade(db: Session, trade_data: dict):
-    trade = CompletedTrade(**trade_data)
-    db.add(trade)
-    db.commit()
-    db.refresh(trade)
-    return trade
+logger = logging.getLogger(__name__)
 
+def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
+    """Calculate feedback statistics for a symbol."""
+    correct_count = db.query(func.count(FeedbackEntry.id)).filter(
+        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'correct'
+    ).scalar() or 0
 
-# ✅ Get all completed trades
-def get_all_trades(db: Session):
-    return db.query(CompletedTrade).order_by(CompletedTrade.timestamp.desc()).all()
+    incorrect_count = db.query(func.count(FeedbackEntry.id)).filter(
+        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'incorrect'
+    ).scalar() or 0
 
+    total = correct_count + incorrect_count
+    accuracy = (correct_count / total) * 100 if total > 0 else 50.0
 
-# ✅ Save feedback entry
-def save_feedback(db: Session, feedback_data: dict):
-    feedback = FeedbackEntry(**feedback_data)
-    db.add(feedback)
-    db.commit()
-    db.refresh(feedback)
-    return feedback
+    return {
+        "total": total,
+        "accuracy": round(accuracy, 2),
+        "correct": correct_count,
+        "incorrect": incorrect_count
+    }
 
+def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str) -> Optional[CompletedTrade]:
+    """Add a completed trade record to the database."""
+    try:
+        required_keys = ['signal_id', 'symbol', 'timeframe', 'signal', 'price', 'tp', 'sl']
+        if not all(key in signal_data for key in required_keys):
+            logger.warning("Missing keys in signal data.")
+            return None
 
-# ✅ Save cached news
-def cache_news_item(db: Session, news_data: dict):
-    news_item = CachedNews(**news_data)
-    db.add(news_item)
-    db.commit()
-    db.refresh(news_item)
-    return news_item
+        db_trade = CompletedTrade(
+            signal_id=signal_data['signal_id'],
+            symbol=signal_data['symbol'],
+            timeframe=signal_data['timeframe'],
+            signal_type=signal_data['signal'],
+            entry_price=signal_data['price'],
+            tp_price=signal_data['tp'],
+            sl_price=signal_data['sl'],
+            outcome=outcome,
+            closed_at=datetime.utcnow()
+        )
 
+        db.add(db_trade)
+        db.commit()
+        db.refresh(db_trade)
+        return db_trade
 
-# ✅ Get cached news
-def get_cached_news(db: Session, limit: int = 10):
-    return db.query(CachedNews).order_by(CachedNews.published_at.desc()).limit(limit).all()
+    except Exception as e:
+        logger.error(f"Error adding completed trade: {e}")
+        return None
 
+def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str) -> Optional[FeedbackEntry]:
+    """Add feedback entry to DB for given symbol and timeframe."""
+    try:
+        entry = FeedbackEntry(
+            symbol=symbol,
+            timeframe=timeframe,
+            feedback=feedback,
+            created_at=datetime.utcnow()
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+        return entry
+    except Exception as e:
+        logger.error(f"Error adding feedback entry: {e}")
+        return None
 
-# ✅ Save live signal (if needed)
-def save_live_signal(db: Session, signal_data: dict):
-    signal = LiveSignal(**signal_data)
-    db.add(signal)
-    db.commit()
-    db.refresh(signal)
-    return signal
+def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
+    """Return most recent completed trades."""
+    trades = db.query(CompletedTrade).order_by(desc(CompletedTrade.closed_at)).limit(limit).all()
+    return [trade.as_dict() for trade in trades]
 
+def update_news_cache(db: Session, news_data: Dict[str, Any]) -> None:
+    """Replace existing cached news with new content."""
+    try:
+        db.query(CachedNews).delete()
+        new_news = CachedNews(content=news_data, updated_at=datetime.utcnow())
+        db.add(new_news)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error updating news cache: {e}")
 
-# ✅ Get all live signals
-def get_all_live_signals(db: Session):
-    return db.query(LiveSignal).order_by(LiveSignal.created_at.desc()).all()
+def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
+    """Fetch cached news from DB if available."""
+    try:
+        news = db.query(CachedNews).order_by(desc(CachedNews.updated_at)).first()
+        return news.content if news else None
+    except Exception as e:
+        logger.error(f"Error retrieving cached news: {e}")
+        return None
