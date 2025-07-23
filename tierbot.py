@@ -1,7 +1,5 @@
 def get_tier(confidence: float) -> str:
-    """
-    اعتماد کے اسکور کی بنیاد پر AI کا درجہ متعین کرتا ہے۔
-    """
+    """اعتماد کے اسکور کی بنیاد پر AI کا درجہ متعین کرتا ہے۔"""
     if confidence >= 90:
         return "Tier 1 – Elite"
     elif confidence >= 80:
