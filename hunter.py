@@ -1,40 +1,72 @@
+# filename: hunter.py
+
+import asyncio
 import logging
-from datetime import datetime
-from src.database.models import LiveSignal, SessionLocal
+from typing import List, Dict, Any, Optional
+from sqlalchemy.orm import Session
+
+from utils import fetch_twelve_data_ohlc, get_available_pairs
+from fusion_engine import generate_final_signal
+from signal_tracker import add_active_signal, get_active_signals_count
+from messenger import send_telegram_alert
+from src.database.models import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-def hunt_for_signals_job():
-    """
-    Scheduled job that simulates AI-based signal scanning.
-    Replace this logic with actual AI/ML signal generation logic.
-    """
-    logger.info("🧠 AI scanning market for new signals...")
+# Smart Hunting Configuration
+PRIMARY_TIMEFRAME = "15m"
+SCOUTING_THRESHOLD = 55.0
+CONFLUENCE_BONUS = 15.0
+FINAL_CONFIDENCE_THRESHOLD = 70.0
+MAX_ACTIVE_SIGNALS = 5
 
-    db = SessionLocal()
+async def analyze_pair_timeframe(db: Session, pair: str, tf: str) -> Optional[Dict[str, Any]]:
+    """
+    Analyze a given trading pair on a specified timeframe and return a valid signal if found.
+    """
     try:
-        # Example logic: create a dummy signal
-        new_signal = LiveSignal(
-            symbol="EUR/USD",
-            timeframe="1H",
-            entry_price=1.1030,
-            stop_loss=1.0990,
-            take_profit=1.1090,
-            confidence_score=91,
-            created_at=datetime.utcnow(),
-            active=True
-        )
+        candles = await fetch_twelve_data_ohlc(pair, tf, 100)
+        if not candles or len(candles) < 34:
+            return None
 
-        # Optional: deactivate older signals
-        db.query(LiveSignal).filter(LiveSignal.active == True).update({LiveSignal.active: False})
+        signal_result = await generate_final_signal(db, pair, candles, tf)
 
-        db.add(new_signal)
-        db.commit()
-
-        logger.info(f"✅ New signal saved: {new_signal.symbol} ({new_signal.timeframe})")
+        if signal_result and signal_result.get("status") == "ok":
+            return signal_result
 
     except Exception as e:
-        logger.error(f"❌ Error in signal hunting job: {e}")
-        db.rollback()
+        logger.error(f"Hunter error processing {pair} ({tf}): {e}")
+    return None
+
+async def hunt_for_signals_job():
+    """
+    Main orchestrator: loops through pairs and tries to find trade signals using AI fusion.
+    """
+    logger.info("Running signal hunting job...")
+
+    active_count = get_active_signals_count()
+    if active_count >= MAX_ACTIVE_SIGNALS:
+        logger.info("Max active signals already reached.")
+        return
+
+    pairs = get_available_pairs()
+    db = SessionLocal()
+
+    try:
+        for pair in pairs:
+            result = await analyze_pair_timeframe(db, pair, PRIMARY_TIMEFRAME)
+
+            if result and result.get("confidence", 0) >= FINAL_CONFIDENCE_THRESHOLD:
+                add_active_signal(result)
+                await send_telegram_alert(result)
+                logger.info(f"Signal generated for {pair}: {result['signal']} ({result['confidence']}%)")
+
+                active_count += 1
+                if active_count >= MAX_ACTIVE_SIGNALS:
+                    logger.info("Signal limit reached. Halting hunting.")
+                    break
+
+    except Exception as e:
+        logger.error(f"Fatal error in signal hunting job: {e}", exc_info=True)
     finally:
         db.close()
