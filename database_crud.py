@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
 
-from src.database.models import CompletedTrade, FeedbackEntry, CachedNews
+from src.database.models import CompletedTrade, CachedNews
 
 logger = logging.getLogger(__name__)
 
