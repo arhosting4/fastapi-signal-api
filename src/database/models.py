@@ -1,44 +1,38 @@
-import os
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker
-from dotenv import load_dotenv
+from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, UniqueConstraint, func
+from ...database_config import Base # Import Base from the central config file
 
-load_dotenv()  # Load environment variables from .env file
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# ✅ Trade Data Model
 class CompletedTrade(Base):
     __tablename__ = "completed_trades"
+    # ... (all columns remain the same) ...
     id = Column(Integer, primary_key=True, index=True)
-    signal = Column(String)
-    entry_price = Column(Float)
-    exit_price = Column(Float)
-    profit_loss = Column(Float)
-    timestamp = Column(DateTime)
+    signal_id = Column(String, unique=True, nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    timeframe = Column(String, nullable=False)
+    signal_type = Column(String, nullable=False) # 'buy' or 'sell'
+    entry_price = Column(Float, nullable=False)
+    tp_price = Column(Float, nullable=False)
+    sl_price = Column(Float, nullable=False)
+    outcome = Column(String, nullable=False) # e.g., 'tp_hit', 'sl_hit', 'expired'
+    created_at = Column(DateTime, server_default=func.now())
+    closed_at = Column(DateTime, nullable=False)
 
-# ✅ User Feedback Model
+
 class FeedbackEntry(Base):
-    __tablename__ = "feedback"
+    __tablename__ = "feedback_entries"
+    # ... (all columns remain the same) ...
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    feedback = Column(String)
-    timestamp = Column(DateTime)
+    symbol = Column(String, nullable=False, index=True)
+    timeframe = Column(String, nullable=False)
+    feedback = Column(String, nullable=False) # 'correct' or 'incorrect'
+    created_at = Column(DateTime, server_default=func.now())
 
-# ✅ News Cache Model
+
 class CachedNews(Base):
     __tablename__ = "cached_news"
+    # ... (all columns remain the same) ...
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    content = Column(String)
-    published_at = Column(DateTime)
+    content = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
 
-# ✅ Create Tables Function
-def create_db_and_tables():
-    Base.metadata.create_all(bind=engine)
+# The function to create tables will now be called from the main app.py
+# using the engine from database_config.
