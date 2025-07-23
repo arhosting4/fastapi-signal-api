@@ -25,8 +25,8 @@ def get_market_structure_analysis(candles: list, window: int = 10) -> dict:
     if recent_highs.empty or recent_lows.empty:
         return {"trend": "ranging", "zone": "neutral", "reason": "No clear swing points recently."}
 
-    last_high = recent_highs.iloc[-1] # تازہ ترین سپلائی زون
-    last_low = recent_lows.iloc[-1]  # تازہ ترین ڈیمانڈ زون
+    last_high = recent_highs.iloc[-1]  # تازہ ترین سپلائی زون
+    last_low = recent_lows.iloc[-1]    # تازہ ترین ڈیمانڈ زون
     last_close = df['close'].iloc[-1]
 
     # قیمت کا زون سے فاصلہ
@@ -42,12 +42,9 @@ def get_market_structure_analysis(candles: list, window: int = 10) -> dict:
     # ٹرینڈ کی شناخت
     trend = "ranging"
     if len(recent_highs) >= 2 and len(recent_lows) >= 2:
-        # ہائر ہائی اور ہائر لو = اپ ٹرینڈ
         if recent_highs.iloc[-1] > recent_highs.iloc[-2] and recent_lows.iloc[-1] > recent_lows.iloc[-2]:
             trend = "uptrend"
-        # لوئر ہائی اور لوئر لو = ڈاؤن ٹرینڈ
         elif recent_highs.iloc[-1] < recent_highs.iloc[-2] and recent_lows.iloc[-1] < recent_lows.iloc[-2]:
             trend = "downtrend"
 
     return {"trend": trend, "zone": zone_status, "reason": f"Price is {zone_status}. Current trend is {trend}."}
-    
