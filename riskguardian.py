@@ -63,4 +63,3 @@ def get_dynamic_atr_multiplier(risk_status: str) -> float:
     if risk_status == "Moderate":
         return 1.8
     return 2.0
-    
