@@ -29,7 +29,7 @@ except Exception as e:
 
 app = FastAPI(
     title="ScalpMaster AI API", 
-    version="1.3.0", # Version bump for the final fix
+    version="1.4.0", # Final version
     description="A high-performance API for AI-driven scalping signals."
 )
 
@@ -45,12 +45,10 @@ def get_db():
 @app.on_event("startup")
 def startup_event():
     scheduler.start_scheduler()
-    logging.info("FastAPI application startup complete. Scheduler started.")
 
 @app.on_event("shutdown")
 def shutdown_event():
     scheduler.shutdown_scheduler()
-    logging.info("FastAPI application shutdown. Scheduler stopped.")
 
 # --- API Endpoints ---
 @app.get("/health", status_code=200, tags=["System"])
