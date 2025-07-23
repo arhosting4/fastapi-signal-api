@@ -1,49 +1,67 @@
+# filename: src/database/models.py
+
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine
 from datetime import datetime
 import os
 
-# Environment-based SQLite (or update with PostgreSQL if needed)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./signals.db")
+# Use environment variable or fallback
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Base class for models
 Base = declarative_base()
 
-# ✅ Table for completed trades
-class CompletedTrade(Base):
-    __tablename__ = "completed_trades"
+# Engine and Session setup
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# ✅ 1. Live Signal Model
+class LiveSignal(Base):
+    __tablename__ = "live_signals"
+
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String, index=True)
     timeframe = Column(String)
-    entry_price = Column(Float)
-    exit_price = Column(Float)
-    profit = Column(Float)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    strategy = Column(String)
+    confidence = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-# ✅ Table for user feedback entries
+# ✅ 2. Completed Trade Model
+class CompletedTrade(Base):
+    __tablename__ = "completed_trades"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String)
+    timeframe = Column(String)
+    strategy = Column(String)
+    confidence = Column(Float)
+    opened_at = Column(DateTime)
+    closed_at = Column(DateTime)
+    result = Column(String)  # "win", "loss", etc.
+    profit_percent = Column(Float)
+
+# ✅ 3. Feedback Model
 class FeedbackEntry(Base):
     __tablename__ = "feedback"
+
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String)
     timeframe = Column(String)
     feedback = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
 
-# ✅ Table for economic news cache
-class CachedNews(Base):
-    __tablename__ = "cached_news"
+# ✅ 4. Economic News Cache Table (Optional)
+class NewsItem(Base):
+    __tablename__ = "news"
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String)
     impact = Column(String)
     time = Column(String)
-    currency = Column(String)
-    forecast = Column(String)
-    actual = Column(String)
-    previous = Column(String)
+    country = Column(String)
     cached_at = Column(DateTime, default=datetime.utcnow)
 
-# ✅ Create all tables in DB
+# ✅ 5. Create all tables
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
