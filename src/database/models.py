@@ -1,58 +1,49 @@
-# filename: src/database/models.py
+# src/database/models.py
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON
-from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
+from datetime import datetime
 import os
 
-# --- اہم تبدیلی: DATABASE_URL کو حاصل کریں اور اس کی موجودگی کو یقینی بنائیں ---
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set for models.")
+from dotenv import load_dotenv
+load_dotenv()
 
-# --- اہم تبدیلی: Render.com اور دیگر ہوسٹنگ کے لیے PostgreSQL URL کو درست کریں ---
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+# Load DB URL
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mydb.db")
 
-# --- انجن کی تخلیق کو بہتر بنایا گیا ---
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# SQLAlchemy setup
 Base = declarative_base()
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-class CompletedTrade(Base):
-    __tablename__ = 'completed_trades'
-    id = Column(Integer, primary_key=True, index=True)
-    signal_id = Column(String, unique=True, nullable=False, index=True)
-    symbol = Column(String, nullable=False, index=True)
-    timeframe = Column(String, nullable=False)
-    signal_type = Column(String, nullable=False)
-    entry_price = Column(Float, nullable=False)
-    tp_price = Column(Float, nullable=False)
-    sl_price = Column(Float, nullable=False)
-    outcome = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    closed_at = Column(DateTime(timezone=True), nullable=False)
+# === TABLE 1: Trade History ===
 
-class FeedbackEntry(Base):
-    __tablename__ = 'feedback_entries'
+class TradeHistory(Base):
+    __tablename__ = "trade_history"
+
     id = Column(Integer, primary_key=True, index=True)
-    symbol = Column(String, nullable=False, index=True)
-    timeframe = Column(String, nullable=False)
-    feedback = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    symbol = Column(String, nullable=False)
+    action = Column(String, nullable=False)        # BUY or SELL
+    confidence = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+# === TABLE 2: Cached News ===
 
 class CachedNews(Base):
-    __tablename__ = 'cached_news'
-    id = Column(Integer, primary_key=True)
-    content = Column(JSON, nullable=False)
-    updated_at = Column(DateTime(timezone=True), nullable=False)
+    __tablename__ = "cached_news"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+# === DB Initializer ===
 
 def create_db_and_tables():
-    print("--- Checking and creating database tables... ---")
-    try:
-        Base.metadata.create_all(bind=engine)
-        print("--- Database tables are ready. ---")
-    except Exception as e:
-        print(f"--- CRITICAL: Could not create database tables: {e} ---")
-        raise
-        
+    Base.metadata.create_all(bind=engine)
