@@ -3,12 +3,17 @@ import os
 import logging
 from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse # Import HTMLResponse instead of FileResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pathlib import Path # Import pathlib
 
 # --- CRITICAL FIX for Deployment ---
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+# --- Define the base directory for the frontend ---
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = BASE_DIR / "frontend"
 
 # --- Corrected Imports for your file structure ---
 from src.database import database_crud as crud, models
@@ -28,7 +33,7 @@ except Exception as e:
 
 app = FastAPI(
     title="ScalpMaster AI API", 
-    version="2.1.0", # Final Production Version
+    version="2.2.0", # Final Production Version
     description="A high-performance API for AI-driven scalping signals."
 )
 
@@ -79,29 +84,32 @@ def get_summary_data(db: Session = Depends(get_db)):
 # This is the final and correct way to serve a Single Page Application (SPA) style frontend
 
 # This will serve files like main.css and main.js from their respective folders
-app.mount("/css", StaticFiles(directory="frontend/css"), name="css")
-app.mount("/js", StaticFiles(directory="frontend/js"), name="js")
+app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
+app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
 # This will serve the main index.html for the root URL
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
-    with open("frontend/index.html") as f:
+    index_path = FRONTEND_DIR / "index.html"
+    with open(index_path) as f:
         return HTMLResponse(content=f.read(), status_code=200)
 
 # This will serve the other HTML pages
 @app.get("/{page_name}", response_class=HTMLResponse)
 async def read_page(page_name: str):
-    file_path = f"frontend/{page_name}"
     # Basic security to prevent directory traversal
     if ".." in page_name or not page_name.endswith(".html"):
-        with open("frontend/index.html") as f:
+        index_path = FRONTEND_DIR / "index.html"
+        with open(index_path) as f:
             return HTMLResponse(content=f.read(), status_code=200)
     
-    if os.path.exists(file_path):
+    file_path = FRONTEND_DIR / page_name
+    if file_path.exists():
         with open(file_path) as f:
             return HTMLResponse(content=f.read(), status_code=200)
     
     # Fallback to index.html if page not found
-    with open("frontend/index.html") as f:
+    index_path = FRONTEND_DIR / "index.html"
+    with open(index_path) as f:
         return HTMLResponse(content=f.read(), status_code=404)
 
