@@ -1,104 +1,70 @@
-# filename: feedback_checker.py
-
-import httpx
-import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from signal_tracker import get_all_signals, remove_active_signal
-from utils import get_current_price_twelve_data
-from database_crud import add_completed_trade, add_feedback_entry
-from src.database.models import SessionLocal
+from ..database.database_config import SessionLocal
+from ..database import database_crud as crud
+from ..utils import fetch_twelve_data_ohlc
 
-# Configuration
-EXPIRY_MINUTES = 15
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Logger setup
-logger = logging.getLogger(__name__)
-
-async def check_active_signals_job():
+async def check_active_signals():
     """
-    This job checks all active signals and evaluates their result (TP/SL/Expired).
-    It runs every minute via APScheduler.
+    Checks all active signals from the database against the current market price
+    to determine their outcome (TP hit, SL hit, or expired).
     """
-    logger.info(f"[{datetime.utcnow()}] Running Feedback Checker Job...")
-
-    active_signals = get_all_signals()
-    if not active_signals:
-        logger.info("No active signals to evaluate.")
-        return
-
+    logging.info("Starting active signals check cycle...")
     db = SessionLocal()
     try:
-        async with httpx.AsyncClient() as client:
-            for signal in active_signals:
-                try:
-                    signal_id = signal.get("signal_id")
-                    symbol = signal.get("symbol")
-                    signal_type = signal.get("signal")
-                    tp = signal.get("tp")
-                    sl = signal.get("sl")
-                    signal_time_str = signal.get("timestamp")
+        active_signals = crud.get_all_active_signals(db)
+        if not active_signals:
+            logging.info("No active signals to check.")
+            return
 
-                    if not all([signal_id, symbol, signal_type, tp, sl, signal_time_str]):
-                        logger.warning(f"Incomplete signal data: {signal}")
-                        continue
+        logging.info(f"Checking {len(active_signals)} active signal(s)...")
+        
+        for signal in active_signals:
+            outcome = None
+            # Fetch the most recent price data
+            # We only need a small amount of data to get the current price
+            candles = await fetch_twelve_data_ohlc(signal.symbol, "1min", 1)
+            if not candles:
+                logging.warning(f"Could not fetch current price for {signal.symbol}. Skipping check for signal {signal.signal_id}.")
+                continue
+            
+            current_price = float(candles[0]['close'])
+            
+            # Check for TP/SL hit
+            if signal.signal_type.lower() == 'buy':
+                if current_price >= signal.tp_price:
+                    outcome = 'tp_hit'
+                elif current_price <= signal.sl_price:
+                    outcome = 'sl_hit'
+            elif signal.signal_type.lower() == 'sell':
+                if current_price <= signal.tp_price:
+                    outcome = 'tp_hit'
+                elif current_price >= signal.sl_price:
+                    outcome = 'sl_hit'
+            
+            # Check for expiration (e.g., 4 hours for 1h timeframe signals)
+            # This logic can be made more sophisticated
+            expiration_hours = 4 
+            if not outcome and (datetime.utcnow() > signal.created_at + timedelta(hours=expiration_hours)):
+                outcome = 'expired'
 
-                    signal_time = datetime.fromisoformat(signal_time_str)
-                    current_price = await get_current_price_twelve_data(symbol, client)
-                    if current_price is None:
-                        logger.warning(f"Price fetch failed for {symbol}")
-                        continue
+            if outcome:
+                logging.info(f"Outcome for signal {signal.signal_id} ({signal.symbol}): {outcome.upper()}")
+                # 1. Add to completed trades
+                crud.add_completed_trade(db, signal, outcome)
+                # 2. Add feedback for the AI model
+                feedback = 'correct' if outcome == 'tp_hit' else 'incorrect'
+                crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
+                # 3. Remove from active signals
+                crud.remove_active_signal(db, signal.signal_id)
+                logging.info(f"Signal {signal.signal_id} processed and removed from active list.")
 
-                    outcome = None
-                    feedback = None
-
-                    if signal_type == "buy":
-                        if current_price >= tp:
-                            outcome = "tp_hit"
-                            feedback = "correct"
-                        elif current_price <= sl:
-                            outcome = "sl_hit"
-                            feedback = "incorrect"
-                    elif signal_type == "sell":
-                        if current_price <= tp:
-                            outcome = "tp_hit"
-                            feedback = "correct"
-                        elif current_price >= sl:
-                            outcome = "sl_hit"
-                            feedback = "incorrect"
-
-                    # Expiry check
-                    if outcome is None and datetime.utcnow() - signal_time >= timedelta(minutes=EXPIRY_MINUTES):
-                        outcome = "expired"
-                        feedback = "incorrect"
-
-                    # If outcome determined, record and remove
-                    if outcome:
-                        add_completed_trade(db, signal, outcome)
-                        add_feedback_entry(db, symbol, signal.get("timeframe", "15m"), feedback)
-                        remove_active_signal(signal_id)
-                        logger.info(f"Signal {signal_id} marked as {outcome}")
-
-                except Exception as e:
-                    logger.error(f"Error processing signal {signal.get('signal_id')}: {e}")
+    except Exception as e:
+        logging.error(f"An error occurred during the active signals check cycle: {e}", exc_info=True)
     finally:
         db.close()
-# پرانا کوڈ
-# from ..signal_tracker import get_all_signals, remove_active_signal
-# active_signals = get_all_signals()
-
-# نیا اصلاح شدہ کوڈ
-from .database_crud import get_all_active_signals, remove_active_signal, add_completed_trade, add_feedback_entry
-
-def check_active_signals():
-    db = SessionLocal()
-    try:
-        active_signals = get_all_active_signals(db)
-        # ... (باقی منطق) ...
-        if outcome:
-            # ...
-            remove_active_signal(db, signal.signal_id)
-    finally:
-        db.close()
-                        
+        logging.info("Active signals check cycle finished.")
+        
