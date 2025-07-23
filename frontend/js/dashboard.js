@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) throw new Error('Network response was not ok');
             const signals = await response.json();
 
-            if (signals.length > 0) {
+            if (signals && signals.length > 0) {
                 if(loadingMessage) loadingMessage.style.display = 'none';
                 signalsGrid.innerHTML = ''; // Clear grid
                 signals.forEach(signal => {
@@ -56,15 +56,22 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) throw new Error('Network response was not ok');
             const summary = await response.json();
             
-            winRateEl.textContent = `${summary.win_rate.toFixed(1)}%`;
-            pnlEl.textContent = `$${summary.pnl.toFixed(2)}`;
+            // --- CRITICAL FIX: Check if summary data exists before using it ---
+            if (summary && typeof summary.win_rate !== 'undefined' && typeof summary.pnl !== 'undefined') {
+                winRateEl.textContent = `${summary.win_rate.toFixed(1)}%`;
+                pnlEl.textContent = `$${summary.pnl.toFixed(2)}`;
 
-            if(summary.pnl > 0) {
-                pnlEl.className = 'text-3xl font-bold text-green-500';
-            } else if (summary.pnl < 0) {
-                pnlEl.className = 'text-3xl font-bold text-red-500';
+                if(summary.pnl > 0) {
+                    pnlEl.className = 'text-3xl font-bold text-green-500';
+                } else if (summary.pnl < 0) {
+                    pnlEl.className = 'text-3xl font-bold text-red-500';
+                } else {
+                    pnlEl.className = 'text-3xl font-bold text-gray-500';
+                }
             } else {
-                pnlEl.className = 'text-3xl font-bold text-gray-500';
+                // This will run if the API returns empty data or a message
+                winRateEl.textContent = '--%';
+                pnlEl.textContent = '$--';
             }
 
         } catch (error) {
@@ -74,8 +81,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Initial fetch
     fetchLiveSignals();
     fetchSummary();
+    
+    // Set intervals for periodic fetching
     setInterval(fetchLiveSignals, 30 * 1000); // Refresh every 30 seconds
     setInterval(fetchSummary, 5 * 60 * 1000); // Refresh every 5 minutes
 });
