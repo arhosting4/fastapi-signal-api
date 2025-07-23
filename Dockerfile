@@ -8,15 +8,12 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
-# Using --no-cache-dir to reduce image size
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application's code into the container at /app
 COPY . .
 
-# --- THE FINAL AND CRITICAL FIX ---
 # This command tells uvicorn to run on host 0.0.0.0 which is accessible
 # from outside the container (necessary for Render).
-# It also specifies the port 8000, which Render expects.
-# The app:app part points to the 'app' variable inside the 'app.py' file.
+# The port is now managed by Render via the RENDER_PORT environment variable.
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
