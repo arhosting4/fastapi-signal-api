@@ -1,18 +1,18 @@
-# Python کا ایک موثر اور مستحکم بنیادی امیج استعمال کریں
-FROM python:3.9-slim-bullseye
+# Use lightweight image
+FROM python:3.10-slim
 
-# ورکنگ ڈائرکٹری سیٹ کریں
+# Set working directory
 WORKDIR /app
 
-# requirements.txt فائل کو کاپی کریں
-COPY requirements.txt .
-
-# پائیتھن کے انحصار کو انسٹال کریں
-RUN pip install --no-cache-dir -r requirements.txt
-
-# باقی پروجیکٹ فائلوں کو کاپی کریں
+# Copy files
 COPY . .
 
-# ایپلیکیشن کو چلانے کے لیے کمانڈ
-# Render.com اس کمانڈ کو خود سنبھالے گا اگر اس کی سیٹنگز میں وضاحت کی گئی ہے
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app"]
+# Install dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Run the app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
