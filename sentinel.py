@@ -4,7 +4,6 @@ import httpx
 import asyncio
 from datetime import datetime
 from sqlalchemy.orm import Session
-# --- اہم اور حتمی اصلاح: 'Optional' کو 'typing' سے امپورٹ کیا گیا ---
 from typing import Optional, Dict
 
 from utils import key_manager
@@ -43,7 +42,11 @@ async def fetch_from_marketaux(client: httpx.AsyncClient) -> Optional[Dict]:
         response.raise_for_status()
         data = response.json()
         if 'data' in data:
-            articles = [{'title': item.get('title'), 'url': item.get('url'), 'source': item.get('source')} for item in data['data']]
+            articles = [{
+                'title': item.get('title'),
+                'url': item.get('url'),
+                'source': item.get('source')
+            } for item in data['data']]
             return {"articles": articles}
         return None
     except Exception as e:
@@ -88,7 +91,9 @@ async def get_news_analysis_for_symbol(symbol: str):
     for article in all_news['articles']:
         title = article.get('title', '').lower()
         if symbol_base.lower() in title or any(keyword in title for keyword in high_impact_keywords):
-            return {"impact": "High", "reason": f"Potentially high-impact news found: '{article.get('title', '')[:50]}...'"}
+            return {
+                "impact": "High",
+                "reason": f"Potentially high-impact news found: '{article.get('title', '')[:50]}...'"
+            }
             
     return {"impact": "Clear", "reason": "No high-impact news scheduled for this symbol."}
-    
