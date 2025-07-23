@@ -1,50 +1,75 @@
-# filename: messenger.py
-
 import os
 import httpx
 import logging
+from tenacity import retry, stop_after_attempt, wait_fixed, before_sleep_log
+from typing import Dict, Any
 
-# Load secrets from environment
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# --- Configuration ---
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-logger = logging.getLogger(__name__)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+RETRY_LOG = logging.getLogger(__name__)
 
-async def send_telegram_alert(signal_data: dict):
-    """
-    Sends a formatted Telegram alert using bot token and chat ID from env vars.
-    """
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.warning("Telegram bot token or chat ID not set.")
+# --- Initial Check ---
+if not BOT_TOKEN or not CHAT_ID:
+    logging.warning("Telegram BOT_TOKEN or CHAT_ID not found in environment variables. Telegram alerts are disabled.")
+
+def format_signal_message(signal_data: Dict[str, Any]) -> str:
+    """Formats the signal data into a human-readable message using MarkdownV2."""
+    signal_type = signal_data.get('signal', 'N/A').upper()
+    symbol = signal_data.get('symbol', 'N/A').replace('/', r'\/') # Escape for MarkdownV2
+    timeframe = signal_data.get('timeframe', 'N/A')
+    
+    icon = "🟢" if signal_type == "BUY" else "🔴"
+    
+    # Ensure prices are formatted correctly
+    entry_price = f"{signal_data.get('entry_price', 0.0):.5f}"
+    tp_price = f"{signal_data.get('tp_price', 0.0):.5f}"
+    sl_price = f"{signal_data.get('sl_price', 0.0):.5f}"
+    
+    confidence = f"{signal_data.get('confidence', 0.0):.2f}%"
+    reason = signal_data.get('reason', 'No specific reason provided').replace('.', r'\.') # Escape dots
+
+    message = (
+        f"{icon} *New AI Signal: {signal_type}*\n\n"
+        f"*Symbol:* `{symbol} ({timeframe})`\n"
+        f"*Entry:* `{entry_price}`\n"
+        f"*Take Profit:* `{tp_price}`\n"
+        f"*Stop Loss:* `{sl_price}`\n\n"
+        f"*Confidence:* `{confidence}`\n"
+        f"*Reason:* _{reason}_"
+    )
+    return message
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+    before_sleep=before_sleep_log(RETRY_LOG, logging.WARNING)
+)
+async def send_telegram_alert(signal_data: Dict[str, Any]):
+    """Sends a formatted message to a Telegram chat with retry logic."""
+    if not BOT_TOKEN or not CHAT_ID:
         return
 
-    signal = signal_data.get('signal', 'N/A').upper()
-    symbol = signal_data.get('symbol', 'N/A')
-    price = signal_data.get('price', 0.0)
-    tp = signal_data.get('tp', 0.0)
-    sl = signal_data.get('sl', 0.0)
-    reason = signal_data.get('reason', 'No reason provided.')
-
-    icon = "🟢" if signal == "BUY" else "🔴"
-    message = (
-        f"{icon} *ScalpMaster AI Signal* {icon}\n\n"
-        f"*Action:* {signal} {symbol}\n"
-        f"*Entry Price:* `{price:.5f}`\n"
-        f"*Take Profit:* `{tp:.5f}`\n"
-        f"*Stop Loss:* `{sl:.5f}`\n\n"
-        f"*AI Reason:* _{reason}_"
-    )
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    params = {
-        'chat_id': TELEGRAM_CHAT_ID,
+    message = format_signal_message(signal_data)
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        'chat_id': CHAT_ID,
         'text': message,
-        'parse_mode': 'Markdown'
+        'parse_mode': 'MarkdownV2'
     }
 
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(url, json=params)
-        logger.info(f"Sent Telegram signal alert for {symbol}")
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+        logging.info(f"Successfully sent Telegram alert for symbol {signal_data.get('symbol')}.")
+    except httpx.HTTPStatusError as e:
+        logging.error(f"Failed to send Telegram alert. Status: {e.response.status_code}, Response: {e.response.text}")
+        raise
     except Exception as e:
-        logger.error(f"Failed to send Telegram alert: {e}", exc_info=True)
+        logging.error(f"An unexpected error occurred while sending Telegram alert: {e}")
+        raise
+        
