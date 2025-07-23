@@ -84,3 +84,21 @@ async def check_active_signals_job():
                     logger.error(f"Error processing signal {signal.get('signal_id')}: {e}")
     finally:
         db.close()
+# پرانا کوڈ
+# from ..signal_tracker import get_all_signals, remove_active_signal
+# active_signals = get_all_signals()
+
+# نیا اصلاح شدہ کوڈ
+from .database_crud import get_all_active_signals, remove_active_signal, add_completed_trade, add_feedback_entry
+
+def check_active_signals():
+    db = SessionLocal()
+    try:
+        active_signals = get_all_active_signals(db)
+        # ... (باقی منطق) ...
+        if outcome:
+            # ...
+            remove_active_signal(db, signal.signal_id)
+    finally:
+        db.close()
+                        
