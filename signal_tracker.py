@@ -1,36 +1,34 @@
 # filename: signal_tracker.py
 
+import random
 from datetime import datetime
-from typing import List, Dict, Any
 
-# --- عارضی طور پر RAM میں فعال سگنلز محفوظ کیے جاتے ہیں ---
-ACTIVE_SIGNALS_CACHE: List[Dict[str, Any]] = []
+# Dummy signal data for demo; replace with real model integration later
+def get_all_signals():
+    example_signals = [
+        {
+            "symbol": "EUR/USD",
+            "timeframe": "5m",
+            "confidence": round(random.uniform(75.0, 99.0), 2),
+            "direction": random.choice(["BUY", "SELL"]),
+            "timestamp": datetime.utcnow().isoformat()
+        },
+        {
+            "symbol": "BTC/USD",
+            "timeframe": "15m",
+            "confidence": round(random.uniform(70.0, 95.0), 2),
+            "direction": random.choice(["BUY", "SELL"]),
+            "timestamp": datetime.utcnow().isoformat()
+        },
+        {
+            "symbol": "XAU/USD",
+            "timeframe": "1h",
+            "confidence": round(random.uniform(80.0, 98.0), 2),
+            "direction": random.choice(["BUY", "SELL"]),
+            "timestamp": datetime.utcnow().isoformat()
+        },
+    ]
 
-def add_active_signal(signal_data: Dict[str, Any]):
-    """
-    سگنل کو ایک منفرد ID دے کر فعال فہرست میں شامل کرتا ہے۔
-    """
-    global ACTIVE_SIGNALS_CACHE
-    signal_id = f"{signal_data['symbol']}_{signal_data['timeframe']}_{datetime.utcnow().timestamp()}"
-    signal_data['signal_id'] = signal_id
-    signal_data['timestamp'] = datetime.utcnow().isoformat()
-    ACTIVE_SIGNALS_CACHE.append(signal_data)
-    print(f"--- Signal Tracker: Added new signal {signal_id}. Total active: {len(ACTIVE_SIGNALS_CACHE)} ---")
-
-def remove_active_signal(signal_id: str):
-    """
-    فعال سگنل کی فہرست سے دیے گئے ID کے سگنل کو ہٹا دیتا ہے۔
-    """
-    global ACTIVE_SIGNALS_CACHE
-    initial_count = len(ACTIVE_SIGNALS_CACHE)
-    ACTIVE_SIGNALS_CACHE = [s for s in ACTIVE_SIGNALS_CACHE if s.get('signal_id') != signal_id]
-    if len(ACTIVE_SIGNALS_CACHE) < initial_count:
-        print(f"--- Signal Tracker: Removed signal {signal_id}. Total active: {len(ACTIVE_SIGNALS_CACHE)} ---")
-
-def get_all_signals() -> List[Dict[str, Any]]:
-    """تمام فعال سگنلز کی فہرست واپس کرتا ہے۔"""
-    return list(ACTIVE_SIGNALS_CACHE)
-
-def get_active_signals_count() -> int:
-    """فعلاً موجود سگنلز کی کل تعداد واپس کرتا ہے۔"""
-    return len(ACTIVE_SIGNALS_CACHE)
+    # Simulate signal filtering based on confidence threshold
+    high_confidence_signals = [s for s in example_signals if s["confidence"] >= 80.0]
+    return high_confidence_signals
