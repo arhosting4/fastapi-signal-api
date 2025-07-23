@@ -1,46 +1,22 @@
-# filename: app.py
-
-import os
-import asyncio
-from datetime import datetime
-
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from typing import List
-from sqlalchemy.orm import Session
-
-from src.database.models import create_db_and_tables, SessionLocal
-import database_crud as crud
-from signal_tracker import get_all_signals
-from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job
-from sentinel import update_economic_calendar_cache
-
 import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from fastapi import FastAPI, Depends
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+from typing import List, Dict, Any, Optional
 
-# Load .env variables
-load_dotenv()
+# --- Local Imports ---
+from .database import database_crud as crud
+from .database.database_config import SessionLocal, engine, Base
+from .database import models
+from .scheduler import scheduler, start_scheduler, shutdown_scheduler
+from .api_schemas import TradeHistory, ActiveSignal, News, Summary
 
-# Create FastAPI app
-app = FastAPI(title="ScalpMaster AI API")
+# Create all database tables on startup
+models.Base.metadata.create_all(bind=engine)
 
-# Allow CORS if frontend is hosted elsewhere
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Replace with frontend domain in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="ScalpMaster AI API", version="1.0.0")
 
-# DB Dependency
+# --- Dependency ---
 def get_db():
     db = SessionLocal()
     try:
@@ -48,63 +24,51 @@ def get_db():
     finally:
         db.close()
 
-# Scheduler setup
-scheduler = AsyncIOScheduler(timezone="UTC")
-
-@app.get("/health", status_code=200)
-async def health_check():
-    return {"status": "ok"}
-
-@app.get("/api/live-signals", response_class=JSONResponse)
-async def get_live_signals_api():
-    """Return all active trade signals."""
-    signals = get_all_signals()
-    if not signals:
-        return {"message": "AI is actively scanning the markets... No high-confidence signals at the moment."}
-    return signals
-
-@app.get("/api/history", response_class=JSONResponse)
-async def get_history(db: Session = Depends(get_db)):
-    try:
-        trades = crud.get_completed_trades(db)
-        return trades
-    except Exception as e:
-        logger.error(f"Error fetching history: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error.")
-
-@app.get("/api/news", response_class=JSONResponse)
-async def get_news(db: Session = Depends(get_db)):
-    try:
-        news = crud.get_cached_news(db)
-        if not news:
-            return {"message": "No high-impact news found."}
-        return news
-    except Exception as e:
-        logger.error(f"Error fetching news: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error.")
-
-# Background job scheduler setup
+# --- Scheduler Events ---
 @app.on_event("startup")
-async def startup_event():
-    create_db_and_tables()
-
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
-
-    try:
-        scheduler.start()
-        logger.info("Scheduler started.")
-    except Exception as e:
-        logger.error(f"Scheduler failed to start: {e}")
+def startup_event():
+    start_scheduler()
+    logging.info("FastAPI application startup complete. Scheduler started.")
 
 @app.on_event("shutdown")
-async def shutdown_event():
-    try:
-        scheduler.shutdown()
-        logger.info("Scheduler shutdown successfully.")
-    except Exception as e:
-        logger.warning(f"Scheduler shutdown failed: {e}")
+def shutdown_event():
+    shutdown_scheduler()
+    logging.info("FastAPI application shutdown. Scheduler stopped.")
 
-# Serve static frontend
+# --- API Endpoints ---
+
+@app.get("/health", status_code=200)
+def health_check():
+    """Endpoint to check the health of the application."""
+    return {"status": "ok"}
+
+@app.get("/api/live-signals", response_model=List[ActiveSignal])
+def get_live_signals(db: Session = Depends(get_db)):
+    """Provides a list of all currently active trading signals."""
+    signals = crud.get_all_active_signals(db)
+    return signals
+
+@app.get("/api/history", response_model=List[TradeHistory])
+def get_trade_history(limit: int = 100, db: Session = Depends(get_db)):
+    """Provides a history of recently completed trades."""
+    trades = crud.get_completed_trades(db, limit=limit)
+    return trades
+
+@app.get("/api/news", response_model=Optional[News])
+def get_latest_news(db: Session = Depends(get_db)):
+    """Provides the latest cached market news."""
+    news = crud.get_cached_news(db)
+    if not news:
+        return {"message": "No high-impact news available at the moment."}
+    return news
+
+@app.get("/api/summary", response_model=Summary)
+def get_summary_data(db: Session = Depends(get_db)):
+    """Calculates and provides summary data like Win Rate and P/L."""
+    summary = crud.get_summary_stats(db)
+    return summary
+
+# --- Static Files Mount ---
+# This must be the last part of the app definition
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+
