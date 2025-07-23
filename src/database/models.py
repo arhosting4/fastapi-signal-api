@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# Load DB URL
+# Load DB URL from .env or use SQLite fallback
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mydb.db")
 
 # SQLAlchemy setup
@@ -21,10 +21,10 @@ engine = create_engine(
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# === TABLE 1: Trade History ===
+# === TABLE 1: Completed Trades ===
 
-class TradeHistory(Base):
-    __tablename__ = "trade_history"
+class CompletedTrade(Base):
+    __tablename__ = "completed_trades"
 
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String, nullable=False)
@@ -33,7 +33,7 @@ class TradeHistory(Base):
     price = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-# === TABLE 2: Cached News ===
+# === TABLE 2: Cached Economic News ===
 
 class CachedNews(Base):
     __tablename__ = "cached_news"
@@ -43,7 +43,7 @@ class CachedNews(Base):
     url = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-# === DB Initializer ===
+# === Function to Initialize Tables ===
 
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
