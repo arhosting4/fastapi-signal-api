@@ -1,43 +1,86 @@
+# filename: feedback_checker.py
+
+import httpx
+import asyncio
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from src.database.models import SessionLocal, LiveSignal, FeedbackEntry
 
+from signal_tracker import get_all_signals, remove_active_signal
+from utils import get_current_price_twelve_data
+from database_crud import add_completed_trade, add_feedback_entry
+from src.database.models import SessionLocal
+
+# Configuration
+EXPIRY_MINUTES = 15
+
+# Logger setup
 logger = logging.getLogger(__name__)
 
-def check_active_signals_job():
+async def check_active_signals_job():
     """
-    Scheduled job to check feedback on active signals.
-    Deactivates signals if they've expired or received negative feedback (optional logic).
+    This job checks all active signals and evaluates their result (TP/SL/Expired).
+    It runs every minute via APScheduler.
     """
-    logger.info("🔎 Checking active signals and feedback...")
+    logger.info(f"[{datetime.utcnow()}] Running Feedback Checker Job...")
 
-    db: Session = SessionLocal()
+    active_signals = get_all_signals()
+    if not active_signals:
+        logger.info("No active signals to evaluate.")
+        return
+
+    db = SessionLocal()
     try:
-        now = datetime.utcnow()
+        async with httpx.AsyncClient() as client:
+            for signal in active_signals:
+                try:
+                    signal_id = signal.get("signal_id")
+                    symbol = signal.get("symbol")
+                    signal_type = signal.get("signal")
+                    tp = signal.get("tp")
+                    sl = signal.get("sl")
+                    signal_time_str = signal.get("timestamp")
 
-        # Check signals that have been active more than 3 hours (as an example)
-        expiration_time = now - timedelta(hours=3)
-        signals_to_expire = db.query(LiveSignal).filter(
-            LiveSignal.active == True,
-            LiveSignal.created_at < expiration_time
-        ).all()
+                    if not all([signal_id, symbol, signal_type, tp, sl, signal_time_str]):
+                        logger.warning(f"Incomplete signal data: {signal}")
+                        continue
 
-        for signal in signals_to_expire:
-            signal.active = False
-            logger.info(f"❌ Signal expired: {signal.symbol} ({signal.timeframe})")
+                    signal_time = datetime.fromisoformat(signal_time_str)
+                    current_price = await get_current_price_twelve_data(symbol, client)
+                    if current_price is None:
+                        logger.warning(f"Price fetch failed for {symbol}")
+                        continue
 
-        db.commit()
+                    outcome = None
+                    feedback = None
 
-        # Optional: analyze feedback entries
-        recent_feedbacks = db.query(FeedbackEntry).filter(
-            FeedbackEntry.timestamp >= now - timedelta(hours=6)
-        ).all()
+                    if signal_type == "buy":
+                        if current_price >= tp:
+                            outcome = "tp_hit"
+                            feedback = "correct"
+                        elif current_price <= sl:
+                            outcome = "sl_hit"
+                            feedback = "incorrect"
+                    elif signal_type == "sell":
+                        if current_price <= tp:
+                            outcome = "tp_hit"
+                            feedback = "correct"
+                        elif current_price >= sl:
+                            outcome = "sl_hit"
+                            feedback = "incorrect"
 
-        logger.info(f"📝 Recent feedbacks found: {len(recent_feedbacks)}")
+                    # Expiry check
+                    if outcome is None and datetime.utcnow() - signal_time >= timedelta(minutes=EXPIRY_MINUTES):
+                        outcome = "expired"
+                        feedback = "incorrect"
 
-    except Exception as e:
-        logger.error(f"❌ Error in feedback check job: {e}")
-        db.rollback()
+                    # If outcome determined, record and remove
+                    if outcome:
+                        add_completed_trade(db, signal, outcome)
+                        add_feedback_entry(db, symbol, signal.get("timeframe", "15m"), feedback)
+                        remove_active_signal(signal_id)
+                        logger.info(f"Signal {signal_id} marked as {outcome}")
+
+                except Exception as e:
+                    logger.error(f"Error processing signal {signal.get('signal_id')}: {e}")
     finally:
         db.close()
