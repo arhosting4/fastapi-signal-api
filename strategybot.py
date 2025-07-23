@@ -1,3 +1,5 @@
+# filename: strategybot.py
+
 import pandas as pd
 import pandas_ta as ta
 
@@ -75,4 +77,3 @@ def generate_core_signal(symbol: str, tf: str, candles: list):
         signal = "sell"
             
     return {"signal": signal}
-                
