@@ -1,88 +1,44 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean
+import os
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import create_engine
-from datetime import datetime
+from dotenv import load_dotenv
 
-# Create database connection
-SQLALCHEMY_DATABASE_URL = "sqlite:///./signal.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+load_dotenv()  # Load environment variables from .env file
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
+
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Declare base
 Base = declarative_base()
 
-# ===========================
-# ✅ Trade table
-# ===========================
+# ✅ Trade Data Model
 class CompletedTrade(Base):
     __tablename__ = "completed_trades"
-
     id = Column(Integer, primary_key=True, index=True)
-    trade_date = Column(String, index=True)
-    pair = Column(String)
-    signal_type = Column(String)
+    signal = Column(String)
     entry_price = Column(Float)
-    stop_loss = Column(Float)
-    take_profit = Column(Float)
-    result = Column(String)
-    duration = Column(String)
+    exit_price = Column(Float)
     profit_loss = Column(Float)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime)
 
-# ===========================
-# ✅ Feedback table
-# ===========================
+# ✅ User Feedback Model
 class FeedbackEntry(Base):
-    __tablename__ = "feedback_entries"
-
+    __tablename__ = "feedback"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    email = Column(String)
-    message = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    feedback = Column(String)
+    timestamp = Column(DateTime)
 
-# ===========================
-# ✅ Cached News table
-# ===========================
+# ✅ News Cache Model
 class CachedNews(Base):
     __tablename__ = "cached_news"
-
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String)
-    url = Column(String)
-    source = Column(String)
+    content = Column(String)
     published_at = Column(DateTime)
-    content = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow)
 
-# ===========================
-# ✅ NewsItem for frontend/news.html API
-# ===========================
-class NewsItem(Base):
-    __tablename__ = "news_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    description = Column(Text)
-    url = Column(String)
-    source = Column(String)
-    published_at = Column(DateTime)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-
-# ===========================
-# ✅ Live Signal table (Optional for charts)
-# ===========================
-class LiveSignal(Base):
-    __tablename__ = "live_signals"
-
-    id = Column(Integer, primary_key=True, index=True)
-    pair = Column(String)
-    signal_type = Column(String)
-    price = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-# ===========================
-# ✅ Create all tables
-# ===========================
+# ✅ Create Tables Function
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
