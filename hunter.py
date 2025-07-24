@@ -1,92 +1,67 @@
-import logging
+# filename: hunter.py
 import asyncio
-from datetime import datetime
-import uuid
+import logging
+from typing import Dict, Any, Optional
+from sqlalchemy.orm import Session
 
-# براہ راست امپورٹس
-from database_config import SessionLocal
-import utils
-import strategybot
-import patternai
-import riskguardian
-import supply_demand
-import sentinel
-import fusion_engine
-import signal_tracker
-import messenger
+import config
+from utils import fetch_twelve_data_ohlc, get_available_pairs
+from fusion_engine import generate_final_signal
+from signal_tracker import add_active_signal, get_active_signals_count
+from messenger import send_telegram_alert
+from models import SessionLocal
 
-async def hunt_for_signals():
+logger = logging.getLogger(__name__)
+
+async def analyze_pair_timeframe(db: Session, pair: str, tf: str) -> Optional[Dict[str, Any]]:
     """
-    Main function to orchestrate the signal generation process.
-    It fetches market data for various pairs and timeframes,
-    and then passes this data to different AI modules for analysis.
+    ایک دی گئی تجارتی جوڑی کا مخصوص ٹائم فریم پر تجزیہ کرتا ہے اور اگر مل جائے تو ایک درست سگنل واپس کرتا ہے۔
     """
-    logging.info("Starting signal hunting cycle...")
-    pairs = utils.get_available_pairs()
-    timeframes = ["15min", "1h", "4h"] # Scalping focused timeframes
-    
-    for pair in pairs:
-        for timeframe in timeframes:
-            logging.info(f"Processing {pair} on {timeframe}...")
-            
-            ohlc_data = await utils.fetch_twelve_data_ohlc(pair, timeframe)
-            if not ohlc_data:
-                logging.warning(f"Could not fetch OHLC data for {pair} on {timeframe}. Skipping.")
-                continue
+    try:
+        candles = await fetch_twelve_data_ohlc(pair, tf, config.CANDLE_COUNT)
+        if not candles or len(candles) < 34: # 34 کی ضرورت ہے کیونکہ طویل ترین SMA 30 ہے
+            logger.info(f"{pair} ({tf}): تجزیے کے لیے ناکافی کینڈلز ({len(candles) if candles else 0})۔")
+            return None
 
-            # --- AI Module Analysis ---
-            core_signal = strategybot.generate_core_signal(pair, timeframe, ohlc_data)
-            patterns = patternai.detect_patterns(ohlc_data)
-            risk_assessment = riskguardian.check_risk(ohlc_data)
-            market_structure = supply_demand.get_market_structure_analysis(ohlc_data)
-            news_analysis = await sentinel.get_news_analysis_for_symbol(pair)
+        signal_result = await generate_final_signal(db, pair, candles, tf)
 
-            # --- Signal Fusion ---
-            final_signal = fusion_engine.fuse_signals(
-                core_signal=core_signal,
-                patterns=patterns,
-                risk=risk_assessment,
-                structure=market_structure,
-                news=news_analysis
-            )
+        if signal_result and signal_result.get("status") == "ok":
+            return signal_result
 
-            # --- Process Valid Signal ---
-            if final_signal and final_signal.get("signal") not in ["NEUTRAL", "WAIT"]:
-                confidence = final_signal.get("confidence", 0)
-                if confidence >= 60: # Confidence threshold
-                    signal_id = str(uuid.uuid4())
-                    
-                    # Calculate TP/SL
-                    tp_sl = strategybot.calculate_tp_sl(
-                        entry_price=ohlc_data["close"].iloc[-1],
-                        signal_type=final_signal["signal"],
-                        atr=ohlc_data["ATR"].iloc[-1],
-                        atr_multiplier=riskguardian.get_dynamic_atr_multiplier(risk_assessment["status"])
-                    )
+    except Exception as e:
+        logger.error(f"شکاری کی خرابی {pair} ({tf}) پر کارروائی کرتے ہوئے: {e}", exc_info=True)
+    return None
 
-                    active_signal_data = {
-                        "signal_id": signal_id,
-                        "symbol": pair,
-                        "timeframe": timeframe,
-                        "signal_type": final_signal["signal"],
-                        "entry_price": ohlc_data["close"].iloc[-1],
-                        "confidence": confidence,
-                        "reason": final_signal.get("reason", "N/A"),
-                        "tp_price": tp_sl["tp"],
-                        "sl_price": tp_sl["sl"],
-                        "created_at": datetime.utcnow()
-                    }
-                    
-                    # Add to tracker and send alert
-                    signal_tracker.add_active_signal(active_signal_data)
-                    await messenger.send_telegram_alert(active_signal_data)
-                    logging.info(f"SUCCESS: New signal generated and sent for {pair} on {timeframe}.")
-                else:
-                    logging.info(f"Signal for {pair} on {timeframe} did not meet confidence threshold ({confidence}%).")
-            else:
-                logging.info(f"No actionable signal found for {pair} on {timeframe}.")
-            
-            await asyncio.sleep(2) # Rate limiting between API calls
+async def hunt_for_signals_job():
+    """
+    مرکزی آرکیسٹریٹر: جوڑوں کے ذریعے لوپ کرتا ہے اور AI فیوژن کا استعمال کرکے تجارتی سگنل تلاش کرنے کی کوشش کرتا ہے۔
+    """
+    logger.info("سگنل کی تلاش کا کام چل رہا ہے...")
 
-    logging.info("Signal hunting cycle finished.")
-    
+    active_count = get_active_signals_count()
+    if active_count >= config.MAX_ACTIVE_SIGNALS:
+        logger.info(f"فعال سگنلز کی زیادہ سے زیادہ حد ({config.MAX_ACTIVE_SIGNALS}) تک پہنچ گئی۔ تلاش روک دی گئی۔")
+        return
+
+    pairs = get_available_pairs()
+    db = SessionLocal()
+    logger.info(f"ان جوڑوں کا تجزیہ کیا جا رہا ہے: {pairs}")
+
+    try:
+        for pair in pairs:
+            if get_active_signals_count() >= config.MAX_ACTIVE_SIGNALS:
+                logger.info("سگنل کی حد تک پہنچ گئی۔ تلاش کا یہ دور ختم کیا جا رہا ہے۔")
+                break
+
+            result = await analyze_pair_timeframe(db, pair, config.PRIMARY_TIMEFRAME)
+
+            if result and result.get("confidence", 0) >= config.FINAL_CONFIDENCE_THRESHOLD:
+                add_active_signal(result)
+                await send_telegram_alert(result)
+                logger.info(f"کامیابی! {pair} کے لیے سگنل تیار کیا گیا: {result['signal']} ({result['confidence']}%)")
+
+    except Exception as e:
+        logger.error(f"سگنل کی تلاش کے کام میں مہلک خرابی: {e}", exc_info=True)
+    finally:
+        db.close()
+        
