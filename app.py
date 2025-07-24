@@ -1,3 +1,4 @@
+
 import logging
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
@@ -6,25 +7,22 @@ from fastapi.responses import FileResponse
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 from typing import List
-import sys
 
 # ===================================================================
-# FINAL AND CORRECTED VERSION FOR HYBRID FILE STRUCTURE
-# This adds the current directory to sys.path to find the 'src' package.
+# FINAL VERSION FOR FLAT STRUCTURE (NO 'src' FOLDER)
 # ===================================================================
 
-# پائتھن کو بتانا کہ 'src' فولڈر کہاں ہے
-sys.path.append(str(Path(__file__).parent))
-
-# درست امپورٹس (اب یہ کام کریں گے)
-from src.database import database_crud as crud
-from src.database.database_config import SessionLocal, engine
-from src.database import models
+# براہ راست امپورٹس
+import database_crud as crud
+from database_config import SessionLocal, engine
+import models
 import api_schemas as schemas
 import hunter
 import feedback_checker
 import sentinel
 
+# (باقی تمام کوڈ بالکل ویسا ہی رہے گا جیسا میں نے پچھلی بار دیا تھا)
+# ...
 # لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
