@@ -1,14 +1,24 @@
+# FastAPI and Server
 fastapi==0.111.0
-uvicorn==0.30.1
+uvicorn[standard]==0.30.1
 gunicorn==22.0.0
-python-dotenv==1.0.1
-httpx==0.28.1
-requests==2.32.3
-numpy==1.26.4
-pandas==2.2.2
-pandas-ta
+
+# Scheduling
 apscheduler==3.10.4
+
+# Database
 sqlalchemy==2.0.31
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.9  # For PostgreSQL on Render
 alembic==1.13.2
-tenacity
+
+# Data Analysis
+pandas==2.2.2
+pandas-ta==0.3.14b
+
+# HTTP and Environment
+httpx==0.27.0
+python-dotenv==1.0.1
+requests==2.32.3
+
+# Data Validation
+pydantic==2.8.2
