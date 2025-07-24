@@ -1,71 +1,82 @@
+# filename: feedback_checker.py
+import httpx
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
-# براہ راست امپورٹس
-from database_config import SessionLocal
-import database_crud as crud
-import signal_tracker
-import utils
+import config
+from signal_tracker import get_all_signals, remove_active_signal
+from utils import get_current_price_twelve_data
+from database_crud import add_completed_trade, add_feedback_entry
+from models import SessionLocal
 
-def check_active_signals():
+logger = logging.getLogger(__name__)
+
+async def check_active_signals_job():
     """
-    Checks all active signals to see if they have hit TP/SL or expired.
-    Records the outcome in the database.
+    یہ کام تمام فعال سگنلز کی جانچ کرتا ہے اور ان کے نتیجے (TP/SL/Expired) کا جائزہ لیتا ہے۔
+    یہ APScheduler کے ذریعے ہر منٹ چلتا ہے۔
     """
-    logging.info("Starting active signals check cycle...")
-    active_signals = signal_tracker.get_all_signals() # یہاں تبدیلی کی گئی ہے
-    
+    active_signals = get_all_signals()
     if not active_signals:
-        logging.info("No active signals to check.")
         return
+
+    logger.info(f"فیڈ بیک چیکر کام چل رہا ہے... {len(active_signals)} فعال سگنلز کا جائزہ لیا جا رہا ہے۔")
 
     db = SessionLocal()
     try:
-        for signal in active_signals:
-            symbol = signal["symbol"]
-            current_price_data = utils.get_current_price_twelve_data(symbol)
-            
-            if not current_price_data:
-                logging.warning(f"Could not get current price for {symbol} to check signal {signal["signal_id"]}.")
-                continue
+        async with httpx.AsyncClient() as client:
+            for signal in active_signals:
+                try:
+                    signal_id = signal.get("signal_id")
+                    symbol = signal.get("symbol")
+                    signal_type = signal.get("signal")
+                    tp = signal.get("tp")
+                    sl = signal.get("sl")
+                    signal_time_str = signal.get("timestamp")
 
-            current_price = current_price_data["price"]
-            outcome = None
-            
-            # Check for TP/SL hit
-            if signal["signal_type"] == "BUY":
-                if current_price >= signal["tp_price"]:
-                    outcome = "tp_hit"
-                elif current_price <= signal["sl_price"]:
-                    outcome = "sl_hit"
-            elif signal["signal_type"] == "SELL":
-                if current_price <= signal["tp_price"]:
-                    outcome = "tp_hit"
-                elif current_price >= signal["sl_price"]:
-                    outcome = "sl_hit"
+                    if not all([signal_id, symbol, signal_type, tp, sl, signal_time_str]):
+                        logger.warning(f"نامکمل سگنل ڈیٹا، نظر انداز کیا جا رہا ہے: {signal}")
+                        continue
 
-            # Check for expiration (e.g., 15 minutes for scalping signals)
-            expiration_time = signal["created_at"] + timedelta(minutes=15)
-            if not outcome and datetime.utcnow() > expiration_time:
-                outcome = "expired"
+                    signal_time = datetime.fromisoformat(signal_time_str)
+                    current_price = await get_current_price_twelve_data(symbol, client)
+                    if current_price is None:
+                        logger.warning(f"{symbol} کے لیے قیمت حاصل کرنے میں ناکام۔")
+                        continue
 
-            # If an outcome is determined, process it
-            if outcome:
-                logging.info(f"Signal {signal["signal_id"]} for {symbol} finished with outcome: {outcome}.")
-                
-                # Record the completed trade
-                crud.add_completed_trade(db, signal_data=signal, outcome=outcome)
-                
-                # Record feedback (correct if TP hit, incorrect otherwise)
-                feedback = "correct" if outcome == "tp_hit" else "incorrect"
-                crud.add_feedback_entry(db, symbol=signal["symbol"], timeframe=signal["timeframe"], feedback=feedback)
-                
-                # Remove from active tracker
-                signal_tracker.remove_active_signal(signal["signal_id"])
-    
-    except Exception as e:
-        logging.error(f"An error occurred during the feedback check cycle: {e}", exc_info=True)
+                    outcome = None
+                    feedback = None
+
+                    if signal_type == "buy":
+                        if current_price >= tp:
+                            outcome = "tp_hit"
+                            feedback = "correct"
+                        elif current_price <= sl:
+                            outcome = "sl_hit"
+                            feedback = "incorrect"
+                    elif signal_type == "sell":
+                        if current_price <= tp:
+                            outcome = "tp_hit"
+                            feedback = "correct"
+                        elif current_price >= sl:
+                            outcome = "sl_hit"
+                            feedback = "incorrect"
+
+                    # میعاد ختم ہونے کی جانچ
+                    if outcome is None and datetime.utcnow() - signal_time >= timedelta(minutes=config.EXPIRY_MINUTES):
+                        outcome = "expired"
+                        feedback = "incorrect" # میعاد ختم ہونے والے سگنل کو غلط سمجھا جاتا ہے
+
+                    # اگر نتیجہ طے ہو جائے تو ریکارڈ کریں اور ہٹا دیں
+                    if outcome:
+                        logger.info(f"سگنل {signal_id} ({symbol}) کو {outcome} کے طور پر نشان زد کیا گیا۔ قیمت: {current_price}")
+                        add_completed_trade(db, signal, outcome)
+                        add_feedback_entry(db, symbol, signal.get("timeframe", config.PRIMARY_TIMEFRAME), feedback)
+                        remove_active_signal(signal_id)
+
+                except Exception as e:
+                    logger.error(f"سگنل {signal.get('signal_id')} پر کارروائی کرتے ہوئے خرابی: {e}", exc_info=True)
     finally:
         db.close()
-        logging.info("Active signals check cycle finished.")
         
