@@ -1,60 +1,129 @@
-# app.py - (اس فائل میں کوئی تبدیلی نہیں کرنی، یہ بالکل ٹھیک ہے)
-import sys
-import os
 import logging
-from fastapi import FastAPI, Depends
-from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
-from typing import List, Optional
 from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from contextlib import asynccontextmanager
 
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-BASE_DIR = Path(__file__).resolve().parent
-FRONTEND_DIR = BASE_DIR / "frontend"
+# درست امپورٹس
+import src.database.database_crud as crud
+from src.database.database_config import SessionLocal, engine
+from src.database import models
+import src.api_schemas as schemas
+import hunter
+import feedback_checker
+import sentinel
 
-from src.database import database_crud as crud, models
-import database_config, scheduler, api_schemas
-
+# لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# ڈیٹا بیس ٹیبلز بنانا
 try:
-    models.Base.metadata.create_all(bind=database_config.engine)
+    models.Base.metadata.create_all(bind=engine)
     logging.info("Database tables checked/created successfully.")
 except Exception as e:
-    logging.error(f"Error creating database tables: {e}")
+    logging.critical(f"FATAL: Could not create database tables: {e}", exc_info=True)
 
-app = FastAPI(title="ScalpMaster AI API")
+# شیڈولر کی ترتیب
+scheduler = AsyncIOScheduler()
 
-def get_db():
-    db = database_config.SessionLocal()
-    try: yield db
-    finally: db.close()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # اسٹارٹ اپ پر چلنے والا کوڈ
+    logging.info("Application startup...")
+    try:
+        scheduler.add_job(hunter.hunt_for_signals, 'interval', minutes=5, id='hunt_for_signals_job')
+        scheduler.add_job(feedback_checker.check_active_signals, 'interval', minutes=1, id='check_active_signals_job')
+        scheduler.add_job(sentinel.update_economic_calendar_cache, 'interval', hours=4, id='update_economic_calendar_cache_job')
+        scheduler.start()
+        logging.info("Scheduler started with jobs.")
+    except Exception as e:
+        logging.error(f"Failed to start scheduler: {e}", exc_info=True)
+    yield
+    # شٹ ڈاؤن پر چلنے والا کوڈ
+    logging.info("Application shutdown...")
+    scheduler.shutdown()
 
-@app.on_event("startup")
-def startup_event(): scheduler.start_scheduler()
-@app.on_event("shutdown")
-def shutdown_event(): scheduler.shutdown_scheduler()
+app = FastAPI(title="ScalpMaster AI API", lifespan=lifespan)
 
-@app.get("/health", status_code=200)
-def health_check(): return {"status": "ok"}
-@app.get("/api/live-signals", response_model=List[api_schemas.ActiveSignal])
-def get_live_signals(db: Session = Depends(get_db)): return crud.get_all_active_signals(db)
-@app.get("/api/history", response_model=List[api_schemas.TradeHistory])
-def get_trade_history(limit: int = 100, db: Session = Depends(get_db)): return crud.get_completed_trades(db, limit=limit)
-@app.get("/api/news", response_model=Optional[api_schemas.News])
-def get_latest_news(db: Session = Depends(get_db)):
-    news = crud.get_cached_news(db)
-    if not news or not news.get('data'): return {"message": "No high-impact news available."}
-    return news
-@app.get("/api/summary", response_model=api_schemas.Summary)
-def get_summary_data(db: Session = Depends(get_db)): return crud.get_summary_stats(db)
+# --- API Endpoints ---
 
-@app.get("/{page_name:path}", response_class=HTMLResponse)
-async def serve_frontend(page_name: str):
-    if page_name == "" or not page_name.endswith(".html"): page_name = "index.html"
-    file_path = FRONTEND_DIR / page_name
-    allowed_files = ["index.html", "history.html", "news.html"]
-    if page_name not in allowed_files: file_path = FRONTEND_DIR / "index.html"
-    if file_path.exists():
-        with open(file_path) as f: return HTMLResponse(content=f.read(), status_code=200)
-    else: return HTMLResponse(content="<h1>404 - Not Found</h1>", status_code=404)
-        
+@app.get("/api/summary", response_model=schemas.Summary)
+def get_summary():
+    """
+    Provides summary stats like win rate and P&L.
+    This endpoint is now robust and directly returns the correct schema.
+    """
+    db = SessionLocal()
+    try:
+        stats = crud.get_summary_stats(db)
+        # اسکیمہ کے مطابق جواب واپس کرنا
+        return schemas.Summary(win_rate=stats.get("win_rate", 0.0), pnl=stats.get("pnl", 0.0))
+    except Exception as e:
+        logging.error(f"Error in /api/summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not fetch summary statistics.")
+    finally:
+        db.close()
+
+@app.get("/api/live-signals", response_model=List[schemas.Signal])
+def get_live_signals():
+    """
+    Provides a list of active trading signals.
+    This endpoint is now robust and directly returns the correct schema.
+    """
+    db = SessionLocal()
+    try:
+        active_signals = crud.get_all_active_signals(db)
+        # ہر سگنل کو اسکیمہ میں تبدیل کرنا
+        return [schemas.Signal.from_orm(signal) for signal in active_signals]
+    except Exception as e:
+        logging.error(f"Error in /api/live-signals: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not fetch live signals.")
+    finally:
+        db.close()
+
+@app.get("/api/history", response_model=List[schemas.Trade])
+def get_history():
+    """Provides a list of completed trades."""
+    db = SessionLocal()
+    try:
+        trade_history = crud.get_trade_history(db)
+        return [schemas.Trade.from_orm(trade) for trade in trade_history]
+    except Exception as e:
+        logging.error(f"Error in /api/history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not fetch trade history.")
+    finally:
+        db.close()
+
+@app.get("/api/news", response_model=schemas.NewsResponse)
+def get_news():
+    """Provides cached market news."""
+    db = SessionLocal()
+    try:
+        news_cache = crud.get_cached_news(db)
+        if news_cache and news_cache.content:
+            return news_cache.content
+        return {"message": "No high-impact news available.", "data": []}
+    except Exception as e:
+        logging.error(f"Error in /api/news: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not fetch news.")
+    finally:
+        db.close()
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+# --- Static Files and Root Path ---
+# یہ یقینی بناتا ہے کہ فرنٹ اینڈ فائلیں صحیح طریقے سے پیش کی جائیں
+
+FRONTEND_DIR = Path(__file__).parent / "frontend"
+
+# روٹ پاتھ (/) پر index.html دکھانا
+@app.get("/", response_class=FileResponse)
+async def read_index():
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+# باقی تمام فرنٹ اینڈ فائلوں کو پیش کرنا
+app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="static")
