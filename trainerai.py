@@ -1,38 +1,58 @@
+# filename: trainerai.py
 import random
 from sqlalchemy.orm import Session
-import logging
-
-# براہ راست امپورٹ
 import database_crud as crud
 
-def get_confidence(db: Session, symbol: str, signal_type: str) -> float:
+def get_confidence(
+    db: Session,
+    core_signal: str,
+    pattern_signal_type: str,
+    risk_status: str,
+    news_impact: str,
+    symbol: str
+) -> float:
     """
-    Estimates the confidence of a signal based on historical feedback.
-    A higher confidence is given if past signals of the same type for the symbol were correct.
+    سگنل کے اعتماد کا تخمینہ لگاتا ہے، جس میں ڈیٹا بیس سے فیڈ بیک شامل ہے۔
     """
-    try:
-        feedback_stats = crud.get_feedback_stats(db, symbol=symbol)
-        
-        base_confidence = 60.0  # Start with a base confidence
-        
-        if feedback_stats['total'] > 5: # Only adjust if we have enough data
-            accuracy = feedback_stats['accuracy']
-            if signal_type == "BUY":
-                # Increase confidence if historical accuracy is high
-                adjustment = (accuracy - 50) * 0.4 # Scale the adjustment
-                base_confidence += adjustment
-            elif signal_type == "SELL":
-                # For sells, we can use the same logic or a different one
-                adjustment = (accuracy - 50) * 0.4
-                base_confidence += adjustment
+    # بنیادی اعتماد 50 سے شروع ہوتا ہے
+    confidence = 50.0
 
-        # Add a small random factor to avoid static confidence scores
-        random_factor = random.uniform(-3.0, 3.0)
-        final_confidence = base_confidence + random_factor
-        
-        # Ensure confidence is within bounds [0, 100]
-        return max(0, min(100, final_confidence))
+    # 1. بنیادی سگنل اور پیٹرن کی مطابقت
+    if core_signal == "buy" and pattern_signal_type == "bullish":
+        confidence += 15
+    elif core_signal == "sell" and pattern_signal_type == "bearish":
+        confidence += 15
+    elif (core_signal == "buy" and pattern_signal_type == "bearish") or \
+         (core_signal == "sell" and pattern_signal_type == "bullish"):
+        confidence -= 20 # مضبوط منفی اشارہ
 
-    except Exception as e:
-        logging.error(f"Error calculating confidence for {symbol}: {e}", exc_info=True)
-        return 50.0 # Return a neutral confidence on error
+    # 2. رسک کی تشخیص کا اثر
+    if risk_status == "High":
+        confidence -= 20
+    elif risk_status == "Moderate":
+        confidence -= 10
+
+    # 3. خبروں کے اثرات کی تشخیص
+    if news_impact == "High":
+        confidence -= 25 # خبروں کا اثر سب سے زیادہ ہے
+
+    # 4. فیڈ بیک لوپ کا اثر (ڈیٹا بیس سے)
+    feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
+    if feedback_stats and feedback_stats["total"] > 10: # کم از کم 10 ٹریڈز کے بعد سیکھیں
+        accuracy = feedback_stats.get("accuracy", 50.0)
+        if accuracy > 75:
+            confidence += 15 # اعلیٰ درستگی پر بڑا انعام
+        elif accuracy > 60:
+            confidence += 7
+        elif accuracy < 40:
+            confidence -= 15 # کم درستگی پر بڑی سزا
+
+    # اعتماد کو 10-99 کی حد میں رکھیں
+    confidence = max(10.0, min(99.0, confidence))
+    
+    # تھوڑا سا بے ترتیب پن تاکہ ہر بار ایک جیسی قدر نہ آئے
+    confidence += random.uniform(-1.0, 1.0)
+    confidence = max(10.0, min(99.0, confidence))
+
+    return round(confidence, 2)
+    
