@@ -1,108 +1,104 @@
+# filename: database_crud.py
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
-from typing import List, Optional, Dict, Any
+from sqlalchemy import desc, func
 from datetime import datetime
-import models
-from database_config import SessionLocal
+from typing import Dict, Any, List, Optional
+import logging
 
-# --- Signal and Trade Management ---
+from models import CompletedTrade, FeedbackEntry, CachedNews
 
-def add_active_signal(db: Session, signal_data: Dict[str, Any]):
-    """Adds a new active signal to the database."""
-    db_signal = models.ActiveSignal(**signal_data)
-    db.add(db_signal)
-    db.commit()
-    db.refresh(db_signal)
-    return db_signal
+logger = logging.getLogger(__name__)
 
-def get_all_active_signals(db: Session) -> List[models.ActiveSignal]:
-    """Retrieves all active signals from the database."""
-    return db.query(models.ActiveSignal).all()
+def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
+    """کسی علامت کے لیے فیڈ بیک کے اعداد و شمار کا حساب لگاتا ہے۔"""
+    correct_count = db.query(func.count(FeedbackEntry.id)).filter(
+        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'correct'
+    ).scalar() or 0
 
-def remove_active_signal(db: Session, signal_id: str):
-    """Removes an active signal from the database by its ID."""
-    db_signal = db.query(models.ActiveSignal).filter(models.ActiveSignal.signal_id == signal_id).first()
-    if db_signal:
-        db.delete(db_signal)
-        db.commit()
-    return db_signal
+    incorrect_count = db.query(func.count(FeedbackEntry.id)).filter(
+        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'incorrect'
+    ).scalar() or 0
 
-def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str):
-    """Moves an active signal to the completed trades table with an outcome."""
-    # ===================================================================
-    # FINAL AND CORRECTED VERSION
-    # This code is now correct because the 'signal_id' column exists in the model.
-    # ===================================================================
-    trade_data = {
-        "signal_id": signal_data['signal_id'], # <--- اب یہ لائن صحیح کام کرے گی
-        "symbol": signal_data['symbol'],
-        "timeframe": signal_data['timeframe'],
-        "signal_type": signal_data['signal_type'],
-        "entry_price": signal_data['entry_price'],
-        "outcome": outcome,
-        "created_at": signal_data['created_at'],
-        "closed_at": datetime.utcnow()
-    }
-    db_trade = models.CompletedTrade(**trade_data)
-    db.add(db_trade)
-    db.commit()
-    db.refresh(db_trade)
-    return db_trade
+    total = correct_count + incorrect_count
+    accuracy = (correct_count / total) * 100 if total > 0 else 50.0
 
-def get_trade_history(db: Session, limit: int = 100) -> List[models.CompletedTrade]:
-    """Retrieves the most recent completed trades."""
-    return db.query(models.CompletedTrade).order_by(desc(models.CompletedTrade.closed_at)).limit(limit).all()
-
-# --- Summary Statistics ---
-
-def get_summary_stats(db: Session) -> Dict[str, float]:
-    """Calculates win rate and P/L for the summary cards."""
-    total_trades = db.query(func.count(models.CompletedTrade.id)).scalar() or 0
-    wins = db.query(func.count(models.CompletedTrade.id)).filter(models.CompletedTrade.outcome == 'tp_hit').scalar() or 0
-    win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0.0
-    pnl = 0.0 # Placeholder
-    return {"win_rate": win_rate, "pnl": pnl}
-
-# --- News Cache ---
-
-def update_news_cache(db: Session, news_data: Dict[str, Any]):
-    """Updates or creates the news cache."""
-    cache_entry = db.query(models.CachedNews).first()
-    if cache_entry:
-        cache_entry.content = news_data
-        cache_entry.updated_at = datetime.utcnow()
-    else:
-        cache_entry = models.CachedNews(content=news_data)
-        db.add(cache_entry)
-    db.commit()
-
-def get_cached_news(db: Session) -> Optional[models.CachedNews]:
-    """Retrieves the cached news."""
-    return db.query(models.CachedNews).first()
-
-# --- Feedback System ---
-
-def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str):
-    """Adds a feedback entry for a signal's outcome."""
-    db_feedback = models.FeedbackEntry(
-        symbol=symbol,
-        timeframe=timeframe,
-        feedback=feedback,
-        created_at=datetime.utcnow()
-    )
-    db.add(db_feedback)
-    db.commit()
-
-def get_feedback_stats(db: Session, symbol: str) -> Dict[str, Any]:
-    """Gets feedback statistics for a given symbol to calculate confidence."""
-    total = db.query(func.count(models.FeedbackEntry.id)).filter_by(symbol=symbol).scalar() or 0
-    correct = db.query(func.count(models.FeedbackEntry.id)).filter_by(symbol=symbol, feedback='correct').scalar() or 0
-    incorrect = db.query(func.count(models.FeedbackEntry.id)).filter_by(symbol=symbol, feedback='incorrect').scalar() or 0
-    accuracy = (correct / total) * 100 if total > 0 else 0
     return {
         "total": total,
-        "correct": correct,
-        "incorrect": incorrect,
-        "accuracy": accuracy
+        "accuracy": round(accuracy, 2),
+        "correct": correct_count,
+        "incorrect": incorrect_count
     }
-    
+
+def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str) -> Optional[CompletedTrade]:
+    """ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔"""
+    try:
+        required_keys = ['signal_id', 'symbol', 'timeframe', 'signal', 'price', 'tp', 'sl']
+        if not all(key in signal_data for key in required_keys):
+            logger.warning(f"مکمل ٹریڈ شامل کرنے کے لیے سگنل ڈیٹا میں مطلوبہ کلیدیں غائب ہیں: {signal_data}")
+            return None
+
+        db_trade = CompletedTrade(
+            signal_id=signal_data['signal_id'],
+            symbol=signal_data['symbol'],
+            timeframe=signal_data['timeframe'],
+            signal_type=signal_data['signal'],
+            entry_price=signal_data['price'],
+            tp_price=signal_data['tp'],
+            sl_price=signal_data['sl'],
+            outcome=outcome,
+            closed_at=datetime.utcnow()
+        )
+
+        db.add(db_trade)
+        db.commit()
+        db.refresh(db_trade)
+        return db_trade
+
+    except Exception as e:
+        logger.error(f"مکمل ٹریڈ شامل کرنے میں خرابی: {e}", exc_info=True)
+        db.rollback()
+        return None
+
+def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str) -> Optional[FeedbackEntry]:
+    """دی گئی علامت اور ٹائم فریم کے لیے DB میں فیڈ بیک اندراج شامل کرتا ہے۔"""
+    try:
+        entry = FeedbackEntry(
+            symbol=symbol,
+            timeframe=timeframe,
+            feedback=feedback,
+            created_at=datetime.utcnow()
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+        return entry
+    except Exception as e:
+        logger.error(f"فیڈ بیک اندراج شامل کرنے میں خرابی: {e}", exc_info=True)
+        db.rollback()
+        return None
+
+def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
+    """سب سے حالیہ مکمل شدہ ٹریڈز واپس کرتا ہے۔"""
+    trades = db.query(CompletedTrade).order_by(desc(CompletedTrade.closed_at)).limit(limit).all()
+    return [trade.as_dict() for trade in trades]
+
+def update_news_cache(db: Session, news_data: Dict[str, Any]) -> None:
+    """موجودہ کیش شدہ خبروں کو نئے مواد سے بدل دیتا ہے۔"""
+    try:
+        db.query(CachedNews).delete()
+        new_news = CachedNews(content=news_data, updated_at=datetime.utcnow())
+        db.add(new_news)
+        db.commit()
+    except Exception as e:
+        logger.error(f"نیوز کیش اپ ڈیٹ کرنے میں خرابی: {e}", exc_info=True)
+        db.rollback()
+
+def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
+    """DB سے کیش شدہ خبریں حاصل کرتا ہے اگر دستیاب ہوں۔"""
+    try:
+        news = db.query(CachedNews).order_by(desc(CachedNews.updated_at)).first()
+        return news.content if news else None
+    except Exception as e:
+        logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
+        return None
+        
