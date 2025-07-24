@@ -1,50 +1,45 @@
-from pydantic import BaseModel
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
+from datetime import datetime
 
-# --- Base Models for consistent typing ---
-class SignalBase(BaseModel):
+# ===================================================================
+# FINAL CORRECTED VERSION WITH Pydantic V2 COMPATIBILITY
+# ===================================================================
+
+class Signal(BaseModel):
+    signal_id: str
     symbol: str
     timeframe: str
     signal_type: str
     entry_price: float
     tp_price: float
     sl_price: float
-
-# --- Response Models for API Endpoints ---
-
-class ActiveSignal(SignalBase):
-    id: int
-    signal_id: str
     confidence: float
-    reason: Optional[str]
+    reason: str
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    # Pydantic V2 کے لیے درست کنفیگریشن
+    model_config = ConfigDict(from_attributes=True)
 
-class TradeHistory(SignalBase):
-    id: int
-    signal_id: str
+class Trade(BaseModel):
+    symbol: str
+    entry_price: float
     outcome: str
-    created_at: datetime
     closed_at: datetime
 
-    class Config:
-        orm_mode = True
+    # Pydantic V2 کے لیے درست کنفیگریشن
+    model_config = ConfigDict(from_attributes=True)
 
-class NewsItem(BaseModel):
+class Summary(BaseModel):
+    win_rate: float
+    pnl: float
+
+class NewsArticle(BaseModel):
     title: str
     url: str
     source: str
-    image_url: str
     snippet: str
 
-class News(BaseModel):
-    message: Optional[str] = None
-    data: Optional[List[NewsItem]] = None
-
-class Summary(BaseModel):
-    win_rate_24h: float
-    today_pl: float
-  
+class NewsResponse(BaseModel):
+    message: str
+    data: List[NewsArticle]
