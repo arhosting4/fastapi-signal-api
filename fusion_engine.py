@@ -3,33 +3,51 @@ from typing import Dict, Any, Optional
 import trainerai 
 from database_config import SessionLocal
 
-def fuse_signals(core_signal: Dict, patterns: Dict, risk: Dict) -> Optional[Dict[str, Any]]:
+def fuse_signals(core_signal: Dict, patterns: Dict, risk: Dict, structure: Dict, news: Dict) -> Optional[Dict[str, Any]]:
     """
     Fuses signals from various AI modules into a single, confident signal.
     """
-    if not core_signal or core_signal['signal'] == 'hold':
+    if not core_signal or core_signal["signal"] == "hold":
         return None
 
     confidence = 0.0
     reasons = []
 
     # Base confidence from core signal
-    confidence += core_signal.get('confidence', 0)
-    reasons.append(core_signal.get('reason', 'Core signal triggered'))
+    confidence += core_signal.get("confidence", 0)
+    reasons.append(core_signal.get("reason", "Core signal triggered"))
 
     # Adjust based on patterns
-    if patterns and patterns['pattern_name'] != 'No Pattern':
-        confidence += patterns.get('score', 0)
+    if patterns and patterns["pattern_name"] != "No Pattern":
+        confidence += patterns.get("score", 0)
         reasons.append(f"Pattern: {patterns['pattern_name']}")
 
     # Adjust based on risk
     if risk:
-        if risk['status'] == 'High':
+        if risk["status"] == "High":
             confidence *= 0.7 # Reduce confidence by 30% in high-risk
             reasons.append("High market risk detected")
-        elif risk['status'] == 'Moderate':
+        elif risk["status"] == "Moderate":
             confidence *= 0.9 # Reduce confidence by 10% in moderate-risk
             reasons.append("Moderate market risk")
+
+    # Adjust based on market structure
+    if structure and structure.get("trend"):
+        if core_signal["signal"] == "BUY" and structure["trend"] == "uptrend":
+            confidence += 10 # Boost confidence for aligning with trend
+            reasons.append("Signal aligns with market uptrend")
+        elif core_signal["signal"] == "SELL" and structure["trend"] == "downtrend":
+            confidence += 10 # Boost confidence for aligning with trend
+            reasons.append("Signal aligns with market downtrend")
+
+    # Adjust based on news sentiment
+    if news and news.get("sentiment"):
+        if core_signal["signal"] == "BUY" and news["sentiment"] == "positive":
+            confidence += 5
+            reasons.append("Positive news sentiment")
+        elif core_signal["signal"] == "SELL" and news["sentiment"] == "negative":
+            confidence += 5
+            reasons.append("Negative news sentiment")
 
     # Use trainerai to get a final confidence score based on historical data (placeholder)
     db_session = SessionLocal()
@@ -42,9 +60,10 @@ def fuse_signals(core_signal: Dict, patterns: Dict, risk: Dict) -> Optional[Dict
         db_session.close()
 
     final_signal = {
-        "signal": core_signal['signal'],
+        "signal": core_signal["signal"],
         "confidence": min(confidence, 100.0), # Cap confidence at 100
         "reason": ". ".join(reasons)
     }
     
     return final_signal
+    
