@@ -4,24 +4,95 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>News - ScalpMaster AI</title>
-    
-    <!-- CRITICAL FIX: Add Tailwind CSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@700&display=swap" rel="stylesheet">
-    
-    <style>
-        .font-teko {
-            font-family: 'Teko', sans-serif;
-        }
-    </style>
+    <style> .font-teko { font-family: 'Teko', sans-serif; } </style>
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-['Inter']">
 
-    <!-- ... (باقی تمام باڈی کا کوڈ ویسے ہی رہے گا) ... -->
+    <!-- Header -->
+    <header class="p-4 flex justify-between items-center bg-white dark:bg-gray-800 shadow-md">
+        <div class="flex items-center">
+            <h1 class="text-2xl font-teko text-yellow-500">SCALPMASTER AI</h1>
+        </div>
+        <nav class="hidden md:flex space-x-4">
+            <a href="/index.html" class="hover:text-yellow-500">Dashboard</a>
+            <a href="/history.html" class="hover:text-yellow-500">History</a>
+            <a href="/news.html" class="text-yellow-500 font-bold">News</a>
+        </nav>
+        <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+            <i class="fas fa-moon"></i>
+        </button>
+    </header>
 
-    <script src="/js/main.js"></script>
-    <script src="/js/news.js"></script>
+    <!-- Main Content -->
+    <main class="p-4 md:p-8">
+        <h2 class="text-2xl font-bold mb-4">Market News</h2>
+        <div id="news-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- News articles will be injected here -->
+            <p>Loading news...</p>
+        </div>
+    </main>
+
+    <!-- Mobile Navigation -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 flex justify-around p-2 border-t dark:border-gray-700">
+        <a href="/index.html" class="flex flex-col items-center hover:text-yellow-500"><i class="fas fa-chart-line"></i><span class="text-xs">Dashboard</span></a>
+        <a href="/history.html" class="flex flex-col items-center hover:text-yellow-500"><i class="fas fa-history"></i><span class="text-xs">History</span></a>
+        <a href="/news.html" class="flex flex-col items-center text-yellow-500"><i class="fas fa-newspaper"></i><span class="text-xs">News</span></a>
+    </nav>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- THEME TOGGLER ---
+            const themeToggle = document.getElementById('theme-toggle');
+            const html = document.documentElement;
+            if (localStorage.getItem('theme') === 'dark') {
+                html.classList.add('dark');
+                if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+            } else {
+                html.classList.remove('dark');
+                if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+            }
+            if (themeToggle) {
+                themeToggle.addEventListener('click', () => {
+                    html.classList.toggle('dark');
+                    if (html.classList.contains('dark')) {
+                        localStorage.setItem('theme', 'dark');
+                        themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+                    } else {
+                        localStorage.setItem('theme', 'light');
+                        themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+                    }
+                });
+            }
+
+            // --- NEWS PAGE LOGIC ---
+            const newsGrid = document.getElementById('news-grid');
+            async function fetchNews() {
+                try {
+                    const response = await fetch('/api/news');
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    const result = await response.json();
+                    newsGrid.innerHTML = ''; // Clear loading message
+                    if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+                        result.data.forEach(article => {
+                            const articleCard = document.createElement('div');
+                            articleCard.className = 'bg-white dark:bg-gray-800 p-4 rounded-lg shadow';
+                            articleCard.innerHTML = `<h3 class="font-bold text-lg mb-2">${article.title}</h3><p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Source: ${article.source}</p><p class="text-sm mb-4">${article.snippet}</p><a href="${article.url}" target="_blank" rel="noopener noreferrer" class="text-yellow-500 hover:underline">Read Full Story &rarr;</a>`;
+                            newsGrid.appendChild(articleCard);
+                        });
+                    } else {
+                        newsGrid.innerHTML = `<p>${result.message || 'No news found at the moment.'}</p>`;
+                    }
+                } catch (error) {
+                    console.error('Error fetching news:', error);
+                    newsGrid.innerHTML = '<p>Failed to load news. Please try again later.</p>';
+                }
+            }
+            fetchNews();
+            setInterval(fetchNews, 15 * 60 * 1000); // Refresh every 15 minutes
+        });
+    </script>
 </body>
 </html>
