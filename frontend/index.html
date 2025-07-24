@@ -10,7 +10,6 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         .font-teko { font-family: 'Teko', sans-serif; }
-        /* Custom styles for a more advanced look */
         .signal-card { transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
         .signal-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(251, 191, 36, 0.1), 0 4px 6px -2px rgba(251, 191, 36, 0.05); }
     </style>
@@ -86,32 +85,51 @@
                 }
             }
 
+            // ===================================================================
+            // THE FINAL AND CORRECTED VERSION OF THIS FUNCTION
+            // ===================================================================
             async function fetchSummary() {
                 try {
                     const response = await fetch('/api/summary');
-                    if (!response.ok) throw new Error('Network response was not ok');
+                    if (!response.ok) {
+                        // If the API call itself fails, show 'Error'
+                        throw new Error(`API responded with status: ${response.status}`);
+                    }
                     const summary = await response.json();
+                    
+                    // Check if the expected keys exist in the response
                     if (summary && typeof summary.win_rate !== 'undefined' && typeof summary.pnl !== 'undefined') {
                         winRateEl.textContent = `${summary.win_rate.toFixed(1)}%`;
                         pnlEl.textContent = `$${summary.pnl.toFixed(2)}`;
-                        if(summary.pnl > 0) pnlEl.className = 'text-4xl font-bold text-green-400';
-                        else if (summary.pnl < 0) pnlEl.className = 'text-4xl font-bold text-red-400';
-                        else pnlEl.className = 'text-4xl font-bold text-gray-300';
+                        
+                        // Update color based on P/L value
+                        if(summary.pnl > 0) {
+                            pnlEl.className = 'text-4xl font-bold text-green-400';
+                        } else if (summary.pnl < 0) {
+                            pnlEl.className = 'text-4xl font-bold text-red-400';
+                        } else {
+                            pnlEl.className = 'text-4xl font-bold text-gray-300';
+                        }
                     } else {
+                        // If the API call is successful but the data is not ready yet (e.g., no trades completed)
                         winRateEl.textContent = '--%';
                         pnlEl.textContent = '$--';
+                        pnlEl.className = 'text-4xl font-bold text-gray-300';
                     }
                 } catch (error) {
+                    // This block will catch network errors or any other failure
                     console.error('Error fetching summary:', error);
                     winRateEl.textContent = 'Error';
                     pnlEl.textContent = 'Error';
+                    pnlEl.className = 'text-4xl font-bold text-red-400'; // Show error in red
                 }
             }
+            // ===================================================================
 
             fetchLiveSignals();
             fetchSummary();
             setInterval(fetchLiveSignals, 30 * 1000);
-            setInterval(fetchSummary, 5 * 60 * 1000);
+            setInterval(fetchSummary, 60 * 1000); // Check for summary more frequently
         });
     </script>
 </body>
