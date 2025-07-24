@@ -4,133 +4,270 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - ScalpMaster AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .font-teko { font-family: 'Teko', sans-serif; }
-        .signal-card { transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
-        .signal-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(251, 191, 36, 0.1), 0 4px 6px -2px rgba(251, 191, 36, 0.05); }
+        :root {
+            --bg: #0d1117;
+            --primary: #161b22;
+            --secondary: #21262d;
+            --border: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-gold: #ffab00;
+            --signal-buy: #238636;
+            --signal-sell: #da3633;
+        }
+        html {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text-primary);
+            scroll-behavior: smooth;
+        }
+        body { margin: 0; padding: 0; }
+        .header {
+            background-color: var(--primary);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .logo {
+            font-family: 'Teko', sans-serif;
+            font-size: 1.8rem;
+            color: var(--accent-gold);
+            letter-spacing: 1px;
+        }
+        .navbar-desktop a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 1.5rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
+        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        .signals-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .signals-section-header h2 {
+            font-family: 'Teko', sans-serif;
+            font-size: 2rem;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .filter-bar { display: flex; gap: 0.5rem; align-items: center; }
+        .filter-bar select, .filter-bar button {
+            background-color: var(--secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .filter-bar button.active {
+            background-color: var(--accent-gold);
+            color: var(--bg);
+            border-color: var(--accent-gold);
+            font-weight: 600;
+        }
+        .signals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+        .signal-card {
+            background-color: var(--primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+            animation: fadeIn 0.5s ease-out;
+        }
+        .signal-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        .signal-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+        .signal-pair { font-size: 1.5rem; font-weight: 600; }
+        .signal-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; }
+        .tag-buy { background-color: var(--signal-buy); }
+        .tag-sell { background-color: var(--signal-sell); }
+        .confidence-circle {
+            position: relative; width: 70px; height: 70px; border-radius: 50%;
+            display: grid; place-items: center;
+            background: conic-gradient(var(--accent-gold) 0deg, var(--secondary) 0deg);
+            margin-bottom: 1rem;
+        }
+        .confidence-value { position: relative; font-size: 1.5rem; font-weight: 700; }
+        .signal-details { border-top: 1px solid var(--border); padding-top: 1rem; }
+        .signal-details p { display: flex; justify-content: space-between; margin: 0.5rem 0; color: var(--text-secondary); }
+        .signal-details span { color: var(--text-primary); font-weight: 500; }
+        .no-signals {
+            background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px;
+            padding: 3rem; text-align: center; color: var(--text-secondary);
+        }
+        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
+        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; transition: color 0.3s; }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) {
+            .navbar-desktop { display: none; }
+            .mobile-nav { display: flex; }
+            body { padding-bottom: 70px; }
+            .main-container { padding: 1rem; }
+            .signals-section-header { flex-direction: column; align-items: stretch; }
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100">
-
-    <!-- Header -->
-    <header class="p-4 flex justify-between items-center bg-gray-800/50 backdrop-blur-sm shadow-lg sticky top-0 z-10 border-b border-gray-700">
-        <h1 class="text-3xl font-teko text-yellow-400 tracking-wider">SCALPMASTER AI</h1>
-        <nav class="hidden md:flex items-center space-x-6 text-sm">
-            <a href="/index.html" class="text-yellow-400 font-bold border-b-2 border-yellow-400 pb-1">Dashboard</a>
-            <a href="/history.html" class="text-gray-300 hover:text-yellow-400 transition-colors">History</a>
-            <a href="/news.html" class="text-gray-300 hover:text-yellow-400 transition-colors">News</a>
+<body>
+    <header class="header">
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html" class="active">Dashboard</a>
+            <a href="history.html">History</a>
+            <a href="news.html">News</a>
         </nav>
     </header>
 
-    <!-- Main Content -->
-    <main class="p-4 md:p-8">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-lg font-semibold text-gray-400 mb-2">24h Win Rate</h2><p id="win-rate" class="text-4xl font-bold text-green-400">--%</p></div>
-            <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-lg font-semibold text-gray-400 mb-2">Today's P/L</h2><p id="pnl" class="text-4xl font-bold text-gray-300">$--</p></div>
-        </div>
-        <div>
-            <h2 class="text-3xl font-bold mb-6 text-yellow-400">Live Signals</h2>
-            <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <p id="loading-signals" class="text-gray-400 col-span-full text-center py-10">No active signals found. The AI is scanning the markets.</p>
+    <main class="main-container">
+        <section class="signals-section">
+            <div class="signals-section-header">
+                <h2>Live Signals</h2>
+                <div class="filter-bar">
+                    <select id="symbol-filter"><option value="all">All Symbols</option></select>
+                    <button id="filter-all" class="active">All</button>
+                    <button id="filter-buy">Buy</button>
+                    <button id="filter-sell">Sell</button>
+                </div>
             </div>
-        </div>
+            <div class="signals-grid" id="signals-grid"></div>
+            <div class="no-signals" id="no-signals-message" style="display: none;">
+                <h3><i class="fas fa-search"></i> Scanning Markets...</h3>
+                <p>No high-confidence trading opportunities found at the moment.</p>
+            </div>
+        </section>
     </main>
 
-    <!-- Mobile Navigation -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/80 backdrop-blur-sm flex justify-around p-3 border-t border-gray-700">
-        <a href="/index.html" class="flex flex-col items-center text-yellow-400"><i class="fas fa-chart-line fa-lg"></i><span class="text-xs mt-1">Dashboard</span></a>
-        <a href="/history.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-history fa-lg"></i><span class="text-xs mt-1">History</span></a>
-        <a href="/news.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-newspaper fa-lg"></i><span class="text-xs mt-1">News</span></a>
+    <nav class="mobile-nav">
+        <a href="index.html" class="active"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+        <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
+        <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const signalsGrid = document.getElementById('signals-grid');
-            const loadingMessage = document.getElementById('loading-signals');
-            const winRateEl = document.getElementById('win-rate');
-            const pnlEl = document.getElementById('pnl');
+        let allSignalsCache = [];
+        let currentFilters = { symbol: 'all', type: 'all' };
 
-            async function fetchLiveSignals() {
-                try {
-                    const response = await fetch('/api/live-signals');
-                    if (!response.ok) throw new Error('Network response was not ok');
-                    const signals = await response.json();
-                    if (signals && signals.length > 0) {
-                        if(loadingMessage) loadingMessage.style.display = 'none';
-                        signalsGrid.innerHTML = '';
-                        signals.forEach(signal => {
-                            const signalCard = document.createElement('div');
-                            signalCard.className = 'signal-card bg-gray-800 p-5 rounded-xl shadow-lg border border-gray-700';
-                            const confidence = Math.round(signal.confidence);
-                            const signalClass = signal.signal_type === 'BUY' ? 'text-green-400' : 'text-red-400';
-                            signalCard.innerHTML = `<div class="flex justify-between items-center mb-3"><h3 class="font-bold text-xl text-white">${signal.symbol}</h3><span class="text-sm font-semibold px-2 py-1 rounded-md bg-gray-700 text-gray-300">${signal.timeframe}</span></div><p class="text-lg mb-4"><span class="font-semibold ${signalClass}">${signal.signal_type}</span> @ <span class="font-bold text-white">${signal.entry_price}</span></p><div class="text-sm grid grid-cols-2 gap-2 text-gray-400"><p>TP: <span class="text-green-400">${signal.tp}</span></p><p>SL: <span class="text-red-400">${signal.sl}</span></p></div><div class="mt-5 pt-4 border-t border-gray-700"><p class="text-sm text-center text-gray-400">Confidence: <span class="font-bold text-yellow-400">${confidence}%</span></p></div>`;
-                            signalsGrid.appendChild(signalCard);
-                        });
-                    } else {
-                         if(loadingMessage) {
-                            loadingMessage.style.display = 'block';
-                            loadingMessage.textContent = 'No active signals found. The AI is scanning the markets.';
-                         }
-                    }
-                } catch (error) {
-                    console.error('Error fetching live signals:', error);
-                    if(loadingMessage) {
-                        loadingMessage.style.display = 'block';
-                        loadingMessage.textContent = 'Failed to load signals.';
-                    }
+        const grid = document.getElementById('signals-grid');
+        const noSignalsMessage = document.getElementById('no-signals-message');
+        const symbolFilter = document.getElementById('symbol-filter');
+
+        function populateSymbolFilter(signals) {
+            const existingSymbols = new Set(Array.from(symbolFilter.options).map(opt => opt.value));
+            signals.forEach(signal => {
+                if (!existingSymbols.has(signal.symbol)) {
+                    const option = document.createElement('option');
+                    option.value = signal.symbol;
+                    option.textContent = signal.symbol;
+                    symbolFilter.appendChild(option);
+                    existingSymbols.add(signal.symbol);
                 }
-            }
+            });
+        }
 
-            // ===================================================================
-            // THE FINAL AND CORRECTED VERSION OF THIS FUNCTION
-            // ===================================================================
-            async function fetchSummary() {
-                try {
-                    const response = await fetch('/api/summary');
-                    if (!response.ok) {
-                        // If the API call itself fails, show 'Error'
-                        throw new Error(`API responded with status: ${response.status}`);
-                    }
-                    const summary = await response.json();
-                    
-                    // Check if the expected keys exist in the response
-                    if (summary && typeof summary.win_rate !== 'undefined' && typeof summary.pnl !== 'undefined') {
-                        winRateEl.textContent = `${summary.win_rate.toFixed(1)}%`;
-                        pnlEl.textContent = `$${summary.pnl.toFixed(2)}`;
-                        
-                        // Update color based on P/L value
-                        if(summary.pnl > 0) {
-                            pnlEl.className = 'text-4xl font-bold text-green-400';
-                        } else if (summary.pnl < 0) {
-                            pnlEl.className = 'text-4xl font-bold text-red-400';
-                        } else {
-                            pnlEl.className = 'text-4xl font-bold text-gray-300';
-                        }
-                    } else {
-                        // If the API call is successful but the data is not ready yet (e.g., no trades completed)
-                        winRateEl.textContent = '--%';
-                        pnlEl.textContent = '$--';
-                        pnlEl.className = 'text-4xl font-bold text-gray-300';
-                    }
-                } catch (error) {
-                    // This block will catch network errors or any other failure
-                    console.error('Error fetching summary:', error);
-                    winRateEl.textContent = 'Error';
-                    pnlEl.textContent = 'Error';
-                    pnlEl.className = 'text-4xl font-bold text-red-400'; // Show error in red
+        function renderSignals(signals) {
+            grid.innerHTML = '';
+            if (!signals || signals.length === 0) {
+                grid.style.display = 'none';
+                noSignalsMessage.style.display = 'block';
+            } else {
+                grid.style.display = 'grid';
+                noSignalsMessage.style.display = 'none';
+                signals.forEach(signal => {
+                    const card = document.createElement('div');
+                    card.className = 'signal-card';
+                    const signalType = signal.signal.toLowerCase();
+                    const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
+                    const confidence = parseFloat(signal.confidence);
+                    card.innerHTML = `
+                        <div class="signal-card-header">
+                            <div>
+                                <p class="signal-pair">${signal.symbol}</p>
+                                <p style="color: var(--text-secondary); margin:0;">${signal.timeframe}</p>
+                            </div>
+                            <div class="signal-tag ${tagClass}">${signalType.toUpperCase()}</div>
+                        </div>
+                        <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary) 0deg);">
+                            <div class="confidence-value">${confidence.toFixed(0)}%</div>
+                        </div>
+                        <div class="signal-details">
+                            <p>Entry Price: <span>${signal.price.toFixed(5)}</span></p>
+                            <p>Take Profit: <span>${signal.tp.toFixed(5)}</span></p>
+                            <p>Stop Loss: <span>${signal.sl.toFixed(5)}</span></p>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+            }
+        }
+
+        function applyFilters() {
+            let filteredSignals = allSignalsCache;
+            if (currentFilters.symbol !== 'all') {
+                filteredSignals = filteredSignals.filter(s => s.symbol === currentFilters.symbol);
+            }
+            if (currentFilters.type !== 'all') {
+                filteredSignals = filteredSignals.filter(s => s.signal.toLowerCase() === currentFilters.type);
+            }
+            renderSignals(filteredSignals);
+        }
+
+        async function fetchLiveSignals() {
+            try {
+                const response = await fetch('/api/live-signals');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                
+                allSignalsCache = Array.isArray(data) ? data : [];
+                if (allSignalsCache.length > 0) {
+                    populateSymbolFilter(allSignalsCache);
                 }
+                applyFilters();
+            } catch (error) {
+                console.error('Error fetching signals:', error);
+                allSignalsCache = [];
+                applyFilters();
             }
-            // ===================================================================
+        }
 
-            fetchLiveSignals();
-            fetchSummary();
-            setInterval(fetchLiveSignals, 30 * 1000);
-            setInterval(fetchSummary, 60 * 1000); // Check for summary more frequently
+        document.getElementById('symbol-filter').addEventListener('change', (e) => {
+            currentFilters.symbol = e.target.value;
+            applyFilters();
         });
+
+        ['all', 'buy', 'sell'].forEach(type => {
+            document.getElementById(`filter-${type}`).addEventListener('click', () => {
+                currentFilters.type = type;
+                document.querySelector('.filter-bar button.active').classList.remove('active');
+                document.getElementById(`filter-${type}`).classList.add('active');
+                applyFilters();
+            });
+        });
+
+        fetchLiveSignals();
+        setInterval(fetchLiveSignals, 30000);
     </script>
 </body>
 </html>
