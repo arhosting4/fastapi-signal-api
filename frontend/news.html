@@ -3,71 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>News - ScalpMaster AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@700&display=swap" rel="stylesheet">
+    <title>Market News - ScalpMaster AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .font-teko { font-family: 'Teko', sans-serif; }
-        .news-card { transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
-        .news-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(251, 191, 36, 0.1), 0 4px 6px -2px rgba(251, 191, 36, 0.05); }
+        :root {
+            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
+            --text-primary: #c9d1d9; --text-secondary: #8b949e; --accent-gold: #ffab00;
+        }
+        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); }
+        body { margin: 0; padding: 0; }
+        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
+        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
+        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
+        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
+        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        .page-header { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin-bottom: 1.5rem; }
+        .news-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+        .news-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; transition: transform 0.3s, box-shadow 0.3s; overflow: hidden; }
+        .news-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        .news-content { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
+        .news-title { font-size: 1.2rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--text-primary); line-height: 1.4; }
+        .news-source { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; font-weight: 500; }
+        .news-snippet { color: var(--text-secondary); line-height: 1.6; flex-grow: 1; margin-bottom: 1rem; }
+        .read-more { color: var(--accent-gold); text-decoration: none; font-weight: 600; align-self: flex-start; transition: color 0.3s; }
+        .read-more:hover { color: var(--text-primary); }
+        .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
+        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
+        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+        @media (max-width: 768px) {
+            .navbar-desktop { display: none; }
+            .mobile-nav { display: flex; }
+            body { padding-bottom: 70px; }
+            .main-container { padding: 1rem; }
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100">
-
-    <!-- Header -->
-    <header class="p-4 flex justify-between items-center bg-gray-800/50 backdrop-blur-sm shadow-lg sticky top-0 z-10 border-b border-gray-700">
-        <h1 class="text-3xl font-teko text-yellow-400 tracking-wider">SCALPMASTER AI</h1>
-        <nav class="hidden md:flex items-center space-x-6 text-sm">
-            <a href="/index.html" class="text-gray-300 hover:text-yellow-400 transition-colors">Dashboard</a>
-            <a href="/history.html" class="text-gray-300 hover:text-yellow-400 transition-colors">History</a>
-            <a href="/news.html" class="text-yellow-400 font-bold border-b-2 border-yellow-400 pb-1">News</a>
+<body>
+    <header class="header">
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html">Dashboard</a>
+            <a href="history.html">History</a>
+            <a href="news.html" class="active">News</a>
         </nav>
     </header>
 
-    <!-- Main Content -->
-    <main class="p-4 md:p-8">
-        <h2 class="text-3xl font-bold mb-6 text-yellow-400">Market News</h2>
-        <div id="news-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <p class="text-gray-400 col-span-full text-center py-10">Loading news...</p>
+    <main class="main-container">
+        <h2 class="page-header">Latest Market News</h2>
+        <div class="news-grid" id="news-grid"></div>
+        <div class="no-data-message" id="no-news-message" style="display: none;">
+            <h3><i class="fas fa-sync-alt fa-spin"></i> Loading News...</h3>
+            <p>Please wait while we fetch the latest market news.</p>
         </div>
     </main>
 
-    <!-- Mobile Navigation -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/80 backdrop-blur-sm flex justify-around p-3 border-t border-gray-700">
-        <a href="/index.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-chart-line fa-lg"></i><span class="text-xs mt-1">Dashboard</span></a>
-        <a href="/history.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-history fa-lg"></i><span class="text-xs mt-1">History</span></a>
-        <a href="/news.html" class="flex flex-col items-center text-yellow-400"><i class="fas fa-newspaper fa-lg"></i><span class="text-xs mt-1">News</span></a>
+    <nav class="mobile-nav">
+        <a href="index.html"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+        <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
+        <a href="news.html" class="active"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const newsGrid = document.getElementById('news-grid');
-            async function fetchNews() {
-                try {
-                    const response = await fetch('/api/news');
-                    if (!response.ok) throw new Error(`API responded with status: ${response.status}`);
-                    const result = await response.json();
-                    newsGrid.innerHTML = '';
-                    if (result.data && Array.isArray(result.data) && result.data.length > 0) {
-                        result.data.forEach(article => {
-                            const articleCard = document.createElement('div');
-                            articleCard.className = 'news-card bg-gray-800 p-5 rounded-xl shadow-lg border border-gray-700 flex flex-col';
-                            articleCard.innerHTML = `<div class="flex-grow"><h3 class="font-bold text-lg text-white mb-2">${article.title}</h3><p class="text-sm text-gray-400 mb-2">Source: ${article.source}</p><p class="text-sm text-gray-300 mb-4">${article.snippet}</p></div><a href="${article.url}" target="_blank" rel="noopener noreferrer" class="text-yellow-400 hover:text-yellow-300 font-semibold self-start">Read Full Story &rarr;</a>`;
-                            newsGrid.appendChild(articleCard);
-                        });
-                    } else {
-                        newsGrid.innerHTML = `<p class="text-gray-400 col-span-full text-center py-10">${result.message || 'No news found at the moment.'}</p>`;
-                    }
-                } catch (error) {
-                    console.error('Error fetching news:', error);
-                    newsGrid.innerHTML = '<p class="text-red-400 col-span-full text-center py-10">Failed to load news. Please try again later.</p>';
+        const newsGrid = document.getElementById('news-grid');
+        const noNewsMessage = document.getElementById('no-news-message');
+
+        async function fetchNews() {
+            try {
+                noNewsMessage.style.display = 'block';
+                const response = await fetch('/api/news');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const newsData = await response.json();
+                
+                newsGrid.innerHTML = '';
+                const articles = newsData.articles || [];
+
+                if (articles.length > 0) {
+                    noNewsMessage.style.display = 'none';
+                    newsGrid.style.display = 'grid';
+                    articles.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = 'news-card';
+                        const snippet = item.snippet || item.title || 'No summary available.';
+                        card.innerHTML = `
+                            <div class="news-content">
+                                <h3 class="news-title">${item.title || 'No Title'}</h3>
+                                <p class="news-source">${item.source || 'Unknown Source'} - ${new Date(item.published_at).toLocaleString()}</p>
+                                <p class="news-snippet">${snippet.substring(0, 150)}...</p>
+                                <a href="${item.url || '#'}" target="_blank" rel="noopener noreferrer" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
+                            </div>
+                        `;
+                        newsGrid.appendChild(card);
+                    });
+                } else {
+                    noNewsMessage.innerHTML = '<h3><i class="fas fa-search"></i> No News Found</h3><p>Could not retrieve market news at this time.</p>';
                 }
+            } catch (error) {
+                console.error('Error fetching news:', error);
+                noNewsMessage.innerHTML = '<h3><i class="fas fa-exclamation-triangle"></i> Error</h3><p>Failed to load news. Please try again later.</p>';
             }
-            fetchNews();
-            setInterval(fetchNews, 15 * 60 * 1000);
-        });
+        }
+        
+        fetchNews();
+        setInterval(fetchNews, 15 * 60 * 1000);
     </script>
 </body>
 </html>
