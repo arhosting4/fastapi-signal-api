@@ -35,7 +35,7 @@ async def hunt_for_signals():
                 continue
 
             # --- AI Module Analysis ---
-            core_signal = strategybot.generate_core_signal(ohlc_data)
+            core_signal = strategybot.generate_core_signal(pair, timeframe, ohlc_data)
             patterns = patternai.detect_patterns(ohlc_data)
             risk_assessment = riskguardian.check_risk(ohlc_data)
             market_structure = supply_demand.get_market_structure_analysis(ohlc_data)
@@ -58,10 +58,10 @@ async def hunt_for_signals():
                     
                     # Calculate TP/SL
                     tp_sl = strategybot.calculate_tp_sl(
-                        entry_price=ohlc_data['close'].iloc[-1],
+                        entry_price=ohlc_data["close"].iloc[-1],
                         signal_type=final_signal["signal"],
-                        atr=ohlc_data['ATR'].iloc[-1],
-                        atr_multiplier=riskguardian.get_dynamic_atr_multiplier(risk_assessment['status'])
+                        atr=ohlc_data["ATR"].iloc[-1],
+                        atr_multiplier=riskguardian.get_dynamic_atr_multiplier(risk_assessment["status"])
                     )
 
                     active_signal_data = {
@@ -69,11 +69,11 @@ async def hunt_for_signals():
                         "symbol": pair,
                         "timeframe": timeframe,
                         "signal_type": final_signal["signal"],
-                        "entry_price": ohlc_data['close'].iloc[-1],
+                        "entry_price": ohlc_data["close"].iloc[-1],
                         "confidence": confidence,
                         "reason": final_signal.get("reason", "N/A"),
-                        "tp_price": tp_sl['tp'],
-                        "sl_price": tp_sl['sl'],
+                        "tp_price": tp_sl["tp"],
+                        "sl_price": tp_sl["sl"],
                         "created_at": datetime.utcnow()
                     }
                     
@@ -89,4 +89,4 @@ async def hunt_for_signals():
             await asyncio.sleep(2) # Rate limiting between API calls
 
     logging.info("Signal hunting cycle finished.")
-
+    
