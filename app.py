@@ -5,12 +5,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
+from typing import List # List کو امپورٹ کرنا
 
-# درست امپورٹس
-import src.database.database_crud as crud
-from src.database.database_config import SessionLocal, engine
-from src.database import models
-import src.api_schemas as schemas
+# ===================================================================
+# THIS IS THE CORRECTED VERSION WITH FIXED IMPORTS FOR YOUR FLAT STRUCTURE
+# ===================================================================
+
+# درست امپورٹس (بغیر 'src' کے)
+import database_crud as crud
+from database_config import SessionLocal, engine
+import models
+import api_schemas as schemas
 import hunter
 import feedback_checker
 import sentinel
@@ -58,7 +63,6 @@ def get_summary():
     db = SessionLocal()
     try:
         stats = crud.get_summary_stats(db)
-        # اسکیمہ کے مطابق جواب واپس کرنا
         return schemas.Summary(win_rate=stats.get("win_rate", 0.0), pnl=stats.get("pnl", 0.0))
     except Exception as e:
         logging.error(f"Error in /api/summary: {e}", exc_info=True)
@@ -75,7 +79,6 @@ def get_live_signals():
     db = SessionLocal()
     try:
         active_signals = crud.get_all_active_signals(db)
-        # ہر سگنل کو اسکیمہ میں تبدیل کرنا
         return [schemas.Signal.from_orm(signal) for signal in active_signals]
     except Exception as e:
         logging.error(f"Error in /api/live-signals: {e}", exc_info=True)
@@ -127,3 +130,4 @@ async def read_index():
 
 # باقی تمام فرنٹ اینڈ فائلوں کو پیش کرنا
 app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="static")
+    
