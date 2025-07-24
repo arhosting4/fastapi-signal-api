@@ -1,40 +1,72 @@
-# .gitignore
+# filename: .gitignore
 
-# Python - نظر انداز کرنے والی فائلیں اور فولڈرز
-# ==========================================
+# بائٹ کوڈ اور کیش فائلیں
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
+*.py[cod]
+*$py.class
+
+# ورچوئل ماحول (Virtual Environments)
+# venv, virtualenv, etc.
 venv/
-pip-wheel-metadata/
-.idea/
-.vscode/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
 
-# Build artifacts - بلڈ کے دوران بننے والی فائلیں
-# ==========================================
-/build/
-/dist/
-/downloads/
-/site/
+# حساس معلومات
+# .env فائل کو کبھی بھی گٹ میں شامل نہ کریں!
+.env
+.env.*
+!/.env.example  # .env.example کو شامل کرنے کی اجازت دیں اگر موجود ہو
 
-# Data, Cache, and Log files - ڈیٹا، کیشے اور لاگ فائلیں (سب سے اہم)
-# =================================================================
-/data/
-*.json
-*.sqlite3
+# ڈیٹا بیس فائلیں
+# مقامی ترقی کے لیے SQLite ڈیٹا بیس
 *.db
-*.log
-*.tmp
-*.swp
+*.sqlite
+*.sqlite3
 
-# Render specific - Render کے لیے مخصوص
-# =================================
-.render/
+# IDE اور ایڈیٹر کی کنفیگریشن فائلیں
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
-# Operating System files - آپریٹنگ سسٹم کی فائلیں
-# =======================================
+# آپریٹنگ سسٹم کی فائلیں
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# لاگ فائلیں
+*.log
+logs/
+
+# ٹیسٹنگ اور کوریج رپورٹس
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# پیکیجنگ اور تعمیراتی فائلیں
+dist/
+build/
+*.egg-info/
+*.egg
+
+# سیٹ اپ ٹولز کیش
+.eggs/
+
+# Jupyter Notebook کیش
+.ipynb_checkpoints
+
+# Render.com کی مخصوص فائلیں (اگر کوئی ہوں)
+# عام طور پر ان کی ضرورت نہیں ہوتی
+# .render.yaml کو شامل نہ کریں اگر آپ اسے ورژن کنٹرول میں نہیں رکھنا چاہتے
+# لیکن عام طور پر اسے رکھنا بہتر ہے
