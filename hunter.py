@@ -1,80 +1,92 @@
-import asyncio
 import logging
+import asyncio
+from datetime import datetime
 import uuid
-from typing import Dict, Any, Optional
 
-# --- Corrected imports for your flat structure ---
+# براہ راست امپورٹس
+from database_config import SessionLocal
 import utils
 import strategybot
 import patternai
 import riskguardian
+import supply_demand
+import sentinel
 import fusion_engine
+import signal_tracker
 import messenger
-from src.database import database_crud as crud
-from database_config import SessionLocal
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-async def process_single_pair_timeframe(pair: str, timeframe: str) -> Optional[Dict[str, Any]]:
-    logging.info(f"Processing {pair} on {timeframe}...")
-    candles = await utils.fetch_twelve_data_ohlc(pair, timeframe, 200)
-    if not candles or len(candles) < 50:
-        logging.warning(f"Insufficient data for {pair} on {timeframe}.")
-        return None
-
-    core_signal = strategybot.generate_core_signal(candles)
-    patterns = patternai.detect_patterns(candles)
-    risk = riskguardian.check_risk(candles)
-    
-    fused_signal = fusion_engine.fuse_signals(core_signal=core_signal, patterns=patterns, risk=risk)
-
-    if fused_signal and fused_signal.get('signal') not in ['hold', 'no_signal']:
-        if fused_signal.get('confidence', 0) >= 60:
-            logging.info(f"High confidence signal found for {pair} on {timeframe}.")
-            final_signal = strategybot.calculate_tp_sl(fused_signal, candles)
-            final_signal.update({
-                'symbol': pair,
-                'timeframe': timeframe,
-                'signal_id': str(uuid.uuid4())
-            })
-            return final_signal
-    return None
 
 async def hunt_for_signals():
-    logging.info("Starting new signal hunting cycle...")
-    supported_pairs = utils.get_available_pairs()
-    timeframes = ["15min", "1h", "4h"]
+    """
+    Main function to orchestrate the signal generation process.
+    It fetches market data for various pairs and timeframes,
+    and then passes this data to different AI modules for analysis.
+    """
+    logging.info("Starting signal hunting cycle...")
+    pairs = utils.get_available_pairs()
+    timeframes = ["15min", "1h", "4h"] # Scalping focused timeframes
     
-    tasks = [process_single_pair_timeframe(pair, tf) for pair in supported_pairs for tf in timeframes]
-    
-    logging.info(f"Created {len(tasks)} tasks for parallel execution.")
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    logging.info("All tasks executed. Processing results...")
-    db_session = SessionLocal()
-    try:
-        for result in results:
-            if isinstance(result, Exception):
-                logging.error(f"A task failed during execution: {result}", exc_info=False)
-            elif result:
-                try:
-                    signal_data_for_db = {
-                        'signal_id': result['signal_id'],
-                        'symbol': result['symbol'],
-                        'timeframe': result['timeframe'],
-                        'signal_type': result['signal'],
-                        'entry_price': result['entry_price'],
-                        'tp_price': result['tp_price'],
-                        'sl_price': result['sl_price'],
-                        'confidence': result['confidence'],
-                        'reason': result.get('reason', '')
+    for pair in pairs:
+        for timeframe in timeframes:
+            logging.info(f"Processing {pair} on {timeframe}...")
+            
+            ohlc_data = await utils.fetch_twelve_data_ohlc(pair, timeframe)
+            if not ohlc_data:
+                logging.warning(f"Could not fetch OHLC data for {pair} on {timeframe}. Skipping.")
+                continue
+
+            # --- AI Module Analysis ---
+            core_signal = strategybot.generate_core_signal(ohlc_data)
+            patterns = patternai.detect_patterns(ohlc_data)
+            risk_assessment = riskguardian.check_risk(ohlc_data)
+            market_structure = supply_demand.get_market_structure_analysis(ohlc_data)
+            news_analysis = await sentinel.get_news_analysis_for_symbol(pair)
+
+            # --- Signal Fusion ---
+            final_signal = fusion_engine.fuse_signals(
+                core_signal=core_signal,
+                patterns=patterns,
+                risk=risk_assessment,
+                structure=market_structure,
+                news=news_analysis
+            )
+
+            # --- Process Valid Signal ---
+            if final_signal and final_signal.get("signal") not in ["NEUTRAL", "WAIT"]:
+                confidence = final_signal.get("confidence", 0)
+                if confidence >= 60: # Confidence threshold
+                    signal_id = str(uuid.uuid4())
+                    
+                    # Calculate TP/SL
+                    tp_sl = strategybot.calculate_tp_sl(
+                        entry_price=ohlc_data['close'].iloc[-1],
+                        signal_type=final_signal["signal"],
+                        atr=ohlc_data['ATR'].iloc[-1],
+                        atr_multiplier=riskguardian.get_dynamic_atr_multiplier(risk_assessment['status'])
+                    )
+
+                    active_signal_data = {
+                        "signal_id": signal_id,
+                        "symbol": pair,
+                        "timeframe": timeframe,
+                        "signal_type": final_signal["signal"],
+                        "entry_price": ohlc_data['close'].iloc[-1],
+                        "confidence": confidence,
+                        "reason": final_signal.get("reason", "N/A"),
+                        "tp_price": tp_sl['tp'],
+                        "sl_price": tp_sl['sl'],
+                        "created_at": datetime.utcnow()
                     }
-                    crud.add_active_signal(db_session, signal_data_for_db)
-                    logging.info(f"Signal for {result['symbol']} added to active signals DB.")
-                    await messenger.send_telegram_alert(result)
-                except Exception as e:
-                    logging.error(f"Error saving signal or sending alert for {result.get('symbol')}: {e}")
-    finally:
-        db_session.close()
+                    
+                    # Add to tracker and send alert
+                    signal_tracker.add_active_signal(active_signal_data)
+                    await messenger.send_telegram_alert(active_signal_data)
+                    logging.info(f"SUCCESS: New signal generated and sent for {pair} on {timeframe}.")
+                else:
+                    logging.info(f"Signal for {pair} on {timeframe} did not meet confidence threshold ({confidence}%).")
+            else:
+                logging.info(f"No actionable signal found for {pair} on {timeframe}.")
+            
+            await asyncio.sleep(2) # Rate limiting between API calls
+
     logging.info("Signal hunting cycle finished.")
-    
+
