@@ -8,8 +8,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed, before_sleep_log
 logging.basicConfig(level=logging.INFO, format=\'%(asctime)s - %(levelname)s - %(message)s\')
 RETRY_LOG = logging.getLogger(__name__)
 
-
-async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100) -> Optional[List[Dict]]:
+async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100) -> Optional[Dict]:
     logging.warning(f"Using mocked data for {symbol}-{timeframe}. Please provide TWELVE_DATA_API_KEYS for real data.")
     # Mock OHLC data for testing purposes
     return {
@@ -31,3 +30,4 @@ def get_current_price_twelve_data(symbol: str) -> Optional[Dict]:
     logging.warning(f"Using mocked current price data for {symbol}. Please provide TWELVE_DATA_API_KEYS for real data.")
     # Mock current price data for testing purposes
     return {"price": 1.0005}
+
