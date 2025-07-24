@@ -1,34 +1,55 @@
+import logging
 import httpx
 import asyncio
-import logging
 from datetime import datetime
-from sqlalchemy.orm import Session
 
-# --- Corrected Absolute Imports ---
-import utils
+# براہ راست امپورٹس
 from database_config import SessionLocal
-from src.database import database_crud as crud
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# ... (باقی تمام فنکشنز کا کوڈ ویسا ہی رہے گا)
+import database_crud as crud
+import utils
 
 async def get_news_analysis_for_symbol(symbol: str) -> dict:
-    # This function can be expanded later
-    return {"sentiment": "neutral", "impact": "low"}
+    """
+    Provides a simple news analysis for a given symbol.
+    For now, it just checks if there is any high-impact news.
+    """
+    db = SessionLocal()
+    try:
+        news_cache = crud.get_cached_news(db)
+        if news_cache and news_cache.content and news_cache.content.get('data'):
+            # A more sophisticated analysis could be done here
+            return {"impact": "High", "summary": "High-impact news present."}
+        return {"impact": "Low", "summary": "No high-impact news."}
+    finally:
+        db.close()
 
 async def update_economic_calendar_cache():
+    """
+    Fetches the latest high-impact news from MarketAux and caches it.
+    """
     logging.info("Attempting to update economic calendar cache...")
-    db_session = SessionLocal()
-    try:
-        # Placeholder for fetching news from an external API like MarketAux
-        # For now, we are not implementing the full fetch to avoid complexity
-        # In a real scenario, you would call the news API here.
-        # news_data = await fetch_marketaux_news()
-        # crud.update_news_cache(db_session, news_data)
-        logging.info("Economic calendar cache update check complete. (No action taken in this version).")
-    except Exception as e:
-        logging.error(f"Failed to update economic calendar cache: {e}")
-    finally:
-        db_session.close()
-        
+    api_key = utils.get_marketaux_api_key()
+    if not api_key:
+        logging.warning("MarketAux API key not found. Skipping news update.")
+        return
+
+    url = f"https://api.marketaux.com/v1/news/all?symbols=TSLA,AMZN,MSFT&filter_entities=true&language=en&api_token={api_key}"
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, timeout=20.0)
+            response.raise_for_status()
+            news_data = response.json()
+            
+            db = SessionLocal()
+            try:
+                crud.update_news_cache(db, news_data=news_data)
+                logging.info("Successfully updated news cache.")
+            finally:
+                db.close()
+
+        except httpx.HTTPStatusError as e:
+            logging.error(f"HTTP error fetching news from MarketAux: {e.response.status_code} - {e.response.text}")
+        except Exception as e:
+            logging.error(f"An error occurred while updating news cache: {e}", exc_info=True)
+
