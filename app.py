@@ -1,4 +1,3 @@
-
 import logging
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
@@ -21,8 +20,6 @@ import hunter
 import feedback_checker
 import sentinel
 
-# (باقی تمام کوڈ بالکل ویسا ہی رہے گا جیسا میں نے پچھلی بار دیا تھا)
-# ...
 # لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -117,4 +114,3 @@ async def read_index():
     return FileResponse(FRONTEND_DIR / "index.html")
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="static")
-            
