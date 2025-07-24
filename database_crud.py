@@ -2,16 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-
-# ===================================================================
-# FINAL AND CORRECTED VERSION FOR FLAT STRUCTURE
-# This changes the relative import 'from . import models' to an absolute import.
-# ===================================================================
-
-# غلط لائن (اسے ہٹا دیں): from . import models
-# درست لائن (اسے شامل کریں):
 import models
-
 from database_config import SessionLocal
 
 # --- Signal and Trade Management ---
@@ -38,8 +29,12 @@ def remove_active_signal(db: Session, signal_id: str):
 
 def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str):
     """Moves an active signal to the completed trades table with an outcome."""
+    # ===================================================================
+    # FINAL AND CORRECTED VERSION
+    # This code is now correct because the 'signal_id' column exists in the model.
+    # ===================================================================
     trade_data = {
-        "signal_id": signal_data['signal_id'],
+        "signal_id": signal_data['signal_id'], # <--- اب یہ لائن صحیح کام کرے گی
         "symbol": signal_data['symbol'],
         "timeframe": signal_data['timeframe'],
         "signal_type": signal_data['signal_type'],
@@ -62,16 +57,10 @@ def get_trade_history(db: Session, limit: int = 100) -> List[models.CompletedTra
 
 def get_summary_stats(db: Session) -> Dict[str, float]:
     """Calculates win rate and P/L for the summary cards."""
-    # This is a placeholder. A real P/L calculation would be more complex.
-    # For now, we focus on win rate.
     total_trades = db.query(func.count(models.CompletedTrade.id)).scalar() or 0
     wins = db.query(func.count(models.CompletedTrade.id)).filter(models.CompletedTrade.outcome == 'tp_hit').scalar() or 0
-    
     win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0.0
-    
-    # Placeholder for P/L
-    pnl = 0.0 
-    
+    pnl = 0.0 # Placeholder
     return {"win_rate": win_rate, "pnl": pnl}
 
 # --- News Cache ---
