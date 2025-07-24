@@ -1,33 +1,86 @@
-import os
-import time
-import logging
+# filename: utils.py
 import httpx
+import asyncio
+import logging
+from datetime import datetime
 from typing import List, Optional, Dict
-from tenacity import retry, stop_after_attempt, wait_fixed, before_sleep_log
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-RETRY_LOG = logging.getLogger(__name__)
+import config
+from key_manager import key_manager
+from schemas import TwelveDataTimeSeries
 
-async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int = 100) -> Optional[Dict]:
-    logging.warning(f"Using mocked data for {symbol}-{timeframe}. Please provide TWELVE_DATA_API_KEYS for real data.")
-    # Mock OHLC data for testing purposes
-    return {
-        'close': [1.0, 1.0001, 1.0002, 1.0003, 1.0004, 1.0005, 1.0006, 1.0007, 1.0008, 1.0009],
-        'open': [1.0, 1.0001, 1.0002, 1.0003, 1.0004, 1.0005, 1.0006, 1.0007, 1.0008, 1.0009],
-        'high': [1.001, 1.0011, 1.0012, 1.0013, 1.0014, 1.0015, 1.0016, 1.0017, 1.0018, 1.0019],
-        'low': [0.999, 0.9991, 0.9992, 0.9993, 0.9994, 0.9995, 0.9996, 0.9997, 0.9998, 0.9999],
-        'volume': [100, 110, 120, 130, 140, 150, 160, 170, 180, 190],
-        'ATR': [0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005]
-    }
+logger = logging.getLogger(__name__)
 
 def get_available_pairs() -> List[str]:
-    """Returns a list of trading pairs to be processed."""
-    # This can be expanded to read from a config file or database
-    return ["EUR/USD", "XAU/USD", "GBP/USD", "BTC/USD"]
-    
+    """ہفتے کے دن کی بنیاد پر مارکیٹ کے دستیاب جوڑے واپس کرتا ہے۔"""
+    today = datetime.utcnow().weekday()
+    # ہفتہ (5) اور اتوار (6) کو صرف کرپٹو
+    if today >= 5:
+        return config.AVAILABLE_PAIRS_WEEKEND
+    return config.AVAILABLE_PAIRS_WEEKDAY
 
-def get_current_price_twelve_data(symbol: str) -> Optional[Dict]:
-    logging.warning(f"Using mocked current price data for {symbol}. Please provide TWELVE_DATA_API_KEYS for real data.")
-    # Mock current price data for testing purposes
-    return {"price": 1.0005}
+async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, size: int) -> Optional[List[Dict]]:
+    """
+    TwelveData API سے OHLC کینڈلز لاتا ہے۔ اگر کلید کی حد ہو جائے تو گھوماتا ہے۔
+    """
+    api_key = key_manager.get_api_key()
+    if not api_key:
+        logger.error("کوئی دستیاب Twelve Data API کلید نہیں ملی۔")
+        return None
     
+    url = (
+        f"https://api.twelvedata.com/time_series"
+        f"?symbol={symbol}&interval={timeframe}&outputsize={size}&apikey={api_key}"
+    )
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=15)
+        
+        if response.status_code == 429:
+            logger.warning(f"API کلید ...{api_key[-4:]} کے لیے شرح کی حد تک پہنچ گئی۔ کلید کو گھمایا جا رہا ہے۔")
+            key_manager.mark_key_as_limited(api_key)
+            await asyncio.sleep(1)
+            return await fetch_twelve_data_ohlc(symbol, timeframe, size)
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        # Pydantic کے ساتھ ڈیٹا کی توثیق کریں
+        validated_data = TwelveDataTimeSeries(**data)
+        
+        # ڈیٹا کو الٹا کریں تاکہ تازہ ترین کینڈل آخر میں ہو
+        return [c.dict() for c in reversed(validated_data.values)]
+
+    except Exception as e:
+        logger.error(f"{symbol} کے لیے OHLC ڈیٹا حاصل کرنے میں ناکام: {e}", exc_info=True)
+        return None
+
+async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Optional[float]:
+    """کسی جوڑے کی موجودہ قیمت حاصل کرتا ہے۔"""
+    api_key = key_manager.get_api_key()
+    if not api_key:
+        logger.error("موجودہ قیمت حاصل کرنے کے لیے کوئی دستیاب API کلید نہیں ہے۔")
+        return None
+
+    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={api_key}"
+    try:
+        response = await client.get(url, timeout=10)
+        
+        if response.status_code == 429:
+            key_manager.mark_key_as_limited(api_key)
+            await asyncio.sleep(1)
+            return await get_current_price_twelve_data(symbol, client)
+            
+        response.raise_for_status()
+        data = response.json()
+        price = data.get("price")
+        
+        if price:
+            return float(price)
+        logger.warning(f"{symbol} کے لیے قیمت کے جواب میں 'price' کلید نہیں ہے۔")
+        return None
+    except Exception as e:
+        logger.error(f"{symbol} کے لیے موجودہ قیمت حاصل کرنے میں ناکام: {e}", exc_info=True)
+        return None
+        
