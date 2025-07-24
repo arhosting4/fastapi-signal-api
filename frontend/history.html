@@ -3,84 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>History - ScalpMaster AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@700&display=swap" rel="stylesheet">
+    <title>Trade History - ScalpMaster AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .font-teko { font-family: 'Teko', sans-serif; }
-        tbody tr:hover { background-color: rgba(251, 191, 36, 0.05); }
+        :root {
+            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
+            --text-primary: #c9d1d9; --text-secondary: #8b949e;
+            --accent-gold: #ffab00;
+            --status-success: #238636; --status-fail: #da3633; --status-expired: #a37100;
+        }
+        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); }
+        body { margin: 0; padding: 0; }
+        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
+        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
+        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
+        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
+        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        .page-header { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin-bottom: 1.5rem; }
+        .table-container { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background-color: var(--secondary); font-weight: 600; color: var(--text-secondary); }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover { background-color: var(--secondary); }
+        .status-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; text-transform: uppercase; }
+        .status-tp_hit { background-color: var(--status-success); }
+        .status-sl_hit { background-color: var(--status-fail); }
+        .status-expired { background-color: var(--status-expired); }
+        .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
+        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
+        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+        @media (max-width: 768px) {
+            .navbar-desktop { display: none; }
+            .mobile-nav { display: flex; }
+            body { padding-bottom: 70px; }
+            .main-container { padding: 1rem; }
+            th, td { padding: 0.8rem 1rem; }
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100">
-
-    <!-- Header -->
-    <header class="p-4 flex justify-between items-center bg-gray-800/50 backdrop-blur-sm shadow-lg sticky top-0 z-10 border-b border-gray-700">
-        <h1 class="text-3xl font-teko text-yellow-400 tracking-wider">SCALPMASTER AI</h1>
-        <nav class="hidden md:flex items-center space-x-6 text-sm">
-            <a href="/index.html" class="text-gray-300 hover:text-yellow-400 transition-colors">Dashboard</a>
-            <a href="/history.html" class="text-yellow-400 font-bold border-b-2 border-yellow-400 pb-1">History</a>
-            <a href="/news.html" class="text-gray-300 hover:text-yellow-400 transition-colors">News</a>
+<body>
+    <header class="header">
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html">Dashboard</a>
+            <a href="history.html" class="active">History</a>
+            <a href="news.html">News</a>
         </nav>
     </header>
 
-    <!-- Main Content -->
-    <main class="p-4 md:p-8">
-        <h2 class="text-3xl font-bold mb-6 text-yellow-400">Trade History</h2>
-        <div class="overflow-x-auto bg-gray-800 rounded-xl shadow-lg border border-gray-700">
-            <table class="min-w-full text-sm">
-                <thead class="bg-gray-700/50">
-                    <tr>
-                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Symbol</th>
-                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Entry Price</th>
-                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Result</th>
-                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Closed At</th>
-                    </tr>
-                </thead>
-                <tbody id="history-table-body" class="divide-y divide-gray-700">
-                    <tr><td colspan="4" class="p-6 text-center text-gray-400">Loading trade history...</td></tr>
-                </tbody>
-            </table>
+    <main class="main-container">
+        <h2 class="page-header">Completed Trades History</h2>
+        <div class="table-container" id="history-container">
+            <div class="table-wrapper">
+                <table id="history-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Signal</th>
+                            <th>Entry Price</th>
+                            <th>Outcome</th>
+                            <th>Close Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body"></tbody>
+                </table>
+            </div>
+            <div class="no-data-message" id="no-history-message">
+                <h3><i class="fas fa-search"></i> No Data Found</h3>
+                <p>There are no completed trades in the history yet.</p>
+            </div>
         </div>
     </main>
 
-    <!-- Mobile Navigation -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/80 backdrop-blur-sm flex justify-around p-3 border-t border-gray-700">
-        <a href="/index.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-chart-line fa-lg"></i><span class="text-xs mt-1">Dashboard</span></a>
-        <a href="/history.html" class="flex flex-col items-center text-yellow-400"><i class="fas fa-history fa-lg"></i><span class="text-xs mt-1">History</span></a>
-        <a href="/news.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-newspaper fa-lg"></i><span class="text-xs mt-1">News</span></a>
+    <nav class="mobile-nav">
+        <a href="index.html"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+        <a href="history.html" class="active"><i class="fas fa-history"></i><span>History</span></a>
+        <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const tableBody = document.getElementById('history-table-body');
-            async function fetchHistory() {
-                try {
-                    const response = await fetch('/api/history');
-                    if (!response.ok) throw new Error(`API responded with status: ${response.status}`);
-                    const trades = await response.json();
-                    tableBody.innerHTML = ''; 
-                    if (trades && Array.isArray(trades) && trades.length > 0) {
-                        trades.forEach(trade => {
-                            let resultClass = '';
-                            if (trade.outcome === 'tp_hit') resultClass = 'text-green-400';
-                            else if (trade.outcome === 'sl_hit') resultClass = 'text-red-400';
-                            else resultClass = 'text-gray-500';
-                            const row = `<tr class="hover:bg-gray-700/50"><td class="p-4 text-white">${trade.symbol}</td><td class="p-4 text-gray-300">${trade.entry_price}</td><td class="p-4 font-bold ${resultClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</td><td class="p-4 text-gray-400">${new Date(trade.closed_at).toLocaleString()}</td></tr>`;
-                            tableBody.innerHTML += row;
-                        });
-                    } else {
-                        tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">No trade history found yet.</td></tr>';
-                    }
-                } catch (error) {
-                    console.error('Error fetching history:', error);
-                    tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-red-400">Failed to load trade history.</td></tr>';
+        const historyBody = document.getElementById('history-body');
+        const noHistoryMessage = document.getElementById('no-history-message');
+        const historyTable = document.getElementById('history-table');
+
+        async function fetchTradeHistory() {
+            try {
+                const response = await fetch('/api/history');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const trades = await response.json();
+                
+                historyBody.innerHTML = '';
+
+                if (Array.isArray(trades) && trades.length > 0) {
+                    noHistoryMessage.style.display = 'none';
+                    historyTable.style.display = 'table';
+                    trades.forEach(trade => {
+                        const row = document.createElement('tr');
+                        const outcomeClass = `status-${trade.outcome.toLowerCase()}`;
+                        row.innerHTML = `
+                            <td><strong>${trade.symbol}</strong><br><small>${trade.timeframe}</small></td>
+                            <td>${trade.signal_type.toUpperCase()}</td>
+                            <td>${trade.entry_price.toFixed(5)}</td>
+                            <td><span class="status-tag ${outcomeClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</span></td>
+                            <td>${new Date(trade.closed_at + 'Z').toLocaleString()}</td>
+                        `;
+                        historyBody.appendChild(row);
+                    });
+                } else {
+                    noHistoryMessage.style.display = 'block';
+                    historyTable.style.display = 'none';
                 }
+            } catch (error) {
+                console.error('Error fetching trade history:', error);
+                noHistoryMessage.innerHTML = '<h3><i class="fas fa-exclamation-triangle"></i> Error</h3><p>Failed to load trade history. Please try again later.</p>';
+                noHistoryMessage.style.display = 'block';
+                historyTable.style.display = 'none';
             }
-            fetchHistory();
-            setInterval(fetchHistory, 60 * 1000);
-        });
+        }
+        
+        fetchTradeHistory();
+        setInterval(fetchTradeHistory, 60000);
     </script>
 </body>
 </html>
