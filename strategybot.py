@@ -6,8 +6,8 @@ from typing import List, Tuple, Optional, Dict
 import config
 from schemas import Candle
 
-def calculate_tp_sl(candles: List[Candle], atr_multiplier: float) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
-    if len(candles) < config.ATR_LENGTH:
+def calculate_tp_sl(candles: List[Candle], signal_type: str) -> Optional[Tuple[float, float]]:
+    if len(candles) < 20:
         return None
     
     df = pd.DataFrame([c.dict() for c in candles])
@@ -19,70 +19,57 @@ def calculate_tp_sl(candles: List[Candle], atr_multiplier: float) -> Optional[Tu
     last_atr = atr.iloc[-1]
     last_close = df['close'].iloc[-1]
     
-    # TP/SL کا حساب لگائیں
-    tp_buy = last_close + (last_atr * atr_multiplier)
-    sl_buy = last_close - last_atr
+    recent_high = df['high'].tail(10).max()
+    recent_low = df['low'].tail(10).min()
     
-    tp_sell = last_close - (last_atr * atr_multiplier)
-    sl_sell = last_close + last_atr
-    
-    return (tp_buy, sl_buy), (tp_sell, sl_sell)
+    if signal_type == "buy":
+        sl = recent_low - (last_atr * 0.5)
+        tp = last_close + (last_close - sl) * 1.5
+    elif signal_type == "sell":
+        sl = recent_high + (last_atr * 0.5)
+        tp = last_close - (sl - last_close) * 1.5
+    else:
+        return None
+
+    return tp, sl
 
 def generate_core_signal(candles: List[Candle]) -> Dict[str, str]:
-    if len(candles) < config.SMA_LONG_PERIOD:
+    if len(candles) < config.BBANDS_PERIOD:
         return {"signal": "wait"}
 
     df = pd.DataFrame([c.dict() for c in candles])
-    close_series = df['close']
+    close = df['close']
     
-    # تمام اشاروں کا حساب لگائیں
-    sma_short = ta.sma(close_series, length=config.SMA_SHORT_PERIOD)
-    sma_long = ta.sma(close_series, length=config.SMA_LONG_PERIOD)
-    rsi = ta.rsi(close_series, length=config.RSI_PERIOD)
-    macd_data = ta.macd(close_series, fast=config.MACD_FAST, slow=config.MACD_SLOW, signal=config.MACD_SIGNAL)
-    
-    if any(s is None or s.empty for s in [sma_short, sma_long, rsi, macd_data]):
+    ema_fast = ta.ema(close, length=config.EMA_SHORT_PERIOD)
+    ema_slow = ta.ema(close, length=config.EMA_LONG_PERIOD)
+    stoch = ta.stoch(df['high'], df['low'], close, k=config.STOCH_K, d=config.STOCH_D)
+    bbands = ta.bbands(close, length=config.BBANDS_PERIOD)
+
+    if any(s is None or s.empty for s in [ema_fast, ema_slow, stoch, bbands]):
         return {"signal": "wait"}
 
-    # تازہ ترین اقدار حاصل کریں
-    last_sma_short = sma_short.iloc[-1]
-    last_sma_long = sma_long.iloc[-1]
-    prev_sma_short = sma_short.iloc[-2]
-    prev_sma_long = sma_long.iloc[-2]
-    last_rsi = rsi.iloc[-1]
-    last_macd_line = macd_data.iloc[-1, 0]
-    last_macd_signal = macd_data.iloc[-1, 1]
-    prev_macd_line = macd_data.iloc[-2, 0]
-    prev_macd_signal = macd_data.iloc[-2, 1]
+    last_close = close.iloc[-1]
+    last_ema_fast = ema_fast.iloc[-1]
+    last_ema_slow = ema_slow.iloc[-1]
+    last_stoch_k = stoch.iloc[-1, 0]
+    last_bb_lower = bbands.iloc[-1, 0]
+    last_bb_upper = bbands.iloc[-1, 2]
 
-    buy_signals = 0
-    sell_signals = 0
+    buy_conditions = [
+        last_ema_fast > last_ema_slow,
+        last_stoch_k < 30,
+        last_close < last_bb_lower
+    ]
+    sell_conditions = [
+        last_ema_fast < last_ema_slow,
+        last_stoch_k > 70,
+        last_close > last_bb_upper
+    ]
 
-    # SMA کراس اوور
-    if last_sma_short > last_sma_long and prev_sma_short <= prev_sma_long: buy_signals += 1
-    if last_sma_short < last_sma_long and prev_sma_short >= prev_sma_long: sell_signals += 1
-    
-    # RSI
-    if last_rsi < 30: buy_signals += 1
-    if last_rsi > 70: sell_signals += 1
-    
-    # MACD کراس اوور
-    if last_macd_line > last_macd_signal and prev_macd_line <= prev_macd_signal: buy_signals += 1
-    if last_macd_line < last_macd_signal and prev_macd_line >= prev_macd_signal: sell_signals += 1
-
-    # بنیادی رجحان کا تعین SMA کی بنیاد پر کریں
-    trend_signal = "wait"
-    if last_sma_short > last_sma_long:
-        trend_signal = "buy"
-    elif last_sma_short < last_sma_long:
-        trend_signal = "sell"
-
-    # حتمی فیصلہ
-    if buy_signals > sell_signals:
+    if sum(buy_conditions) >= 2:
         return {"signal": "buy"}
-    if sell_signals > buy_signals:
+    if sum(sell_conditions) >= 2:
         return {"signal": "sell"}
-    
-    # اگر کوئی واضح کراس اوور نہیں ہے تو رجحان کی پیروی کریں
-    return {"signal": trend_signal}
+        
+    return {"signal": "wait"}
     
