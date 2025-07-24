@@ -7,78 +7,55 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@700&display=swap" rel="stylesheet">
-    <style> .font-teko { font-family: 'Teko', sans-serif; } </style>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-teko { font-family: 'Teko', sans-serif; }
+        /* Custom styles for table */
+        tbody tr:hover { background-color: rgba(251, 191, 36, 0.05); }
+    </style>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-['Inter']">
+<body class="bg-gray-900 text-gray-100">
 
     <!-- Header -->
-    <header class="p-4 flex justify-between items-center bg-white dark:bg-gray-800 shadow-md">
-        <div class="flex items-center">
-            <h1 class="text-2xl font-teko text-yellow-500">SCALPMASTER AI</h1>
-        </div>
-        <nav class="hidden md:flex space-x-4">
-            <a href="/index.html" class="hover:text-yellow-500">Dashboard</a>
-            <a href="/history.html" class="text-yellow-500 font-bold">History</a>
-            <a href="/news.html" class="hover:text-yellow-500">News</a>
+    <header class="p-4 flex justify-between items-center bg-gray-800/50 backdrop-blur-sm shadow-lg sticky top-0 z-10 border-b border-gray-700">
+        <h1 class="text-3xl font-teko text-yellow-400 tracking-wider">SCALPMASTER AI</h1>
+        <nav class="hidden md:flex items-center space-x-6 text-sm">
+            <a href="/index.html" class="text-gray-300 hover:text-yellow-400 transition-colors">Dashboard</a>
+            <a href="/history.html" class="text-yellow-400 font-bold border-b-2 border-yellow-400 pb-1">History</a>
+            <a href="/news.html" class="text-gray-300 hover:text-yellow-400 transition-colors">News</a>
         </nav>
-        <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
-            <i class="fas fa-moon"></i>
-        </button>
     </header>
 
     <!-- Main Content -->
     <main class="p-4 md:p-8">
-        <h2 class="text-2xl font-bold mb-4">Trade History</h2>
-        <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-            <table class="min-w-full">
-                <thead class="bg-gray-50 dark:bg-gray-700">
+        <h2 class="text-3xl font-bold mb-6 text-yellow-400">Trade History</h2>
+        <div class="overflow-x-auto bg-gray-800 rounded-xl shadow-lg border border-gray-700">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-700/50">
                     <tr>
-                        <th class="p-4 text-left">Symbol</th>
-                        <th class="p-4 text-left">Entry Price</th>
-                        <th class="p-4 text-left">Result</th>
-                        <th class="p-4 text-left">Closed At</th>
+                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Symbol</th>
+                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Entry Price</th>
+                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Result</th>
+                        <th class="p-4 text-left font-semibold text-gray-300 tracking-wider">Closed At</th>
                     </tr>
                 </thead>
-                <tbody id="history-table-body">
+                <tbody id="history-table-body" class="divide-y divide-gray-700">
                     <!-- History rows will be injected here -->
-                    <tr><td colspan="4" class="p-4 text-center">Loading trade history...</td></tr>
+                    <tr><td colspan="4" class="p-6 text-center text-gray-400">Loading trade history...</td></tr>
                 </tbody>
             </table>
         </div>
     </main>
 
     <!-- Mobile Navigation -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 flex justify-around p-2 border-t dark:border-gray-700">
-        <a href="/index.html" class="flex flex-col items-center hover:text-yellow-500"><i class="fas fa-chart-line"></i><span class="text-xs">Dashboard</span></a>
-        <a href="/history.html" class="flex flex-col items-center text-yellow-500"><i class="fas fa-history"></i><span class="text-xs">History</span></a>
-        <a href="/news.html" class="flex flex-col items-center hover:text-yellow-500"><i class="fas fa-newspaper"></i><span class="text-xs">News</span></a>
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-gray-800/80 backdrop-blur-sm flex justify-around p-3 border-t border-gray-700">
+        <a href="/index.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-chart-line fa-lg"></i><span class="text-xs mt-1">Dashboard</span></a>
+        <a href="/history.html" class="flex flex-col items-center text-yellow-400"><i class="fas fa-history fa-lg"></i><span class="text-xs mt-1">History</span></a>
+        <a href="/news.html" class="flex flex-col items-center text-gray-400 hover:text-yellow-400"><i class="fas fa-newspaper fa-lg"></i><span class="text-xs mt-1">News</span></a>
     </nav>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // --- THEME TOGGLER ---
-            const themeToggle = document.getElementById('theme-toggle');
-            const html = document.documentElement;
-            if (localStorage.getItem('theme') === 'dark') {
-                html.classList.add('dark');
-                if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-            } else {
-                html.classList.remove('dark');
-                if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-            }
-            if (themeToggle) {
-                themeToggle.addEventListener('click', () => {
-                    html.classList.toggle('dark');
-                    if (html.classList.contains('dark')) {
-                        localStorage.setItem('theme', 'dark');
-                        themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-                    } else {
-                        localStorage.setItem('theme', 'light');
-                        themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-                    }
-                });
-            }
-
             // --- HISTORY PAGE LOGIC ---
             const tableBody = document.getElementById('history-table-body');
             async function fetchHistory() {
@@ -90,18 +67,18 @@
                     if (trades && trades.length > 0) {
                         trades.forEach(trade => {
                             let resultClass = '';
-                            if (trade.outcome === 'tp_hit') resultClass = 'text-green-500';
-                            else if (trade.outcome === 'sl_hit') resultClass = 'text-red-500';
+                            if (trade.outcome === 'tp_hit') resultClass = 'text-green-400';
+                            else if (trade.outcome === 'sl_hit') resultClass = 'text-red-400';
                             else resultClass = 'text-gray-500';
-                            const row = `<tr><td class="p-4">${trade.symbol}</td><td class="p-4">${trade.entry_price}</td><td class="p-4 font-bold ${resultClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</td><td class="p-4">${new Date(trade.closed_at).toLocaleString()}</td></tr>`;
+                            const row = `<tr class="hover:bg-gray-700/50"><td class="p-4 text-white">${trade.symbol}</td><td class="p-4 text-gray-300">${trade.entry_price}</td><td class="p-4 font-bold ${resultClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</td><td class="p-4 text-gray-400">${new Date(trade.closed_at).toLocaleString()}</td></tr>`;
                             tableBody.innerHTML += row;
                         });
                     } else {
-                        tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center">No trade history found.</td></tr>';
+                        tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-gray-400">No trade history found.</td></tr>';
                     }
                 } catch (error) {
                     console.error('Error fetching history:', error);
-                    tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center">Failed to load trade history.</td></tr>';
+                    tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-red-400">Failed to load trade history.</td></tr>';
                 }
             }
             fetchHistory();
