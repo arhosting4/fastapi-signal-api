@@ -1,55 +1,85 @@
-import logging
+# filename: sentinel.py
 import httpx
 import asyncio
+import logging
+import os
 from datetime import datetime
+from typing import Optional, Dict, List
 
-# براہ راست امپورٹس
-from database_config import SessionLocal
-import database_crud as crud
-import utils
+import config
+from database_crud import update_news_cache, get_cached_news
+from models import SessionLocal
 
-async def get_news_analysis_for_symbol(symbol: str) -> dict:
-    """
-    Provides a simple news analysis for a given symbol.
-    For now, it just checks if there is any high-impact news.
-    """
+logger = logging.getLogger(__name__)
+
+MARKETAUX_API_KEY = os.getenv("MARKETAUX_API_KEY")
+
+async def fetch_from_marketaux(client: httpx.AsyncClient) -> Optional[Dict]:
+    """MarketAux سے خبریں حاصل کرتا ہے۔"""
+    if not MARKETAUX_API_KEY:
+        logger.warning("MarketAux API کلید سیٹ نہیں ہے۔ خبریں حاصل کرنا چھوڑ دیا گیا۔")
+        return None
+        
+    url = f"https://api.marketaux.com/v1/news/all?symbols=TSLA,AMZN,MSFT,GOOGL,^GSPC,^DJI&filter_entities=true&language=en&api_token={MARKETAUX_API_KEY}"
+    try:
+        response = await client.get(url, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        if 'data' in data:
+            # صرف ضروری فیلڈز کو منتخب کریں
+            articles = [{
+                'title': item.get('title'),
+                'url': item.get('url'),
+                'source': item.get('source'),
+                'snippet': item.get('snippet'),
+                'published_at': item.get('published_at')
+            } for item in data['data']]
+            return {"articles": articles}
+        return None
+    except Exception as e:
+        logger.error(f"MarketAux سے خبریں حاصل کرنے میں ناکام: {e}", exc_info=True)
+        return None
+
+async def update_economic_calendar_cache():
+    """مارکیٹ کی خبروں کو اپ ڈیٹ کرتا ہے۔"""
+    logger.info("خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    news_data = None
+    async with httpx.AsyncClient() as client:
+        news_data = await fetch_from_marketaux(client)
+
+    if news_data and 'articles' in news_data:
+        db = SessionLocal()
+        try:
+            update_news_cache(db, news_data)
+            logger.info(f"خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔ {len(news_data['articles'])} مضامین شامل کیے گئے۔")
+        finally:
+            db.close()
+    else:
+        logger.error("خبروں کا کیش اپ ڈیٹ کرنے میں ناکام۔ کوئی ڈیٹا موصول نہیں ہوا۔")
+
+async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, str]:
+    """کیش شدہ خبروں کی بنیاد پر کسی مخصوص علامت کے لیے خبروں کے اثرات کا تجزیہ کرتا ہے۔"""
     db = SessionLocal()
     try:
-        news_cache = crud.get_cached_news(db)
-        if news_cache and news_cache.content and news_cache.content.get('data'):
-            # A more sophisticated analysis could be done here
-            return {"impact": "High", "summary": "High-impact news present."}
-        return {"impact": "Low", "summary": "No high-impact news."}
+        all_news = get_cached_news(db)
+        if not all_news or 'articles' not in all_news or not all_news['articles']:
+            return {"impact": "Clear", "reason": "خبروں کا کیش خالی ہے۔"}
     finally:
         db.close()
 
-async def update_economic_calendar_cache():
-    """
-    Fetches the latest high-impact news from MarketAux and caches it.
-    """
-    logging.info("Attempting to update economic calendar cache...")
-    api_key = utils.get_marketaux_api_key()
-    if not api_key:
-        logging.warning("MarketAux API key not found. Skipping news update.")
-        return
-
-    url = f"https://api.marketaux.com/v1/news/all?symbols=TSLA,AMZN,MSFT&filter_entities=true&language=en&api_token={api_key}"
+    symbol_base = symbol.split('/')[0].upper()
     
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(url, timeout=20.0)
-            response.raise_for_status()
-            news_data = response.json()
+    for article in all_news['articles']:
+        title = article.get('title', '').lower()
+        snippet = article.get('snippet', '').lower()
+        
+        # علامت یا اعلیٰ اثر والے کلیدی الفاظ کی تلاش کریں
+        search_text = title + " " + snippet
+        if symbol_base.lower() in search_text or any(keyword in search_text for keyword in config.HIGH_IMPACT_KEYWORDS):
+            return {
+                "impact": "High",
+                "reason": f"ممکنہ طور پر اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'"
+            }
             
-            db = SessionLocal()
-            try:
-                crud.update_news_cache(db, news_data=news_data)
-                logging.info("Successfully updated news cache.")
-            finally:
-                db.close()
-
-        except httpx.HTTPStatusError as e:
-            logging.error(f"HTTP error fetching news from MarketAux: {e.response.status_code} - {e.response.text}")
-        except Exception as e:
-            logging.error(f"An error occurred while updating news cache: {e}", exc_info=True)
-
+    return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی اعلیٰ اثر والی خبر طے شدہ نہیں ہے۔"}
+        
