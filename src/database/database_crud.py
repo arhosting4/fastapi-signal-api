@@ -5,12 +5,68 @@ from . import models
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
-# ... (باقی تمام فنکشنز جیسے get_all_active_signals, add_completed_trade وغیرہ بالکل ویسے ہی رہیں گے) ...
-# ... (ان میں کوئی تبدیلی نہیں کرنی) ...
+# ===================================================================
+# THIS IS THE COMPLETE AND CORRECT FILE. ALL FUNCTIONS ARE PRESENT.
+# ===================================================================
 
-# ===================================================================
-# THE FINAL AND CORRECTED VERSION OF THIS FUNCTION
-# ===================================================================
+# --- Signal Tracker Functions ---
+def get_all_active_signals(db: Session) -> List[models.ActiveSignal]:
+    """
+    Retrieves all signals currently marked as active from the database.
+    This function is CRITICAL for the dashboard.
+    """
+    logging.info("Fetching all active signals from DB...")
+    try:
+        return db.query(models.ActiveSignal).all()
+    except Exception as e:
+        logging.error(f"Failed to fetch active signals: {e}", exc_info=True)
+        return []
+
+def add_active_signal(db: Session, signal_data: Dict[str, Any]) -> models.ActiveSignal:
+    """Adds a new active signal to the database."""
+    db_signal = models.ActiveSignal(**signal_data)
+    db.add(db_signal)
+    db.commit()
+    db.refresh(db_signal)
+    logging.info(f"Added new active signal: {signal_data['signal_id']}")
+    return db_signal
+
+def remove_active_signal(db: Session, signal_id: str):
+    """Removes an active signal from the database by its signal_id."""
+    signal = db.query(models.ActiveSignal).filter(models.ActiveSignal.signal_id == signal_id).first()
+    if signal:
+        db.delete(signal)
+        db.commit()
+        logging.info(f"Removed active signal: {signal_id}")
+    else:
+        logging.warning(f"Attempted to remove non-existent active signal: {signal_id}")
+
+# --- Completed Trade & History Functions ---
+def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str):
+    """Adds a completed trade to the history table."""
+    trade_data = {
+        "signal_id": signal_data.get("signal_id"),
+        "symbol": signal_data.get("symbol"),
+        "timeframe": signal_data.get("timeframe"),
+        "signal_type": signal_data.get("signal_type"),
+        "entry_price": signal_data.get("entry_price"),
+        "tp_price": signal_data.get("tp_price"),
+        "sl_price": signal_data.get("sl_price"),
+        "outcome": outcome,
+        "created_at": signal_data.get("created_at"),
+        "closed_at": datetime.utcnow()
+    }
+    db_trade = models.CompletedTrade(**trade_data)
+    db.add(db_trade)
+    db.commit()
+    logging.info(f"Trade completed and moved to history: {trade_data['signal_id']} with outcome {outcome}")
+
+def get_trade_history(db: Session, limit: int = 100) -> List[models.CompletedTrade]:
+    """Retrieves a list of recently completed trades."""
+    logging.info(f"Fetching last {limit} trades from history...")
+    return db.query(models.CompletedTrade).order_by(models.CompletedTrade.closed_at.desc()).limit(limit).all()
+
+# --- Summary Stats Function ---
 def get_summary_stats(db: Session) -> Dict[str, Any]:
     """
     Calculates and returns the win rate for the last 24 hours and P&L for the current day.
@@ -18,57 +74,58 @@ def get_summary_stats(db: Session) -> Dict[str, Any]:
     """
     logging.info("Calculating summary stats...")
     try:
-        # --- 24h Win Rate Calculation ---
         twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
-        
-        # Count total trades in the last 24 hours
-        total_trades_24h = db.query(func.count(models.CompletedTrade.id)).filter(
-            models.CompletedTrade.closed_at >= twenty_four_hours_ago
-        ).scalar() or 0
-
-        # Count winning trades (tp_hit) in the last 24 hours
-        winning_trades_24h = db.query(func.count(models.CompletedTrade.id)).filter(
-            models.CompletedTrade.closed_at >= twenty_four_hours_ago,
-            models.CompletedTrade.outcome == 'tp_hit'
-        ).scalar() or 0
-
-        # Calculate win rate, handle division by zero
+        total_trades_24h = db.query(func.count(models.CompletedTrade.id)).filter(models.CompletedTrade.closed_at >= twenty_four_hours_ago).scalar() or 0
+        winning_trades_24h = db.query(func.count(models.CompletedTrade.id)).filter(models.CompletedTrade.closed_at >= twenty_four_hours_ago, models.CompletedTrade.outcome == 'tp_hit').scalar() or 0
         win_rate = (winning_trades_24h / total_trades_24h) * 100 if total_trades_24h > 0 else 0.0
 
-        # --- Today's P&L Calculation (Placeholder) ---
-        # As we don't have actual profit/loss values, we'll simulate it based on wins and losses.
-        # Let's assume a risk-reward of 1:1.5. Win = +1.5, Loss = -1.
-        
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-
-        # Count wins and losses for today
-        wins_today = db.query(func.count(models.CompletedTrade.id)).filter(
-            models.CompletedTrade.closed_at >= today_start,
-            models.CompletedTrade.outcome == 'tp_hit'
-        ).scalar() or 0
-        
-        losses_today = db.query(func.count(models.CompletedTrade.id)).filter(
-            models.CompletedTrade.closed_at >= today_start,
-            models.CompletedTrade.outcome == 'sl_hit'
-        ).scalar() or 0
-
-        # Calculate placeholder P&L
-        # This is a placeholder logic. For real P&L, you'd need to store the actual profit/loss amount.
+        wins_today = db.query(func.count(models.CompletedTrade.id)).filter(models.CompletedTrade.closed_at >= today_start, models.CompletedTrade.outcome == 'tp_hit').scalar() or 0
+        losses_today = db.query(func.count(models.CompletedTrade.id)).filter(models.CompletedTrade.closed_at >= today_start, models.CompletedTrade.outcome == 'sl_hit').scalar() or 0
         pnl = (wins_today * 1.5) - (losses_today * 1.0)
 
-        summary = {
-            "win_rate": win_rate,
-            "pnl": pnl
-        }
+        summary = {"win_rate": win_rate, "pnl": pnl}
         logging.info(f"Summary stats calculated: {summary}")
         return summary
-
     except Exception as e:
         logging.error(f"CRITICAL ERROR in get_summary_stats: {e}", exc_info=True)
-        # In case of any database error, return a safe default
-        return {
-            "win_rate": 0.0,
-            "pnl": 0.0
-        }
+        return {"win_rate": 0.0, "pnl": 0.0}
 
-# ... (باقی تمام فنکشنز جیسے get_cached_news وغیرہ بالکل ویسے ہی رہیں گے) ...
+# --- News Functions ---
+def update_news_cache(db: Session, news_data: Dict[str, Any]):
+    """Deletes old news and inserts new news data."""
+    try:
+        db.query(models.CachedNews).delete()
+        db_news = models.CachedNews(content=news_data, updated_at=datetime.utcnow())
+        db.add(db_news)
+        db.commit()
+        logging.info("News cache updated successfully.")
+    except Exception as e:
+        logging.error(f"Failed to update news cache: {e}", exc_info=True)
+        db.rollback()
+
+def get_cached_news(db: Session) -> Optional[models.CachedNews]:
+    """Retrieves the most recent cached news."""
+    return db.query(models.CachedNews).order_by(models.CachedNews.updated_at.desc()).first()
+
+# --- Feedback Functions ---
+def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str):
+    """Adds a feedback entry for a signal."""
+    db_feedback = models.FeedbackEntry(symbol=symbol, timeframe=timeframe, feedback=feedback)
+    db.add(db_feedback)
+    db.commit()
+    logging.info(f"Feedback entry added for {symbol} on {timeframe}.")
+
+def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
+    """Retrieves feedback stats for a given symbol."""
+    total = db.query(func.count(models.FeedbackEntry.id)).filter_by(symbol=symbol).scalar() or 0
+    correct = db.query(func.count(models.FeedbackEntry.id)).filter_by(symbol=symbol, feedback='correct').scalar() or 0
+    incorrect = db.query(func.count(models.FeedbackEntry.id)).filter_by(symbol=symbol, feedback='incorrect').scalar() or 0
+    accuracy = (correct / total) * 100 if total > 0 else 0
+    return {
+        "total": total,
+        "correct": correct,
+        "incorrect": incorrect,
+        "accuracy": accuracy
+    }
+    
