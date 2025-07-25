@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -51,14 +51,18 @@
             font-weight: 500;
             transition: color 0.3s;
         }
-        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
-        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        .navbar-desktop a:hover, .navbar-desktop a.active {
+            color: var(--text-primary);
+        }
+        .main-container {
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
         .signals-section-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 1rem;
             margin-bottom: 1.5rem;
         }
         .signals-section-header h2 {
@@ -67,22 +71,32 @@
             color: var(--text-primary);
             margin: 0;
         }
-        .filter-bar { display: flex; gap: 0.5rem; align-items: center; }
-        .filter-bar select, .filter-bar button {
-            background-color: var(--secondary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: background-color 0.3s, border-color 0.3s;
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
         }
-        .filter-bar button.active {
-            background-color: var(--accent-gold);
-            color: var(--bg);
-            border-color: var(--accent-gold);
-            font-weight: 600;
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--signal-sell);
+            animation: pulse-red 2s infinite;
+        }
+        .status-dot.connected {
+            background-color: var(--signal-buy);
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(35, 134, 54, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0); }
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(218, 54, 51, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0); }
         }
         .signals-grid {
             display: grid;
@@ -97,41 +111,100 @@
             transition: transform 0.3s, box-shadow 0.3s;
             animation: fadeIn 0.5s ease-out;
         }
-        .signal-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
-        .signal-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+        .signal-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .signal-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
         .signal-pair { font-size: 1.5rem; font-weight: 600; }
-        .signal-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; }
+        .signal-tag {
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+        }
         .tag-buy { background-color: var(--signal-buy); }
         .tag-sell { background-color: var(--signal-sell); }
         .confidence-circle {
-            position: relative; width: 70px; height: 70px; border-radius: 50%;
-            display: grid; place-items: center;
+            position: relative;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
             background: conic-gradient(var(--accent-gold) 0deg, var(--secondary) 0deg);
             margin-bottom: 1rem;
         }
-        .confidence-value { position: relative; font-size: 1.5rem; font-weight: 700; }
-        .signal-details { border-top: 1px solid var(--border); padding-top: 1rem; }
-        .signal-details p { display: flex; justify-content: space-between; margin: 0.5rem 0; color: var(--text-secondary); }
-        .signal-details span { color: var(--text-primary); font-weight: 500; }
-        .no-signals {
-            background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px;
-            padding: 3rem; text-align: center; color: var(--text-secondary);
+        .confidence-value {
+            position: relative;
+            font-size: 1.5rem;
+            font-weight: 700;
         }
-        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
-        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; transition: color 0.3s; }
+        .signal-details {
+            border-top: 1px solid var(--border);
+            padding-top: 1rem;
+        }
+        .signal-details p {
+            display: flex;
+            justify-content: space-between;
+            margin: 0.5rem 0;
+            color: var(--text-secondary);
+        }
+        .signal-details span {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .no-signals {
+            background-color: var(--primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+        .mobile-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: var(--primary);
+            border-top: 1px solid var(--border);
+            justify-content: space-around;
+            padding: 0.5rem 0;
+            z-index: 1000;
+        }
+        .mobile-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.75rem;
+        }
         .mobile-nav a.active { color: var(--accent-gold); }
         .mobile-nav i { font-size: 1.2rem; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         @media (max-width: 768px) {
             .navbar-desktop { display: none; }
             .mobile-nav { display: flex; }
             body { padding-bottom: 70px; }
-            .main-container { padding: 1rem; }
-            .signals-section-header { flex-direction: column; align-items: stretch; }
         }
     </style>
 </head>
 <body>
+
     <header class="header">
         <div class="logo">SCALPMASTER AI</div>
         <nav class="navbar-desktop">
@@ -145,17 +218,15 @@
         <section class="signals-section">
             <div class="signals-section-header">
                 <h2>Live Signals</h2>
-                <div class="filter-bar">
-                    <select id="symbol-filter"><option value="all">All Symbols</option></select>
-                    <button id="filter-all" class="active">All</button>
-                    <button id="filter-buy">Buy</button>
-                    <button id="filter-sell">Sell</button>
+                <div class="status-indicator">
+                    <div id="status-dot" class="status-dot"></div>
+                    <span id="status-text">Connecting...</span>
                 </div>
             </div>
             <div class="signals-grid" id="signals-grid"></div>
-            <div class="no-signals" id="no-signals-message" style="display: none;">
+            <div class="no-signals" id="no-signals-message">
                 <h3><i class="fas fa-search"></i> Scanning Markets...</h3>
-                <p>No high-confidence trading opportunities found at the moment.</p>
+                <p>Waiting for high-confidence trading opportunities.</p>
             </div>
         </section>
     </main>
@@ -167,107 +238,102 @@
     </nav>
 
     <script>
-        let allSignalsCache = [];
-        let currentFilters = { symbol: 'all', type: 'all' };
+        document.addEventListener('DOMContentLoaded', () => {
+            const signalsGrid = document.getElementById('signals-grid');
+            const noSignalsMessage = document.getElementById('no-signals-message');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            
+            let signals = [];
 
-        const grid = document.getElementById('signals-grid');
-        const noSignalsMessage = document.getElementById('no-signals-message');
-        const symbolFilter = document.getElementById('symbol-filter');
+            function renderSignals() {
+                if (signals.length === 0) {
+                    signalsGrid.style.display = 'none';
+                    noSignalsMessage.style.display = 'block';
+                } else {
+                    signalsGrid.innerHTML = '';
+                    signalsGrid.style.display = 'grid';
+                    noSignalsMessage.style.display = 'none';
 
-        function populateSymbolFilter(signals) {
-            const existingSymbols = new Set(Array.from(symbolFilter.options).map(opt => opt.value));
-            signals.forEach(signal => {
-                if (!existingSymbols.has(signal.symbol)) {
-                    const option = document.createElement('option');
-                    option.value = signal.symbol;
-                    option.textContent = signal.symbol;
-                    symbolFilter.appendChild(option);
-                    existingSymbols.add(signal.symbol);
+                    signals.forEach(signal => {
+                        const card = createSignalCard(signal);
+                        signalsGrid.prepend(card); // نئے سگنل کو سب سے اوپر دکھائیں
+                    });
                 }
-            });
-        }
+            }
 
-        function renderSignals(signals) {
-            grid.innerHTML = '';
-            if (!signals || signals.length === 0) {
-                grid.style.display = 'none';
-                noSignalsMessage.style.display = 'block';
-            } else {
-                grid.style.display = 'grid';
-                noSignalsMessage.style.display = 'none';
-                signals.forEach(signal => {
-                    const card = document.createElement('div');
-                    card.className = 'signal-card';
-                    const signalType = signal.signal.toLowerCase();
-                    const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
-                    const confidence = parseFloat(signal.confidence);
-                    card.innerHTML = `
-                        <div class="signal-card-header">
-                            <div>
-                                <p class="signal-pair">${signal.symbol}</p>
-                                <p style="color: var(--text-secondary); margin:0;">${signal.timeframe}</p>
-                            </div>
-                            <div class="signal-tag ${tagClass}">${signalType.toUpperCase()}</div>
+            function createSignalCard(signal) {
+                const card = document.createElement('div');
+                card.className = 'signal-card';
+                card.id = `signal-${signal.signal_id}`;
+                const signalType = signal.signal.toLowerCase();
+                const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
+                const confidence = parseFloat(signal.confidence);
+
+                card.innerHTML = `
+                    <div class="signal-card-header">
+                        <div>
+                            <p class="signal-pair">${signal.symbol}</p>
+                            <p style="color: var(--text-secondary); margin:0;">${signal.timeframe}</p>
                         </div>
-                        <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary) 0deg);">
-                            <div class="confidence-value">${confidence.toFixed(0)}%</div>
-                        </div>
-                        <div class="signal-details">
-                            <p>Entry Price: <span>${signal.price.toFixed(5)}</span></p>
-                            <p>Take Profit: <span>${signal.tp.toFixed(5)}</span></p>
-                            <p>Stop Loss: <span>${signal.sl.toFixed(5)}</span></p>
-                        </div>
-                    `;
-                    grid.appendChild(card);
-                });
+                        <div class="signal-tag ${tagClass}">${signalType.toUpperCase()}</div>
+                    </div>
+                    <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary) 0deg);">
+                        <div class="confidence-value">${confidence.toFixed(0)}%</div>
+                    </div>
+                    <div class="signal-details">
+                        <p>Entry Price: <span>${signal.price.toFixed(5)}</span></p>
+                        <p>Take Profit: <span>${signal.tp.toFixed(5)}</span></p>
+                        <p>Stop Loss: <span>${signal.sl.toFixed(5)}</span></p>
+                    </div>
+                `;
+                return card;
             }
-        }
 
-        function applyFilters() {
-            let filteredSignals = allSignalsCache;
-            if (currentFilters.symbol !== 'all') {
-                filteredSignals = filteredSignals.filter(s => s.symbol === currentFilters.symbol);
-            }
-            if (currentFilters.type !== 'all') {
-                filteredSignals = filteredSignals.filter(s => s.signal.toLowerCase() === currentFilters.type);
-            }
-            renderSignals(filteredSignals);
-        }
+            function connectWebSocket() {
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}/ws/live-signals`;
+                const socket = new WebSocket(wsUrl);
 
-        async function fetchLiveSignals() {
-            try {
-                const response = await fetch('/api/live-signals');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                
-                allSignalsCache = Array.isArray(data) ? data : [];
-                if (allSignalsCache.length > 0) {
-                    populateSymbolFilter(allSignalsCache);
-                }
-                applyFilters();
-            } catch (error) {
-                console.error('Error fetching signals:', error);
-                allSignalsCache = [];
-                applyFilters();
-            }
-        }
+                socket.onopen = () => {
+                    console.log('WebSocket connected');
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Live';
+                };
 
-        document.getElementById('symbol-filter').addEventListener('change', (e) => {
-            currentFilters.symbol = e.target.value;
-            applyFilters();
+                socket.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    console.log('Message from server:', message);
+
+                    if (message.type === 'new_signal') {
+                        const newSignal = message.data;
+                        // یقینی بنائیں کہ سگنل پہلے سے موجود نہیں ہے
+                        if (!signals.some(s => s.signal_id === newSignal.signal_id)) {
+                            signals.push(newSignal);
+                            renderSignals();
+                        }
+                    }
+                };
+
+                socket.onclose = () => {
+                    console.log('WebSocket disconnected. Reconnecting in 5 seconds...');
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = 'Reconnecting...';
+                    setTimeout(connectWebSocket, 5000); // 5 سیکنڈ بعد دوبارہ جڑنے کی کوشش کریں
+                };
+
+                socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    socket.close(); // خرابی پر کنکشن بند کریں تاکہ onclose ایونٹ ٹرگر ہو
+                };
+            }
+
+            // ابتدائی طور پر سگنلز کی حالت کو ظاہر کریں
+            renderSignals();
+            // WebSocket کنکشن شروع کریں
+            connectWebSocket();
         });
-
-        ['all', 'buy', 'sell'].forEach(type => {
-            document.getElementById(`filter-${type}`).addEventListener('click', () => {
-                currentFilters.type = type;
-                document.querySelector('.filter-bar button.active').classList.remove('active');
-                document.getElementById(`filter-${type}`).classList.add('active');
-                applyFilters();
-            });
-        });
-
-        fetchLiveSignals();
-        setInterval(fetchLiveSignals, 30000);
     </script>
+
 </body>
 </html>
