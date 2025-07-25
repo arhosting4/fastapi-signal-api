@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-# مقامی امپورٹس میں تبدیلی
+# مقامی امپورٹس
 import strategybot as sb
 from riskguardian import check_risk
 from sentinel import get_news_analysis_for_symbol
@@ -20,36 +20,66 @@ async def generate_final_signal(db: Session, symbol: str, m15_candles: List[Cand
     نئی ملٹی ٹائم فریم منطق کا استعمال کرتے ہوئے حتمی سگنل بناتا ہے۔
     """
     try:
-        # --- اہم تبدیلی: اب یہ Pydantic ماڈلز کو ڈکشنری میں تبدیل کرتا ہے ---
         m15_candle_dicts = [c.model_dump() for c in m15_candles]
-        m5_candle_dicts = [c.model_dump() for c in m5_candles] if m5_candles else []
+        m5_candle_dicts = [c.model_dump() for c in m5_candles]
 
         # 1. M15 سے بڑے رجحان کی شناخت کریں
-        logger.info(f"[{symbol}] M15 رجحان کا تجزیہ شروع کیا جا رہا ہے۔..")
         m15_trend = sb.get_m15_trend(m15_candle_dicts)
-
         if m15_trend == "Sideways":
-            return {"status": "no-signal", "reason": f"[{symbol}] M15 پر کوئی واضح رجحان نہیں۔ مارکیٹ سائیڈ ویز ہے۔"}
+            return {"status": "no-signal", "reason": f"[{symbol}] M15 پر کوئی واضح رجحان نہیں۔"}
 
-        # (اگلے مراحل کے لیے پلیس ہولڈر)
         # 2. M5 پر انٹری سگنل تلاش کریں
-        # ابھی کے لیے، ہم یہاں رک جائیں گے تاکہ پہلے حصے کی تصدیق ہو سکے۔
-        logger.info(f"[{symbol}] M15 پر ایک رجحان ملا: {m15_trend}. اگلے مراحل پر جایا جائے گا۔")
+        m5_signal_data = sb.get_m5_signal(m5_candle_dicts, m15_trend)
+        core_signal = m5_signal_data.get("signal")
+        if core_signal == "wait":
+            return {"status": "no-signal", "reason": f"[{symbol}] M15 رجحان ({m15_trend}) کے باوجود M5 پر کوئی انٹری پوائنٹ نہیں۔"}
+
+        # 3. رسک اور خبروں کا تجزیہ
+        risk_assessment = check_risk(m5_candle_dicts) # رسک M5 پر چیک کریں
+        news_data = await get_news_analysis_for_symbol(symbol)
+
+        # 4. اعتماد کا اسکور
+        confidence = get_confidence(
+            m15_trend=m15_trend,
+            m5_signal_data=m5_signal_data,
+            risk_status=risk_assessment.get("status"),
+            news_impact=news_data.get("impact"),
+            symbol=symbol,
+            db=db
+        )
+        tier = get_tier(confidence)
         
-        # --- اگلے مراحل میں یہاں مزید کوڈ شامل کیا جائے گا ---
-        # مثال کے طور پر:
-        # m5_signal_data = sb.get_m5_signal(m5_candle_dicts, m15_trend)
-        # if m5_signal_data['signal'] == 'wait':
-        #     return {"status": "no-signal", "reason": f"[{symbol}] M15 رجحان کے باوجود M5 پر کوئی انٹری پوائنٹ نہیں ملا۔"}
-        
-        # ابھی کے لیے، ہم ایک فرضی جواب واپس کرتے ہیں
+        # 5. TP/SL کا حساب
+        tp_sl_data = sb.calculate_dynamic_tp_sl(m5_candle_dicts, core_signal)
+        if not tp_sl_data:
+            return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
+        tp, sl = tp_sl_data
+
+        # 6. حتمی وجہ
+        reason = generate_reason(
+            m15_trend=m15_trend,
+            m5_signal_data=m5_signal_data,
+            risk_status=risk_assessment.get("status"),
+            news_impact=news_data.get("impact"),
+            confidence=confidence
+        )
+
         return {
-            "status": "pending_m5_analysis",
-            "m15_trend": m15_trend,
-            "reason": f"[{symbol}] M15 پر '{m15_trend}' کی شناخت ہو گئی۔ M5 کے تجزیے کا انتظار ہے۔"
+            "status": "ok",
+            "symbol": symbol,
+            "signal": core_signal,
+            "risk": risk_assessment.get("status"),
+            "news": news_data.get("impact"),
+            "reason": reason,
+            "confidence": round(confidence, 2),
+            "tier": tier,
+            "timeframe": "5min (Entry) on 15min (Trend)", # ٹائم فریم کو واضح کیا گیا
+            "price": m5_candle_dicts[-1]['close'],
+            "tp": round(tp, 5),
+            "sl": round(sl, 5),
         }
 
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے فیوژن انجن ناکام: {e}", exc_info=True)
         return {"status": "error", "reason": f"[{symbol}] کے لیے AI فیوژن میں خرابی۔"}
-
+        
