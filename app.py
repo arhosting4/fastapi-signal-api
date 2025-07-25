@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import config
 import database_crud as crud
-from models import create_db_and_tables, SessionLocal
+from models import create_db_and_tables, SessionLocal # create_db_and_tables یہاں سے امپورٹ کیا گیا ہے
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
@@ -25,12 +25,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - [%
 logger = logging.getLogger(__name__)
 
 # FastAPI ایپ بنائیں
-app = FastAPI(title="ScalpMaster AI API", version="1.2.1") # ورژن اپ ڈیٹ کیا گیا
+app = FastAPI(title="ScalpMaster AI API", version="1.3.0") # ورژن اپ ڈیٹ کیا گیا
 
 # CORS مڈل ویئر
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# --- API روٹس جو پہلے api_routes.py میں تھے ---
+# --- API روٹس ---
 
 def get_db():
     """ڈیٹا بیس سیشن فراہم کرتا ہے۔"""
@@ -50,7 +50,7 @@ async def get_live_signals_api():
     """تمام فعال تجارتی سگنلز واپس کرتا ہے۔"""
     signals = get_all_signals()
     if not signals:
-        return {"message": "AI مارکیٹ کو اسکین کر رہا ہے... اس وقت کوئی اعلیٰ اعتماد والا سگنل نہیں ہے۔"}
+        return [] # خالی فہرست واپس کریں تاکہ فرنٹ اینڈ اسے صحیح طریقے سے سنبھال سکے
     return signals
 
 @app.get("/api/history", tags=["Trading"])
@@ -67,7 +67,7 @@ async def get_news(db: Session = Depends(get_db)):
     """کیش شدہ مارکیٹ کی خبریں واپس کرتا ہے۔"""
     try:
         news = crud.get_cached_news(db)
-        return news or {"articles": []}
+        return news or {"articles": []} # اگر کوئی خبر نہ ہو تو خالی فہرست والا آبجیکٹ واپس کریں
     except Exception as e:
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="اندرونی سرور کی خرابی۔")
@@ -82,8 +82,9 @@ scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=config.N
 async def startup_event():
     """ایپلیکیشن اسٹارٹ اپ پر چلتا ہے۔"""
     logger.info("FastAPI ورکر شروع ہو رہا ہے...")
-    create_db_and_tables()
-    logger.info("ڈیٹا بیس ٹیبلز کی تصدیق ہو گئی۔")
+    # یہ کال اب محفوظ ہے اور ریس کنڈیشن کا سبب نہیں بنے گی
+    create_db_and_tables() 
+    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
 
 @app.on_event("shutdown")
 async def shutdown_event():
