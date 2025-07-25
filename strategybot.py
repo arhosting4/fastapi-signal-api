@@ -18,7 +18,6 @@ ATR_PERIOD_FOR_TP_SL = 14
 def get_m15_trend(candles: List[Dict]) -> str:
     """
     M15 کینڈلز کی بنیاد پر بڑے رجحان کی شناخت کرتا ہے۔
-    یہ فنکشن Heikin-Ashi کینڈلز پر Supertrend کا استعمال کرتا ہے۔
     """
     if len(candles) < SUPERTREND_ATR_PERIOD:
         logger.warning("M15 رجحان کے تجزیے کے لیے ناکافی ڈیٹا۔")
@@ -26,11 +25,8 @@ def get_m15_trend(candles: List[Dict]) -> str:
 
     try:
         df = pd.DataFrame(candles)
-        
-        # 1. Heikin-Ashi کینڈلز بنائیں
         heikin_ashi_df = ta.ha(df['open'], df['high'], df['low'], df['close'])
         
-        # 2. Heikin-Ashi کینڈلز پر Supertrend کا حساب لگائیں
         supertrend = ta.supertrend(
             high=heikin_ashi_df['HA_high'],
             low=heikin_ashi_df['HA_low'],
@@ -43,35 +39,72 @@ def get_m15_trend(candles: List[Dict]) -> str:
             logger.warning("M15 Supertrend کا حساب نہیں لگایا جا سکا۔")
             return "Sideways"
             
-        # آخری کینڈل کی بنیاد پر رجحان کا تعین کریں
         last_close = heikin_ashi_df.iloc[-1]['HA_close']
-        last_supertrend = supertrend.iloc[-1][f'SUPERT_{SUPERTREND_ATR_PERIOD}_{SUPERTREND_ATR_MULTIPLIER}.0']
+        last_supertrend_value = supertrend.iloc[-1][f'SUPERT_{SUPERTREND_ATR_PERIOD}_{SUPERTREND_ATR_MULTIPLIER}.0']
 
-        if last_close > last_supertrend:
-            logger.info("M15 رجحان کی شناخت: Uptrend")
+        if last_close > last_supertrend_value:
             return "Uptrend"
         else:
-            logger.info("M15 رجحان کی شناخت: Downtrend")
             return "Downtrend"
 
     except Exception as e:
         logger.error(f"M15 رجحان کے تجزیے میں خرابی: {e}", exc_info=True)
         return "Sideways"
 
+# --- اہم تبدیلی: M5 سگنل کی منطق کو نافذ کرنا ---
 def get_m5_signal(candles: List[Dict], m15_trend: str) -> Dict:
     """
     M5 کینڈلز اور M15 رجحان کی بنیاد پر عین انٹری سگنل تلاش کرتا ہے۔
-    (نوٹ: یہ فنکشن ابھی صرف ایک پلیس ہولڈر ہے۔ ہم اسے اگلے مرحلے میں مکمل کریں گے۔)
     """
-    logger.info(f"M5 سگنل کی تلاش شروع کی جا رہی ہے، M15 رجحان: {m15_trend}")
-    # TODO: اگلے مرحلے میں M5 Supertrend اور RSI کی منطق یہاں شامل کی جائے گی۔
-    return {"signal": "wait", "reason": "M5 تجزیہ ابھی نافذ نہیں ہوا۔"}
+    if len(candles) < SUPERTREND_ATR_PERIOD or len(candles) < RSI_PERIOD:
+        return {"signal": "wait", "reason": "M5 تجزیے کے لیے ناکافی ڈیٹا۔"}
+
+    try:
+        df = pd.DataFrame(candles)
+        heikin_ashi_df = ta.ha(df['open'], df['high'], df['low'], df['close'])
+        
+        # M5 Heikin-Ashi کینڈلز پر Supertrend کا حساب لگائیں
+        supertrend = ta.supertrend(
+            high=heikin_ashi_df['HA_high'],
+            low=heikin_ashi_df['HA_low'],
+            close=heikin_ashi_df['HA_close'],
+            length=SUPERTREND_ATR_PERIOD,
+            multiplier=SUPERTREND_ATR_MULTIPLIER
+        )
+        
+        # M5 روایتی کینڈلز پر RSI کا حساب لگائیں
+        rsi = ta.rsi(df['close'], length=RSI_PERIOD)
+
+        if supertrend is None or rsi is None:
+            return {"signal": "wait", "reason": "M5 انڈیکیٹرز کا حساب نہیں لگایا جا سکا۔"}
+
+        # آخری دو کینڈلز کا ڈیٹا حاصل کریں تاکہ کراس اوور کا پتہ چل سکے
+        prev_close = heikin_ashi_df.iloc[-2]['HA_close']
+        last_close = heikin_ashi_df.iloc[-1]['HA_close']
+        prev_supertrend = supertrend.iloc[-2][f'SUPERTd_{SUPERTREND_ATR_PERIOD}_{SUPERTREND_ATR_MULTIPLIER}.0']
+        last_supertrend = supertrend.iloc[-1][f'SUPERTd_{SUPERTREND_ATR_PERIOD}_{SUPERTREND_ATR_MULTIPLIER}.0']
+        last_rsi = rsi.iloc[-1]
+
+        # خرید کا سگنل: M15 اپ ٹرینڈ میں ہو اور M5 پر Supertrend کراس اوور ہو
+        if m15_trend == "Uptrend" and prev_supertrend == -1 and last_supertrend == 1:
+            logger.info(f"ممکنہ BUY سگنل ملا۔ M5 RSI: {last_rsi:.2f}")
+            return {"signal": "buy", "rsi": last_rsi, "heikin_ashi": heikin_ashi_df.tail(3).to_dict('records')}
+
+        # فروخت کا سگنل: M15 ڈاؤن ٹرینڈ میں ہو اور M5 پر Supertrend کراس اوور ہو
+        if m15_trend == "Downtrend" and prev_supertrend == 1 and last_supertrend == -1:
+            logger.info(f"ممکنہ SELL سگنل ملا۔ M5 RSI: {last_rsi:.2f}")
+            return {"signal": "sell", "rsi": last_rsi, "heikin_ashi": heikin_ashi_df.tail(3).to_dict('records')}
+
+        return {"signal": "wait", "reason": "M5 پر کوئی کراس اوور نہیں ملا۔"}
+
+    except Exception as e:
+        logger.error(f"M5 سگنل کے تجزیے میں خرابی: {e}", exc_info=True)
+        return {"signal": "wait", "reason": "M5 تجزیے میں خرابی۔"}
 
 
 def calculate_dynamic_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
     """
     M5 ATR کی بنیاد پر متحرک TP/SL کا حساب لگاتا ہے۔
-    (نوٹ: یہ فنکشن بھی اگلے مراحل میں استعمال ہوگا۔)
     """
     if len(candles) < ATR_PERIOD_FOR_TP_SL:
         return None
@@ -85,14 +118,15 @@ def calculate_dynamic_tp_sl(candles: List[Dict], signal_type: str) -> Optional[T
     last_atr = atr.iloc[-1]
     last_close = df['close'].iloc[-1]
     
+    # اسکیلپنگ کے لیے رسک ٹو ریوارڈ ریشو (1:1.5)
     if signal_type == "buy":
         sl = last_close - (last_atr * 1.5)
-        tp = last_close + (last_atr * 2.0)
+        tp = last_close + (last_atr * 2.25) # 1.5 * 1.5
     elif signal_type == "sell":
         sl = last_close + (last_atr * 1.5)
-        tp = last_close - (last_atr * 2.0)
+        tp = last_close - (last_atr * 2.25) # 1.5 * 1.5
     else:
         return None
 
     return tp, sl
-
+    
