@@ -1,11 +1,9 @@
 # filename: fusion_engine.py
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-# config.py پر انحصار مکمل طور پر ختم کر دیا گیا ہے
-# import config 
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
 from riskguardian import check_risk, get_dynamic_atr_multiplier
@@ -18,12 +16,12 @@ from schemas import Candle
 
 logger = logging.getLogger(__name__)
 
-async def generate_final_signal(db: Session, symbol: str, candles: list) -> Dict[str, Any]:
+async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
     """
     تمام AI سگنلز کو ملا کر ایک حتمی، اعلیٰ اعتماد والا سگنل بناتا ہے۔
     """
     try:
-        # Pydantic ماڈلز کو ڈکشنری میں تبدیل کریں
+        # --- اہم تبدیلی: اب یہ Pydantic ماڈلز کو ڈکشنری میں تبدیل کرتا ہے ---
         candle_dicts = [c.model_dump() for c in candles]
 
         # 1. بنیادی سگنل
@@ -74,7 +72,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: list) -> Dict
             "reason": reason,
             "confidence": round(confidence, 2),
             "tier": tier,
-            "timeframe": "15min", # چونکہ یہ اب صرف utils.py میں ہے
+            "timeframe": "15min",
             "price": candle_dicts[-1]['close'],
             "tp": round(tp, 5),
             "sl": round(sl, 5),
