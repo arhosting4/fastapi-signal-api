@@ -1,79 +1,59 @@
 # filename: fusion_engine.py
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-import strategybot as sb
+from strategybot import generate_core_signal, calculate_tp_sl
+from patternai import detect_patterns
 from riskguardian import check_risk
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
+from supply_demand import get_market_structure_analysis
 from schemas import Candle
 
 logger = logging.getLogger(__name__)
 
-# ★★★ نیا، ہلکا پھلکا فنکشن ★★★
-def check_m15_opportunity(symbol: str, m15_candles: List[Candle]) -> Optional[str]:
+async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
     """
-    صرف یہ چیک کرتا ہے کہ آیا M15 پر کوئی واضح رجحان (موقع) ہے۔
-    یہ ایک مکمل تجزیہ نہیں ہے اور API کالز بچانے کے لیے ہے۔
+    صرف 15 منٹ کے ڈیٹا کی بنیاد پر ایک حتمی سگنل بناتا ہے۔
     """
     try:
-        m15_candle_dicts = [c.model_dump() for c in m15_candles]
-        m15_trend = sb.get_m15_trend(m15_candle_dicts)
-        
-        if m15_trend in ["Uptrend", "Downtrend"]:
-            logger.info(f"[{symbol}] M15 پر موقع ملا: {m15_trend}")
-            return m15_trend
-            
-    except Exception as e:
-        logger.error(f"[{symbol}] M15 موقع کی جانچ میں خرابی: {e}")
-    
-    return None
+        candle_dicts = [c.model_dump() for c in candles]
+        core_signal_data = generate_core_signal(candle_dicts)
+        core_signal = core_signal_data["signal"]
 
-# مکمل تجزیے کا فنکشن ویسے ہی رہے گا
-async def generate_final_signal(db: Session, symbol: str, m15_trend: str, m5_candles: List[Candle]) -> Dict[str, Any]:
-    """
-    ایک امیدوار جوڑے کے لیے مکمل حتمی سگنل بناتا ہے۔
-    نوٹ: اب یہ m15_candles کی بجائے براہ راست m15_trend لیتا ہے۔
-    """
-    try:
-        m5_candle_dicts = [c.model_dump() for c in m5_candles]
-
-        m5_signal_data = sb.get_m5_signal(m5_candle_dicts, m15_trend)
-        core_signal = m5_signal_data.get("signal")
         if core_signal == "wait":
-            return {"status": "no-signal", "reason": f"[{symbol}] M15 رجحان ({m15_trend}) کے باوجود M5 پر کوئی انٹری پوائنٹ نہیں۔"}
+            return {"status": "no-signal", "reason": "بنیادی حکمت عملی غیر جانبدار ہے۔"}
 
-        risk_assessment = check_risk(m5_candle_dicts)
+        pattern_data = detect_patterns(candle_dicts)
+        risk_assessment = check_risk(candle_dicts)
         news_data = await get_news_analysis_for_symbol(symbol)
+        market_structure = get_market_structure_analysis(candle_dicts)
 
-        confidence = get_confidence(
-            db=db, m15_trend=m15_trend, m5_signal_data=m5_signal_data,
-            risk_status=risk_assessment.get("status"), news_impact=news_data.get("impact"), symbol=symbol
-        )
+        if risk_assessment.get("status") == "High" and news_data.get("impact") == "High":
+            return {"status": "blocked", "reason": "زیادہ رسک اور خبریں۔"}
+
+        confidence = get_confidence(db, core_signal, pattern_data.get("type", "neutral"), risk_assessment.get("status"), news_data.get("impact"), symbol)
+        tier = get_tier(confidence)
         
-        tp_sl_data = sb.calculate_dynamic_tp_sl(m5_candle_dicts, core_signal)
+        tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
         if not tp_sl_data:
             return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
         tp, sl = tp_sl_data
 
-        reason = generate_reason(
-            m15_trend=m15_trend, m5_signal_data=m5_signal_data,
-            risk_status=risk_assessment.get("status"), news_impact=news_data.get("impact"), confidence=confidence
-        )
+        reason = generate_reason(core_signal, pattern_data, risk_assessment.get("status"), news_data.get("impact"), confidence, market_structure)
 
         return {
             "status": "ok", "symbol": symbol, "signal": core_signal,
-            "risk": risk_assessment.get("status"), "news": news_data.get("impact"),
-            "reason": reason, "confidence": round(confidence, 2), "tier": get_tier(confidence),
-            "timeframe": "5min (Entry) on 15min (Trend)", "price": m5_candle_dicts[-1]['close'],
-            "tp": round(tp, 5), "sl": round(sl, 5),
+            "pattern": pattern_data.get("pattern"), "risk": risk_assessment.get("status"),
+            "news": news_data.get("impact"), "reason": reason,
+            "confidence": round(confidence, 2), "tier": tier, "timeframe": "15min",
+            "price": candle_dicts[-1]['close'], "tp": round(tp, 5), "sl": round(sl, 5),
         }
-
     except Exception as e:
-        logger.error(f"[{symbol}] کے لیے فیوژن انجن ناکام: {e}", exc_info=True)
-        return {"status": "error", "reason": f"[{symbol}] کے لیے AI فیوژن میں خرابی۔"}
+        logger.error(f"{symbol} کے لیے فیوژن انجن ناکام: {e}", exc_info=True)
+        return {"status": "error", "reason": "AI فیوژن میں خرابی۔"}
         
