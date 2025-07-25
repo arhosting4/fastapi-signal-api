@@ -11,7 +11,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 
-import config
+# اب config.py پر کوئی انحصار نہیں
+# import config 
 import database_crud as crud
 from models import create_db_and_tables, SessionLocal
 from hunter import hunt_for_signals_job
@@ -23,54 +24,52 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - [%(module)s] - %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ScalpMaster AI API", version="1.4.0") # ورژن اپ ڈیٹ کیا گیا
+app = FastAPI(title="ScalpMaster AI API", version="2.0.0-stable") # حتمی ورژن
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# --- شیڈیولر سیٹ اپ ---
+# ==============================================================================
+# شیڈیولر کے وقفے براہ راست یہاں شامل کر دیے گئے ہیں
+# ==============================================================================
+HUNT_JOB_MINUTES = 5
+CHECK_JOB_MINUTES = 1
+NEWS_JOB_HOURS = 4
+# ==============================================================================
+
 scheduler = AsyncIOScheduler(timezone="UTC")
-scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=config.HUNT_JOB_MINUTES), id="hunt_for_signals")
-scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=config.CHECK_JOB_MINUTES), id="check_active_signals")
-scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=config.NEWS_JOB_HOURS), id="update_news")
+scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=HUNT_JOB_MINUTES), id="hunt_for_signals")
+scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=CHECK_JOB_MINUTES), id="check_active_signals")
+scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=NEWS_JOB_HOURS), id="update_news")
 
 def start_scheduler_safely():
-    """ریس کنڈیشن سے بچنے کے لیے فائل لاک کا استعمال کرتے ہوئے شیڈیولر شروع کرتا ہے۔"""
     lock_file_path = "/tmp/scheduler_lock"
     try:
-        # لاک حاصل کرنے کی کوشش کریں
         fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        # --- لاک حاصل ہو گیا، اب شیڈیولر شروع کریں ---
         try:
             if not scheduler.running:
                 scheduler.start()
                 logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
         finally:
-            # لاک کو بند کریں (اسے ہٹائیں نہیں تاکہ دوسرے ورکرز اسے دوبارہ شروع نہ کریں)
             os.close(fd)
     except FileExistsError:
         logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔")
     except Exception as e:
         logger.error(f"شیڈیولر شروع کرنے میں ناکام: {e}", exc_info=True)
-        # اگر خرابی ہو تو لاک فائل کو ہٹا دیں تاکہ اگلی بار کوشش کی جا سکے
         if os.path.exists(lock_file_path):
             os.remove(lock_file_path)
 
 @app.on_event("startup")
 async def startup_event():
-    """ایپلیکیشن اسٹارٹ اپ پر چلتا ہے۔"""
     logger.info("FastAPI ورکر شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    # محفوظ طریقے سے شیڈیولر شروع کریں
     start_scheduler_safely()
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """ایپلیکیشن بند ہونے پر چلتا ہے۔"""
     logger.info("FastAPI ورکر بند ہو رہا ہے۔")
     if scheduler.running:
         scheduler.shutdown()
         logger.info("شیڈیولر بند ہو گیا۔")
-    # شٹ ڈاؤن پر لاک فائل کو صاف کریں
     lock_file_path = "/tmp/scheduler_lock"
     if os.path.exists(lock_file_path):
         os.remove(lock_file_path)
@@ -85,7 +84,28 @@ def get_db():
 async def health_check():
     return {"status": "ok", "version": app.version, "scheduler_running": scheduler.running}
 
-# ... (باقی تمام API روٹس ویسے ہی رہیں گے) ...
+@app.get("/api/live-signals", tags=["Trading"])
+async def get_live_signals_api():
+    signals = get_all_signals()
+    return signals if signals else []
+
+@app.get("/api/history", tags=["Trading"])
+async def get_history(db: Session = Depends(get_db)):
+    try:
+        return crud.get_completed_trades(db)
+    except Exception as e:
+        logger.error(f"تاریخ حاصل کرنے میں خرابی: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="اندرونی سرور کی خرابی۔")
+
+@app.get("/api/news", tags=["Market Data"])
+async def get_news(db: Session = Depends(get_db)):
+    try:
+        news = crud.get_cached_news(db)
+        return news or {"articles": []}
+    except Exception as e:
+        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="اندرونی سرور کی خرابی۔")
 
 # فرنٹ اینڈ پیش کریں
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+    
