@@ -1,111 +1,115 @@
 # filename: app.py
 
-import os
-import time
+import asyncio
 import logging
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-# اب config.py پر کوئی انحصار نہیں
-# import config 
+# مقامی امپورٹس
 import database_crud as crud
-from models import create_db_and_tables, SessionLocal
+from models import SessionLocal, create_db_and_tables
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
-from signal_tracker import get_all_signals
+from websocket_manager import manager # <-- نیا امپورٹ
 
-load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - [%(module)s] - %(message)s")
+# لاگنگ سیٹ اپ
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ScalpMaster AI API", version="2.0.0-stable") # حتمی ورژن
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# FastAPI ایپ
+app = FastAPI(title="ScalpMaster AI API")
 
-# ==============================================================================
-# شیڈیولر کے وقفے براہ راست یہاں شامل کر دیے گئے ہیں
-# ==============================================================================
-HUNT_JOB_MINUTES = 5
-CHECK_JOB_MINUTES = 1
-NEWS_JOB_HOURS = 4
-# ==============================================================================
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-scheduler = AsyncIOScheduler(timezone="UTC")
-scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=HUNT_JOB_MINUTES), id="hunt_for_signals")
-scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=CHECK_JOB_MINUTES), id="check_active_signals")
-scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=NEWS_JOB_HOURS), id="update_news")
-
-def start_scheduler_safely():
-    lock_file_path = "/tmp/scheduler_lock"
+# DB انحصار
+def get_db():
+    db = SessionLocal()
     try:
-        fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        try:
-            if not scheduler.running:
-                scheduler.start()
-                logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-        finally:
-            os.close(fd)
-    except FileExistsError:
-        logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔")
-    except Exception as e:
-        logger.error(f"شیڈیولر شروع کرنے میں ناکام: {e}", exc_info=True)
-        if os.path.exists(lock_file_path):
-            os.remove(lock_file_path)
+        yield db
+    finally:
+        db.close()
 
+# ==============================================================================
+# ★★★ نیا WebSocket اینڈ پوائنٹ ★★★
+# ==============================================================================
+@app.websocket("/ws/live-signals")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # کلائنٹ سے پیغامات کا انتظار کریں (اگر ضرورت ہو)
+            # فی الحال، ہم صرف سرور سے پیغامات بھیج رہے ہیں
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
+# ==============================================================================
+
+# API روٹس
+@app.get("/health", status_code=200)
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/api/history", response_class=JSONResponse)
+async def get_history(db: Session = Depends(get_db)):
+    try:
+        trades = crud.get_completed_trades(db)
+        return trades
+    except Exception as e:
+        logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+@app.get("/api/news", response_class=JSONResponse)
+async def get_news(db: Session = Depends(get_db)):
+    try:
+        news = crud.get_cached_news(db)
+        if not news:
+            return {"message": "کوئی خبر نہیں ملی۔"}
+        return news
+    except Exception as e:
+        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+# پس منظر کے کام
 @app.on_event("startup")
 async def startup_event():
     logger.info("FastAPI ورکر شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    start_scheduler_safely()
+    
+    # شیڈیولر کو صرف ایک بار شروع کریں
+    if not hasattr(app.state, "scheduler") or not app.state.scheduler.running:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.interval import IntervalTrigger
+        
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
+        scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
+        scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+    else:
+        logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("FastAPI ورکر بند ہو رہا ہے۔")
-    if scheduler.running:
-        scheduler.shutdown()
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        app.state.scheduler.shutdown()
         logger.info("شیڈیولر بند ہو گیا۔")
-    lock_file_path = "/tmp/scheduler_lock"
-    if os.path.exists(lock_file_path):
-        os.remove(lock_file_path)
 
-# --- API روٹس ---
-def get_db():
-    db = SessionLocal()
-    try: yield db
-    finally: db.close()
-
-@app.get("/health", status_code=200, tags=["System"])
-async def health_check():
-    return {"status": "ok", "version": app.version, "scheduler_running": scheduler.running}
-
-@app.get("/api/live-signals", tags=["Trading"])
-async def get_live_signals_api():
-    signals = get_all_signals()
-    return signals if signals else []
-
-@app.get("/api/history", tags=["Trading"])
-async def get_history(db: Session = Depends(get_db)):
-    try:
-        return crud.get_completed_trades(db)
-    except Exception as e:
-        logger.error(f"تاریخ حاصل کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="اندرونی سرور کی خرابی۔")
-
-@app.get("/api/news", tags=["Market Data"])
-async def get_news(db: Session = Depends(get_db)):
-    try:
-        news = crud.get_cached_news(db)
-        return news or {"articles": []}
-    except Exception as e:
-        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="اندرونی سرور کی خرابی۔")
-
-# فرنٹ اینڈ پیش کریں
+# سٹیٹک فائلز
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-    
+              
