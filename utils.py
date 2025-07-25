@@ -1,8 +1,36 @@
 # filename: utils.py
 
-# ... (باقی تمام امپورٹس اور کوڈ ویسا ہی رہے گا) ...
+import os
+import httpx
+import asyncio
+import logging
+from datetime import datetime
+from typing import List, Optional, Dict
 
-async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]: # واپسی کی قسم کو List[Candle] میں تبدیل کیا گیا
+from key_manager import KeyManager
+from schemas import TwelveDataTimeSeries, Candle
+
+logger = logging.getLogger(__name__)
+key_manager = KeyManager()
+
+# ==============================================================================
+# کنفیگریشن پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
+# ==============================================================================
+AVAILABLE_PAIRS_WEEKDAY = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
+AVAILABLE_PAIRS_WEEKEND = ["BTC/USD"]
+CANDLE_COUNT = 100
+PRIMARY_TIMEFRAME = "15min"
+# ==============================================================================
+
+def get_available_pairs() -> List[str]:
+    """ہفتے کے دن کی بنیاد پر دستیاب جوڑے واپس کرتا ہے۔"""
+    today = datetime.utcnow().weekday()
+    # 0-4 سوموار سے جمعہ، 5-6 ہفتہ-اتوار
+    if today >= 5: 
+        return AVAILABLE_PAIRS_WEEKEND
+    return AVAILABLE_PAIRS_WEEKDAY
+
+async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
     """
     TwelveData API سے OHLC کینڈلز لاتا ہے اور انہیں Pydantic ماڈلز کی فہرست کے طور پر واپس کرتا ہے۔
     """
@@ -44,4 +72,23 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]: # وا�
         logger.error(f"[{symbol}] کے لیے نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# ... (باقی تمام کوڈ ویسا ہی رہے گا) ...
+async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Optional[float]:
+    """
+    کسی جوڑے کی موجودہ قیمت حاصل کرتا ہے۔
+    """
+    api_key = key_manager.get_api_key()
+    if not api_key:
+        return None
+    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={api_key}"
+    try:
+        response = await client.get(url, timeout=10)
+        if response.status_code == 429:
+            key_manager.mark_key_as_limited(api_key)
+            await asyncio.sleep(1)
+            return await get_current_price_twelve_data(symbol, client)
+        response.raise_for_status()
+        data = response.json()
+        return float(data.get("price")) if data.get("price") else None
+    except Exception:
+        return None
+        
