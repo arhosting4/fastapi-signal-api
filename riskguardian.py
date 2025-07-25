@@ -4,9 +4,6 @@ import pandas as pd
 import pandas_ta as ta
 from typing import List, Dict
 
-# config.py پر انحصار ختم کر دیا گیا ہے
-# import config
-
 # ==============================================================================
 # کنفیگریشن پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
 # ==============================================================================
@@ -23,6 +20,7 @@ def check_risk(candles: List[Dict]) -> Dict[str, str]:
     if not candles or len(candles) < 30:
         return {"status": "Normal", "reason": "ناکافی ڈیٹا۔"}
 
+    # --- اہم تبدیلی: اب یہ پہلے سے ہی ڈکشنری ہے ---
     df = pd.DataFrame(candles)
     
     for col in ['high', 'low', 'close']:
