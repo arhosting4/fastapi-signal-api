@@ -1,47 +1,63 @@
 # filename: riskguardian.py
+
 import pandas as pd
 import pandas_ta as ta
 from typing import List, Dict
 
-import config
-from schemas import Candle
+# config.py پر انحصار ختم کر دیا گیا ہے
+# import config
 
-def check_risk(candles: List[Candle]) -> Dict[str, str]:
-    """مارکیٹ کے اتار چڑھاؤ کی بنیاد پر رسک کا اندازہ لگاتا ہے۔"""
-    if len(candles) < config.ATR_LENGTH:
-        return {"status": "Normal", "reason": "رسک کے جائزے کے لیے ناکافی ڈیٹا۔"}
+# ==============================================================================
+# کنفیگریشن پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
+# ==============================================================================
+ATR_LENGTH = 14
+ATR_MULTIPLIER_HIGH_RISK = 1.5
+ATR_MULTIPLIER_MODERATE_RISK = 1.8
+ATR_MULTIPLIER_NORMAL_RISK = 2.0
+# ==============================================================================
 
-    df = pd.DataFrame([c.dict() for c in candles])
+def check_risk(candles: List[Dict]) -> Dict[str, str]:
+    """
+    مارکیٹ کے اتار چڑھاؤ کی بنیاد پر رسک کا اندازہ لگاتا ہے۔
+    """
+    if not candles or len(candles) < 30:
+        return {"status": "Normal", "reason": "ناکافی ڈیٹا۔"}
+
+    df = pd.DataFrame(candles)
     
-    atr = ta.atr(df['high'], df['low'], df['close'], length=config.ATR_LENGTH)
+    for col in ['high', 'low', 'close']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    df.dropna(inplace=True)
+    if len(df) < 14:
+        return {"status": "Normal", "reason": "ناکافی ڈیٹا۔"}
+
+    atr = ta.atr(df['high'], df['low'], df['close'], length=ATR_LENGTH)
     if atr is None or atr.empty or pd.isna(atr.iloc[-1]):
-        return {"status": "Normal", "reason": "ATR کا حساب نہیں لگایا جا سکا۔"}
+        return {"status": "Normal", "reason": "ATR کا حساب نہیں لگایا جا سکا"}
     
     current_atr = atr.iloc[-1]
     avg_close = df['close'].iloc[-20:].mean()
     if avg_close == 0:
-        return {"status": "Normal", "reason": "قیمت کا ڈیٹا صفر ہے، رسک کا اندازہ نہیں لگایا جا سکتا۔"}
+        return {"status": "Normal", "reason": "قیمت کا ڈیٹا صفر ہے۔"}
 
-    # رسک کی حدوں کی وضاحت
-    volatility_percentage = (current_atr / avg_close) * 100
-    
-    risk_status = "Normal"
-    risk_reason = f"معمول کا اتار چڑھاؤ ({volatility_percentage:.2f}%)۔"
+    volatility_threshold_high = 0.005 * avg_close
+    volatility_threshold_moderate = 0.002 * avg_close
 
-    if volatility_percentage > 0.5: # 0.5% سے زیادہ اتار چڑھاؤ زیادہ رسک ہے
-        risk_status = "High"
-        risk_reason = f"زیادہ اتار چڑھاؤ کا پتہ چلا ({volatility_percentage:.2f}%)۔"
-    elif volatility_percentage > 0.2: # 0.2% سے زیادہ درمیانہ رسک ہے
-        risk_status = "Moderate"
-        risk_reason = f"درمیانہ اتار چڑھاؤ کا پتہ چلا ({volatility_percentage:.2f}%)۔"
+    if current_atr > volatility_threshold_high:
+        return {"status": "High", "reason": f"زیادہ اتار چڑھاؤ (ATR: {current_atr:.4f})"}
+    elif current_atr > volatility_threshold_moderate:
+        return {"status": "Moderate", "reason": f"درمیانہ اتار چڑھاؤ (ATR: {current_atr:.4f})"}
 
-    return {"status": risk_status, "reason": risk_reason}
+    return {"status": "Normal", "reason": "مارکیٹ کے حالات مستحکم ہیں۔"}
 
 def get_dynamic_atr_multiplier(risk_status: str) -> float:
-    """رسک کی سطح کی بنیاد پر ATR ضرب کو متحرک طور پر ایڈجسٹ کرتا ہے۔"""
+    """
+    رسک کی سطح کی بنیاد پر ATR ضرب کو متحرک طور پر ایڈجسٹ کرتا ہے۔
+    """
     if risk_status == "High":
-        return config.ATR_MULTIPLIER_HIGH_RISK
+        return ATR_MULTIPLIER_HIGH_RISK
     if risk_status == "Moderate":
-        return config.ATR_MULTIPLIER_MODERATE_RISK
-    return config.ATR_MULTIPLIER_NORMAL_RISK
+        return ATR_MULTIPLIER_MODERATE_RISK
+    return ATR_MULTIPLIER_NORMAL_RISK
     
