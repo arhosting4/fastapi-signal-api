@@ -16,5 +16,8 @@ COPY --from=builder /opt/venv /opt/venv
 COPY . .
 ENV PATH="/opt/venv/bin:$PATH"
 EXPOSE 8000
-# اپ ڈیٹ شدہ کمانڈ
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
+# ... (تمام اسٹیجز ویسے ہی رہیں گے) ...
+
+# ایپلیکیشن چلانے کا حکم (پرانی حالت میں واپس)
+CMD ["gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:8000"]
+
