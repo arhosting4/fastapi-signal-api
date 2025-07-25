@@ -19,7 +19,7 @@ FINAL_CONFIDENCE_THRESHOLD = 70.0
 
 async def hunt_for_signals_job():
     logger.info("=============================================")
-    logger.info(">>> سگنل کی تلاش کا کام (v2.1 - دو قدمی فلٹرنگ) شروع ہو رہا ہے...")
+    logger.info(">>> سگنل کی تلاش کا کام (v2.2 - حتمی) شروع ہو رہا ہے...")
     logger.info("=============================================")
 
     if get_active_signals_count() >= MAX_ACTIVE_SIGNALS:
@@ -44,6 +44,7 @@ async def hunt_for_signals_job():
         
         if not candidate_pairs:
             logger.info("مرحلہ 1 مکمل: کسی بھی جوڑے پر M15 کا کوئی واضح موقع نہیں ملا۔")
+            db.close() # یہاں db کو بند کرنا ضروری ہے
             return
 
         logger.info(f"مرحلہ 2: {len(candidate_pairs)} امیدوار جوڑوں کا مکمل تجزیہ شروع کیا جا رہا ہے۔")
@@ -72,13 +73,15 @@ async def hunt_for_signals_job():
                 await send_telegram_alert(signal_result)
                 await manager.broadcast({"type": "new_signal", "data": signal_result})
             
-            # API کی حد سے بچنے کے لیے ہر مکمل تجزیے کے بعد چھوٹا سا وقفہ
-            await asyncio.sleep(1)
+            # ★★★ اہم تصحیح: ہر امیدوار کے تجزیے کے بعد وقفہ ★★★
+            # یہ یقینی بنائے گا کہ M5 کالز ایک ساتھ نہ ہوں
+            await asyncio.sleep(2)
 
     except Exception as e:
         logger.error(f"سگنل کی تلاش کے کام میں مہلک خرابی: {e}", exc_info=True)
     finally:
-        db.close()
+        if db.is_active:
+            db.close()
         logger.info(">>> سگنل کی تلاش کا کام مکمل ہوا۔")
         logger.info("=============================================")
-        
+                
