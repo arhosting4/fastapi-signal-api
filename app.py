@@ -46,7 +46,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # کلائنٹ سے پیغامات کا انتظار کریں (اگر ضرورت ہو)
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -77,35 +76,38 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-# پس منظر کے کام
+# ★★★ اہم اور حتمی تبدیلی یہاں ہے ★★★
 @app.on_event("startup")
 async def startup_event():
     logger.info("FastAPI ورکر شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
     
-    # ★★★ اہم تبدیلی: سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں ★★★
+    # سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں
     logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
     await update_economic_calendar_cache()
     
-    # شیڈیولر کو صرف ایک بار شروع کریں
+    # شیڈیولر کو صرف ایک بار شروع کریں، چاہے کتنے ہی ورکرز ہوں
     if not hasattr(app.state, "scheduler") or not app.state.scheduler.running:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.interval import IntervalTrigger
         
         scheduler = AsyncIOScheduler(timezone="UTC")
+        # جابز کو یہاں شامل کریں
         scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
         scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
         scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+        
         scheduler.start()
         app.state.scheduler = scheduler
-        logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+        logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ یہ اس عمل کا واحد شیڈیولر ہے۔ ★★★")
     else:
-        logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔")
+        logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔ اس ورکر میں دوبارہ شروع نہیں کیا جائے گا۔")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("FastAPI ورکر بند ہو رہا ہے۔")
+    # صرف اس ورکر میں شیڈیولر بند کریں جس نے اسے شروع کیا تھا
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         app.state.scheduler.shutdown()
         logger.info("شیڈیولر بند ہو گیا۔")
