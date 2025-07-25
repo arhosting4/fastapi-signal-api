@@ -14,7 +14,7 @@ from models import SessionLocal, create_db_and_tables
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
-from websocket_manager import manager # <-- نیا امپورٹ
+from websocket_manager import manager
 
 # لاگنگ سیٹ اپ
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
@@ -40,21 +40,17 @@ def get_db():
     finally:
         db.close()
 
-# ==============================================================================
-# ★★★ نیا WebSocket اینڈ پوائنٹ ★★★
-# ==============================================================================
+# WebSocket اینڈ پوائنٹ
 @app.websocket("/ws/live-signals")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
             # کلائنٹ سے پیغامات کا انتظار کریں (اگر ضرورت ہو)
-            # فی الحال، ہم صرف سرور سے پیغامات بھیج رہے ہیں
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
-# ==============================================================================
 
 # API روٹس
 @app.get("/health", status_code=200)
@@ -74,8 +70,8 @@ async def get_history(db: Session = Depends(get_db)):
 async def get_news(db: Session = Depends(get_db)):
     try:
         news = crud.get_cached_news(db)
-        if not news:
-            return {"message": "کوئی خبر نہیں ملی۔"}
+        if not news or not news.get("articles"):
+            return JSONResponse(status_code=404, content={"message": "کوئی خبر نہیں ملی۔"})
         return news
     except Exception as e:
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
@@ -87,6 +83,10 @@ async def startup_event():
     logger.info("FastAPI ورکر شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    # ★★★ اہم تبدیلی: سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں ★★★
+    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    await update_economic_calendar_cache()
     
     # شیڈیولر کو صرف ایک بار شروع کریں
     if not hasattr(app.state, "scheduler") or not app.state.scheduler.running:
@@ -112,4 +112,4 @@ async def shutdown_event():
 
 # سٹیٹک فائلز
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-              
+        
