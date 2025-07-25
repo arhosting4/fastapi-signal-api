@@ -4,13 +4,8 @@ import pandas as pd
 import pandas_ta as ta
 from typing import List, Tuple, Optional, Dict
 
-# config.py پر انحصار ختم کر دیا گیا ہے
-# import config 
-from schemas import Candle
-
 # ==============================================================================
 # حکمت عملی کے پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
-# تاکہ config فائل کا کوئی مسئلہ باقی نہ رہے
 # ==============================================================================
 EMA_SHORT_PERIOD = 10
 EMA_LONG_PERIOD = 30
@@ -20,14 +15,15 @@ BBANDS_PERIOD = 20
 ATR_LENGTH = 14
 # ==============================================================================
 
-def calculate_tp_sl(candles: List[Candle], signal_type: str) -> Optional[Tuple[float, float]]:
+def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
     """
     ATR اور حالیہ سوئنگ پوائنٹس کی بنیاد پر TP/SL کا حساب لگاتا ہے۔
     """
     if len(candles) < 20:
         return None
     
-    df = pd.DataFrame([c.dict() for c in candles])
+    # --- اہم تبدیلی: اب یہ پہلے سے ہی ڈکشنری ہے ---
+    df = pd.DataFrame(candles)
     
     atr = ta.atr(df['high'], df['low'], df['close'], length=ATR_LENGTH)
     if atr is None or atr.empty or pd.isna(atr.iloc[-1]):
@@ -50,17 +46,17 @@ def calculate_tp_sl(candles: List[Candle], signal_type: str) -> Optional[Tuple[f
 
     return tp, sl
 
-def generate_core_signal(candles: List[Candle]) -> Dict[str, str]:
+def generate_core_signal(candles: List[Dict]) -> Dict[str, str]:
     """
     تیز رفتار اسکیلپنگ کے لیے بہتر بنائی گئی بنیادی سگنل کی منطق۔
     """
     if len(candles) < BBANDS_PERIOD:
         return {"signal": "wait"}
 
-    df = pd.DataFrame([c.dict() for c in candles])
+    # --- اہم تبدیلی: اب یہ پہلے سے ہی ڈکشنری ہے ---
+    df = pd.DataFrame(candles)
     close = df['close']
     
-    # اشارے (Indicators) - اب براہ راست مقامی پیرامیٹرز استعمال کر رہے ہیں
     ema_fast = ta.ema(close, length=EMA_SHORT_PERIOD)
     ema_slow = ta.ema(close, length=EMA_LONG_PERIOD)
     stoch = ta.stoch(df['high'], df['low'], close, k=STOCH_K, d=STOCH_D)
