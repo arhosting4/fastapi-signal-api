@@ -5,19 +5,20 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-# مقامی امپورٹس
+# config.py پر انحصار ختم کر دیا گیا ہے
+# import config
 from signal_tracker import get_all_signals, remove_active_signal
-# ★★★ خودکار اصلاح: فنکشن کا نام utils.py کے مطابق اپ ڈیٹ کیا گیا ★★★
-# پرانی لائن: from utils import get_current_price 
-# نئی اور درست لائن:
-from utils import get_current_price_twelve_data 
+from utils import get_current_price_twelve_data
 from database_crud import add_completed_trade, add_feedback_entry
 from models import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# کنفیگریشن
+# ==============================================================================
+# کنفیگریشن پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
+# ==============================================================================
 EXPIRY_MINUTES = 15
+# ==============================================================================
 
 async def check_active_signals_job():
     """
@@ -44,10 +45,7 @@ async def check_active_signals_job():
                         continue
 
                     signal_time = datetime.fromisoformat(signal_time_str)
-                    
-                    # ★★★ خودکار اصلاح: فنکشن کال کو بھی نئے نام کے مطابق اپ ڈیٹ کیا گیا ★★★
                     current_price = await get_current_price_twelve_data(symbol, client)
-                    
                     if current_price is None:
                         logger.warning(f"{symbol} کے لیے قیمت حاصل کرنے میں ناکامی")
                         continue
