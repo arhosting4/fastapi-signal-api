@@ -1,7 +1,7 @@
 # filename: strategybot.py
 
 import pandas as pd
-import numpy as np  # numpy کو امپورٹ کریں
+import numpy as np
 from typing import List, Tuple, Optional, Dict
 
 # ==============================================================================
@@ -16,12 +16,15 @@ BBANDS_PERIOD = 20
 ATR_LENGTH = 14
 # ==============================================================================
 
-# ★★★ نئی تبدیلی: اپنی انڈیکیٹر منطق ★★★
+# ★★★ حتمی اور محفوظ منطق ★★★
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
+    
+    # صفر سے تقسیم کے مسئلے کو حل کرنا
+    rs = gain / loss.replace(0, 1e-9) # loss اگر 0 ہو تو اسے ایک بہت چھوٹی ویلیو سے بدل دیں
+    
     return 100 - (100 / (1 + rs))
 
 def calculate_bbands(data: pd.Series, period: int) -> pd.DataFrame:
@@ -34,7 +37,7 @@ def calculate_bbands(data: pd.Series, period: int) -> pd.DataFrame:
 def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
     low_k = low.rolling(window=k).min()
     high_k = high.rolling(window=k).max()
-    stoch_k = 100 * (close - low_k) / (high_k - low_k)
+    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9) # یہاں بھی صفر سے تقسیم کو روکیں
     stoch_d = stoch_k.rolling(window=d).mean()
     return pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
 
@@ -103,4 +106,4 @@ def generate_core_signal(candles: List[Dict]) -> Dict[str, Any]:
         return {"signal": "sell", "indicators": indicators_data}
         
     return {"signal": "wait", "indicators": {}}
-                    
+    
