@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
-from riskguardian import check_risk, get_dynamic_atr_multiplier
+from riskguardian import check_risk
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
@@ -21,12 +21,12 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
     تمام AI سگنلز کو ملا کر ایک حتمی، اعلیٰ اعتماد والا سگنل بناتا ہے۔
     """
     try:
-        # --- اہم تبدیلی: اب یہ Pydantic ماڈلز کو ڈکشنری میں تبدیل کرتا ہے ---
         candle_dicts = [c.model_dump() for c in candles]
 
-        # 1. بنیادی سگنل
+        # 1. بنیادی سگنل (اب یہ انڈیکیٹرز کا ڈیٹا بھی واپس کرے گا)
         core_signal_data = generate_core_signal(candle_dicts)
         core_signal = core_signal_data["signal"]
+        indicators = core_signal_data.get("indicators", {})
 
         if core_signal == "wait":
             return {"status": "no-signal", "reason": "بنیادی حکمت عملی غیر جانبدار ہے۔"}
@@ -37,17 +37,20 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         news_data = await get_news_analysis_for_symbol(symbol)
         market_structure = get_market_structure_analysis(candle_dicts)
 
-        # 3. حفاظتی فلٹرز
-        if risk_assessment.get("status") == "High" or news_data.get("impact") == "High":
-            logger.info(f"[{symbol}] سگنل کو زیادہ رسک یا خبروں کی وجہ سے بلاک کر دیا گیا۔")
-            return {"status": "blocked", "reason": "زیادہ رسک یا زیادہ اثر والی خبریں۔"}
+        # 3. ★★★ نئی منطق: حتمی رسک کا تعین ★★★
+        final_risk_status = risk_assessment.get("status", "Normal")
+        if news_data.get("impact") == "High":
+            # اگر خبریں ہیں تو رسک کو "High" یا "Critical" پر سیٹ کریں
+            final_risk_status = "Critical" if final_risk_status == "High" else "High"
+        
+        # پرانا سخت فلٹر ہٹا دیا گیا ہے
 
-        # 4. اعتماد کا اسکور
+        # 4. اعتماد کا اسکور (اب final_risk_status استعمال کرے گا)
         confidence = get_confidence(
             db, core_signal, pattern_data.get("type", "neutral"),
-            risk_assessment.get("status"), news_data.get("impact"), symbol
+            final_risk_status, news_data.get("impact"), symbol
         )
-        tier = get_tier(confidence)
+        tier = get_tier(confidence, final_risk_status) # <-- رسک کی بنیاد پر درجہ بندی
         
         # 5. TP/SL کا حساب
         tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
@@ -56,10 +59,10 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         
         tp, sl = tp_sl_data
 
-        # 6. حتمی وجہ
+        # 6. حتمی وجہ (اب انڈیکیٹرز کا ڈیٹا بھی استعمال کرے گی)
         reason = generate_reason(
-            core_signal, pattern_data, risk_assessment.get("status"),
-            news_data.get("impact"), confidence, market_structure
+            core_signal, pattern_data, final_risk_status,
+            news_data, confidence, market_structure, indicators
         )
 
         return {
@@ -67,7 +70,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             "symbol": symbol,
             "signal": core_signal,
             "pattern": pattern_data.get("pattern"),
-            "risk": risk_assessment.get("status"),
+            "risk": final_risk_status, # <-- اپ ڈیٹ شدہ رسک
             "news": news_data.get("impact"),
             "reason": reason,
             "confidence": round(confidence, 2),
