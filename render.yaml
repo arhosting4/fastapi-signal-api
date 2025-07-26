@@ -1,5 +1,3 @@
-# filename: render.yaml
-
 services:
   - type: web
     name: scalpmaster-ai-api
@@ -10,8 +8,27 @@ services:
     healthCheckPath: /health
     dockerfilePath: ./Dockerfile
     
-    # ★★★ اہم اور حتمی تبدیلی ★★★
-    startCommand: "gunicorn -c gunicorn_conf.py -w 4 -k uvicorn.workers.UvicornWorker app:app"
+    # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+    # ★★★ اہم اور حتمی تبدیلی: Gunicorn کو صرف 1 ورکر کے ساتھ چلانے کی کمانڈ ★★★
+    # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+    startCommand: "gunicorn -w 1 -k uvicorn.workers.UvicornWorker -c gunicorn_conf.py app:app"
     
     envVars:
-      # ... (باقی envVars ویسے ہی رہیں گے) ...
+      - key: DATABASE_URL
+        fromDatabase:
+          name: scalpmaster-db
+          property: connectionString
+      - key: TWELVE_DATA_API_KEYS
+        sync: false
+      - key: MARKETAUX_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+databases:
+  - name: scalpmaster-db
+    databaseName: scalpmaster_db
+    user: scalpmaster_user
+    plan: free
