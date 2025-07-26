@@ -1,6 +1,7 @@
 # filename: reasonbot.py
 from typing import Dict, Any
 
+# ★★★ اہم تبدیلی: indicators کو ایک کی ورڈ آرگیومنٹ بنایا گیا ہے ★★★
 def generate_reason(
     core_signal: str,
     pattern_data: Dict[str, str],
@@ -8,6 +9,7 @@ def generate_reason(
     news_data: Dict[str, Any],
     confidence: float,
     market_structure: Dict[str, str],
+    *,  # یہ ستارہ اس کے بعد والے تمام دلائل کو کی ورڈ-اونلی بنا دیتا ہے
     indicators: Dict[str, Any]
 ) -> str:
     """
@@ -24,9 +26,9 @@ def generate_reason(
         rsi_val = indicators.get('rsi', 0)
         stoch_val = indicators.get('stoch_k', 0)
         if core_signal == "buy":
-            reason_parts.append(f"EMA کراس اوور تیزی میں ہے، RSI ({rsi_val}) 50 سے اوپر ہے، اور Stochastic ({stoch_val}) اوور باٹ زون سے باہر ہے۔")
+            reason_parts.append(f"EMA کراس اوور تیزی میں ہے، RSI ({rsi_val:.2f}) 50 سے اوپر ہے، اور Stochastic ({stoch_val:.2f}) اوور باٹ زون سے باہر ہے۔")
         else:
-            reason_parts.append(f"EMA کراس اوور مندی میں ہے، RSI ({rsi_val}) 50 سے نیچے ہے، اور Stochastic ({stoch_val}) اوور سولڈ زون سے باہر ہے۔")
+            reason_parts.append(f"EMA کراس اوور مندی میں ہے، RSI ({rsi_val:.2f}) 50 سے نیچے ہے، اور Stochastic ({stoch_val:.2f}) اوور سولڈ زون سے باہر ہے۔")
 
     # 3. مارکیٹ کی ساخت اور پیٹرن
     trend = market_structure.get("trend", "غیر متعین")
@@ -38,8 +40,9 @@ def generate_reason(
         reason_parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) بھی دیکھا گیا ہے۔")
 
     # 4. رسک اور خبروں کا خلاصہ
+    news_reason = news_data.get('reason', 'N/A')
     if risk_status == "Critical":
-        reason_parts.append(f"**انتباہ: اعلیٰ اثر والی خبر ('{news_data.get('reason', '')[:50]}...') کی وجہ سے رسک انتہائی بلند (Critical) ہے۔**")
+        reason_parts.append(f"**انتباہ: اعلیٰ اثر والی خبر ('{news_reason[:50]}...') کی وجہ سے رسک انتہائی بلند (Critical) ہے۔**")
     elif risk_status == "High":
         reason_parts.append(f"**خبروں یا مارکیٹ کے اتار چڑھاؤ کی وجہ سے رسک بلند (High) ہے۔**")
 
