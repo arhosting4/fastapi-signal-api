@@ -1,3 +1,5 @@
+# filename: render.yaml
+
 services:
   - type: web
     name: scalpmaster-ai-api
