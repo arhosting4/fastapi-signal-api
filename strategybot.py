@@ -5,27 +5,59 @@ import numpy as np
 from typing import List, Tuple, Optional, Dict
 
 # ==============================================================================
-# حکمت عملی کے پیرامیٹرز (صرف EMA اور ATR)
+# حکمت عملی کے پیرامیٹرز
 # ==============================================================================
 EMA_SHORT_PERIOD = 10
 EMA_LONG_PERIOD = 30
+STOCH_K = 14
+STOCH_D = 3
+RSI_PERIOD = 14
+BBANDS_PERIOD = 20
 ATR_LENGTH = 14
 # ==============================================================================
 
+# ★★★ اپنی مرضی کے مطابق، محفوظ اور قابل اعتماد انڈیکیٹر فنکشنز ★★★
+
+def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
+    """صفر سے تقسیم کے مسئلے سے محفوظ RSI کا حساب لگاتا ہے۔"""
+    delta = data.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    # اہم حفاظتی اقدام: loss اگر 0 ہو تو اسے ایک بہت چھوٹی ویلیو سے بدل دیں
+    rs = gain / loss.replace(0, 1e-9) 
+    
+    return 100 - (100 / (1 + rs))
+
+def calculate_bbands(data: pd.Series, period: int) -> pd.DataFrame:
+    """بولنگر بینڈز کا حساب لگاتا ہے۔"""
+    sma = data.rolling(window=period).mean()
+    std = data.rolling(window=period).std()
+    upper_band = sma + (std * 2)
+    lower_band = sma - (std * 2)
+    return pd.DataFrame({'BBl': lower_band, 'BBu': upper_band})
+
+def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
+    """صفر سے تقسیم کے مسئلے سے محفوظ Stochastic Oscillator کا حساب لگاتا ہے۔"""
+    low_k = low.rolling(window=k).min()
+    high_k = high.rolling(window=k).max()
+    
+    # اہم حفاظتی اقدام: اگر high اور low برابر ہوں تو صفر سے تقسیم کو روکیں
+    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
+    
+    stoch_d = stoch_k.rolling(window=d).mean()
+    return pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
+
 def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
-    """
-    TP/SL کا حساب لگانے کے لیے سادہ اور محفوظ منطق۔
-    """
+    """ATR کی بنیاد پر TP/SL کا حساب لگاتا ہے۔"""
     if len(candles) < 20: return None
     df = pd.DataFrame(candles)
     
-    # ATR کی سادہ کیلکولیشن
-    high_low = df['high'] - df['low']
-    high_close = np.abs(df['high'] - df['close'].shift())
-    low_close = np.abs(df['low'] - df['close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    atr = true_range.rolling(window=ATR_LENGTH).mean()
+    df['h-l'] = df['high'] - df['low']
+    df['h-pc'] = np.abs(df['high'] - df['close'].shift())
+    df['l-pc'] = np.abs(df['low'] - df['close'].shift())
+    tr = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
+    atr = tr.rolling(window=ATR_LENGTH).mean()
     
     if atr.empty or pd.isna(atr.iloc[-1]): return None
     
@@ -46,37 +78,64 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
 
 def generate_core_signal(candles: List[Dict]) -> Dict[str, Any]:
     """
-    انتہائی سادہ منطق: صرف EMA کراس اوور پر مبنی سگنل۔
+    تمام انڈیکیٹرز (EMA, Stoch, RSI, BBands) پر مبنی بنیادی سگنل کی منطق۔
     """
-    if len(candles) < EMA_LONG_PERIOD:
+    if len(candles) < max(EMA_LONG_PERIOD, BBANDS_PERIOD, RSI_PERIOD):
         return {"signal": "wait", "indicators": {}}
     
     df = pd.DataFrame(candles)
     close = df['close']
     
-    # صرف EMA کا حساب لگائیں
+    # تمام انڈیکیٹرز کا حساب لگائیں
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
+    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
+    rsi = calculate_rsi(close, RSI_PERIOD)
+    bbands = calculate_bbands(close, BBANDS_PERIOD)
     
-    if ema_fast.empty or ema_slow.empty or pd.isna(ema_fast.iloc[-1]) or pd.isna(ema_slow.iloc[-1]):
+    if any(s.empty for s in [ema_fast, ema_slow, stoch, rsi, bbands]):
         return {"signal": "wait", "indicators": {}}
 
     # آخری قدریں حاصل کریں
+    last_close = close.iloc[-1]
     last_ema_fast = ema_fast.iloc[-1]
     last_ema_slow = ema_slow.iloc[-1]
-    prev_ema_fast = ema_fast.iloc[-2]
-    prev_ema_slow = ema_slow.iloc[-2]
+    last_stoch_k = stoch['STOCHk'].iloc[-1]
+    last_rsi = rsi.iloc[-1]
+    last_bb_lower = bbands['BBl'].iloc[-1]
+    last_bb_upper = bbands['BBu'].iloc[-1]
+
+    # یقینی بنائیں کہ کوئی بھی قدر NaN نہ ہو
+    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_stoch_k, last_rsi, last_bb_lower, last_bb_upper]):
+        return {"signal": "wait", "indicators": {}}
 
     indicators_data = {
-        "ema_cross": "bullish" if last_ema_fast > last_ema_slow else "bearish"
+        "ema_cross": "bullish" if last_ema_fast > last_ema_slow else "bearish",
+        "stoch_k": round(last_stoch_k, 2),
+        "rsi": round(last_rsi, 2),
+        "price_vs_bb": "near_lower" if last_close <= last_bb_lower else ("near_upper" if last_close >= last_bb_upper else "middle")
     }
 
-    # خریدنے کی شرط: جب تیز EMA سست EMA کو نیچے سے اوپر کی طرف کراس کرے
-    if last_ema_fast > last_ema_slow and prev_ema_fast <= prev_ema_slow:
+    # خریدنے کی شرائط
+    buy_conditions = [
+        last_ema_fast > last_ema_slow,
+        last_stoch_k < 40,
+        last_rsi > 50,
+        last_close > last_bb_lower
+    ]
+
+    # بیچنے کی شرائط
+    sell_conditions = [
+        last_ema_fast < last_ema_slow,
+        last_stoch_k > 60,
+        last_rsi < 50,
+        last_close < last_bb_upper
+    ]
+
+    if all(buy_conditions):
         return {"signal": "buy", "indicators": indicators_data}
     
-    # بیچنے کی شرط: جب تیز EMA سست EMA کو اوپر سے نیچے کی طرف کراس کرے
-    if last_ema_fast < last_ema_slow and prev_ema_fast >= prev_ema_slow:
+    if all(sell_conditions):
         return {"signal": "sell", "indicators": indicators_data}
         
     return {"signal": "wait", "indicators": {}}
