@@ -4,9 +4,10 @@ import logging
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
+# تمام امپورٹس درست ہیں
 from strategybot import generate_core_signal, calculate_tp_sl
 from patternai import detect_patterns
-from riskguardian import check_risk
+from riskguardian import check_risk # <--- یہ فنکشن صرف ایک دلیل لیتا ہے
 from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
@@ -23,7 +24,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
     try:
         candle_dicts = [c.model_dump() for c in candles]
 
-        # 1. بنیادی سگنل (اب یہ انڈیکیٹرز کا ڈیٹا بھی واپس کرے گا)
+        # 1. بنیادی سگنل
         core_signal_data = generate_core_signal(candle_dicts)
         core_signal = core_signal_data["signal"]
         indicators = core_signal_data.get("indicators", {})
@@ -33,7 +34,10 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
 
         # 2. اضافی تجزیہ
         pattern_data = detect_patterns(candle_dicts)
-        risk_assessment = check_risk(candle_dicts)
+        
+        # ★★★ اصل غلطی یہاں تھی - اب اسے درست کر دیا گیا ہے ★★★
+        risk_assessment = check_risk(candle_dicts) # <--- صرف candle_dicts بھیجیں
+        
         news_data = await get_news_analysis_for_symbol(symbol)
         market_structure = get_market_structure_analysis(candle_dicts)
 
@@ -56,8 +60,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         
         tp, sl = tp_sl_data
 
-        # 6. حتمی وجہ (اپ ڈیٹ شدہ کال)
-        # ★★★ اہم تبدیلی: indicators کو بطور کی ورڈ آرگیومنٹ بھیجا گیا ہے ★★★
+        # 6. حتمی وجہ
         reason = generate_reason(
             core_signal,
             pattern_data,
@@ -65,7 +68,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             news_data,
             confidence,
             market_structure,
-            indicators=indicators  # <-- اس طرح کال کرنا زیادہ محفوظ ہے
+            indicators=indicators
         )
 
         return {
