@@ -1,5 +1,4 @@
 # filename: database_crud.py
-
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import datetime
@@ -10,21 +9,14 @@ from models import CompletedTrade, FeedbackEntry, CachedNews
 
 logger = logging.getLogger(__name__)
 
-def get_feedback_stats_from_db(db: Session, symbol: str, timeframe: str) -> Dict[str, Any]:
-    """
-    ★★★ خودکار اصلاح ★★★
-    کسی علامت اور ٹائم فریم کے لیے فیڈ بیک کے اعداد و شمار کا حساب لگاتا ہے۔
-    """
+def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
+    """کسی علامت کے لیے فیڈ بیک کے اعداد و شمار کا حساب لگاتا ہے۔"""
     correct_count = db.query(func.count(FeedbackEntry.id)).filter(
-        FeedbackEntry.symbol == symbol,
-        FeedbackEntry.timeframe == timeframe, # <-- تبدیلی: ٹائم فریم کی بنیاد پر فلٹر
-        FeedbackEntry.feedback == 'correct'
+        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'correct'
     ).scalar() or 0
 
     incorrect_count = db.query(func.count(FeedbackEntry.id)).filter(
-        FeedbackEntry.symbol == symbol,
-        FeedbackEntry.timeframe == timeframe, # <-- تبدیلی: ٹائم فریم کی بنیاد پر فلٹر
-        FeedbackEntry.feedback == 'incorrect'
+        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'incorrect'
     ).scalar() or 0
 
     total = correct_count + incorrect_count
