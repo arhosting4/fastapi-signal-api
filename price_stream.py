@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import websockets
 import os
 from typing import Dict, Optional
@@ -13,15 +14,23 @@ logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("TWELVE_DATA_API_KEY_1")
 PRICE_CACHE: Dict[str, float] = {}
+# ★★★ نیا: آخری دل کی دھڑکن کا وقت ذخیرہ کرنے کے لیے ★★★
+LAST_HEARTBEAT: float = time.time()
 
 def get_price_from_cache(symbol: str) -> Optional[float]:
     """مقامی کیش سے کسی علامت کی قیمت حاصل کرتا ہے۔"""
     return PRICE_CACHE.get(symbol)
 
+def get_last_heartbeat() -> float:
+    """آخری دل کی دھڑکن کا وقت واپس کرتا ہے۔"""
+    global LAST_HEARTBEAT
+    return LAST_HEARTBEAT
+
 async def start_price_websocket():
     """
-    Twelve Data کے ساتھ WebSocket کنکشن شروع کرتا ہے اور کنکشن ٹوٹنے کو احسن طریقے سے سنبھالتا ہے۔
+    Twelve Data کے ساتھ WebSocket کنکشن شروع کرتا ہے اور دل کی دھڑکن کو اپ ڈیٹ کرتا ہے۔
     """
+    global LAST_HEARTBEAT
     if not API_KEY:
         logger.error("WebSocket کے لیے Twelve Data API کلید (TWELVE_DATA_API_KEY_1) سیٹ نہیں ہے۔")
         return
@@ -32,7 +41,7 @@ async def start_price_websocket():
     while True:
         try:
             async with websockets.connect(uri, ping_interval=30, ping_timeout=20) as websocket:
-                logger.info(f"Twelve Data WebSocket سے کامیابی سے منسلک ہو گئے۔ {symbols} کو سبسکرائب کیا جا رہا ہے۔")
+                logger.info(f"Twelve Data WebSocket سے کامیابی سے منسلک ہو گئے۔")
                 await websocket.send(json.dumps({
                     "action": "subscribe",
                     "params": {"symbols": symbols}
@@ -41,21 +50,22 @@ async def start_price_websocket():
                 async for message in websocket:
                     try:
                         data = json.loads(message)
+                        # ★★★ اہم: جب بھی کوئی پیغام آئے، دل کی دھڑکن اپ ڈیٹ کریں ★★★
+                        LAST_HEARTBEAT = time.time()
+
                         if data.get("event") == "price":
                             symbol = data.get("symbol")
                             price = data.get("price")
                             if symbol and price:
                                 PRICE_CACHE[symbol] = float(price)
-                                logger.debug(f"قیمت اپ ڈیٹ: {symbol} = {price}")
                         elif data.get("event") == "heartbeat":
-                            logger.debug("WebSocket Heartbeat موصول ہوا۔ کنکشن زندہ ہے۔")
+                            logger.debug("WebSocket Heartbeat موصول ہوا۔")
                     except json.JSONDecodeError:
-                        logger.warning(f"ایک نامعلوم WebSocket پیغام موصول ہوا: {message}")
+                        pass # نامعلوم پیغامات کو خاموشی سے نظر انداز کریں
         
-        # ★★★ اہم تبدیلی: اب یہ ایک 'ERROR' نہیں بلکہ 'INFO' ہے ★★★
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.info(f"WebSocket کنکشن معمول کے مطابق بند ہوا۔ 10 سیکنڈ میں دوبارہ کوشش کی جائے گی۔ وجہ: {e}")
-            await asyncio.sleep(10) # <-- وقفہ بڑھا دیا گیا
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"WebSocket کنکشن معمول کے مطابق بند ہوا۔ 10 سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
+            await asyncio.sleep(10)
         except Exception as e:
             logger.error(f"WebSocket میں ایک غیر متوقع خرابی واقع ہوئی: {e}۔ 15 سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
             await asyncio.sleep(15)
