@@ -37,20 +37,17 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         news_data = await get_news_analysis_for_symbol(symbol)
         market_structure = get_market_structure_analysis(candle_dicts)
 
-        # 3. ★★★ نئی منطق: حتمی رسک کا تعین ★★★
+        # 3. حتمی رسک کا تعین
         final_risk_status = risk_assessment.get("status", "Normal")
         if news_data.get("impact") == "High":
-            # اگر خبریں ہیں تو رسک کو "High" یا "Critical" پر سیٹ کریں
             final_risk_status = "Critical" if final_risk_status == "High" else "High"
         
-        # پرانا سخت فلٹر ہٹا دیا گیا ہے
-
-        # 4. اعتماد کا اسکور (اب final_risk_status استعمال کرے گا)
+        # 4. اعتماد کا اسکور
         confidence = get_confidence(
             db, core_signal, pattern_data.get("type", "neutral"),
             final_risk_status, news_data.get("impact"), symbol
         )
-        tier = get_tier(confidence, final_risk_status) # <-- رسک کی بنیاد پر درجہ بندی
+        tier = get_tier(confidence, final_risk_status)
         
         # 5. TP/SL کا حساب
         tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
@@ -59,10 +56,16 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         
         tp, sl = tp_sl_data
 
-        # 6. حتمی وجہ (اب انڈیکیٹرز کا ڈیٹا بھی استعمال کرے گی)
+        # 6. حتمی وجہ (اپ ڈیٹ شدہ کال)
+        # ★★★ اہم تبدیلی: indicators کو بطور کی ورڈ آرگیومنٹ بھیجا گیا ہے ★★★
         reason = generate_reason(
-            core_signal, pattern_data, final_risk_status,
-            news_data, confidence, market_structure, indicators
+            core_signal,
+            pattern_data,
+            final_risk_status,
+            news_data,
+            confidence,
+            market_structure,
+            indicators=indicators  # <-- اس طرح کال کرنا زیادہ محفوظ ہے
         )
 
         return {
@@ -70,7 +73,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             "symbol": symbol,
             "signal": core_signal,
             "pattern": pattern_data.get("pattern"),
-            "risk": final_risk_status, # <-- اپ ڈیٹ شدہ رسک
+            "risk": final_risk_status,
             "news": news_data.get("impact"),
             "reason": reason,
             "confidence": round(confidence, 2),
