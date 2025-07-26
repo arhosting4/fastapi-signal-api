@@ -1,3 +1,5 @@
+# filename: patternai.py
+
 import pandas as pd
 from typing import List, Dict
 
@@ -52,4 +54,4 @@ def detect_patterns(candles: List[Dict]) -> Dict[str, str]:
         return {"pattern": "Shooting Star", "type": "bearish"}
 
     return {"pattern": "کوئی خاص پیٹرن نہیں", "type": "neutral"}
-    
+        
