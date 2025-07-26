@@ -14,10 +14,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables
 from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job
+from feedback_checker import check_active_signals_job, price_stream_logic # ★★★ اہم تبدیلی
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
-from price_stream import start_price_stream  # ★★★ اہم امپورٹ
 
 # لاگنگ سیٹ اپ
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
@@ -43,22 +42,17 @@ def get_db():
     finally:
         db.close()
 
-# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-# ★★★ حتمی تبدیلی: تمام پس منظر کے کام اب یہاں سے شروع ہوں گے ★★★
-# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 @app.on_event("startup")
 async def startup_event():
     logger.info("FastAPI ایپلیکیشن شروع ہو رہی ہے...")
-    
-    # 1. ڈیٹا بیس بنائیں
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
     
-    # 2. ریئل ٹائم پرائس سٹریم شروع کریں
-    asyncio.create_task(start_price_stream())
+    # ریئل ٹائم پرائس سٹریم شروع کریں
+    asyncio.create_task(price_stream_logic()) # ★★★ اہم تبدیلی
     logger.info("ریئل ٹائم پرائس سٹریم پس منظر میں شروع ہو گئی۔")
     
-    # 3. شیڈیولر شروع کریں
+    # شیڈیولر شروع کریں
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
     scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
@@ -112,3 +106,4 @@ async def get_news(db: Session = Depends(get_db)):
 
 # سٹیٹک فائلز
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+        
