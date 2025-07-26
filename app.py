@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-import time # ★★★ نیا امپورٹ ★★★
+import time
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,8 +16,12 @@ from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
-from price_stream import start_price_websocket, get_last_heartbeat # ★★★ نیا امپورٹ ★★★
+from price_stream import start_price_websocket, get_last_heartbeat
 
+# ★★★ اہم تبدیلی: شیڈیولر کی لاگنگ کو خاموش کرنے کے لیے ★★★
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
+
+# باقی لاگنگ سیٹ اپ ویسا ہی رہے گا
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -29,17 +33,12 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# ★★★ نیا: ہمارا نگران کام ★★★
 async def price_stream_watchdog():
-    """
-    یہ چیک کرتا ہے کہ آیا قیمتوں کا سلسلہ زندہ ہے یا نہیں۔
-    """
     last_beat = get_last_heartbeat()
-    # اگر 5 منٹ (300 سیکنڈ) سے کوئی دل کی دھڑکن نہیں ہے
     if time.time() - last_beat > 300:
         logger.critical("!!! خطرہ: پرائس سٹریم پچھلے 5 منٹ سے خاموش ہے۔ سسٹم پھنس سکتا ہے۔ براہ کرم سرور کو دوبارہ شروع کریں!!!")
 
-# ... (باقی API روٹس ویسے ہی رہیں گے) ...
+# ... (باقی API روٹس اور فنکشنز ویسے ہی رہیں گے) ...
 @app.get("/health", status_code=200)
 async def health_check(): return {"status": "ok"}
 # ... (دیگر روٹس) ...
@@ -59,7 +58,6 @@ async def startup_event():
         scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
         scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
         scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
-        # ★★★ اہم: نگران کو شیڈیولر میں شامل کریں ★★★
         scheduler.add_job(price_stream_watchdog, IntervalTrigger(minutes=1), id="price_stream_watchdog")
         
         scheduler.start()
