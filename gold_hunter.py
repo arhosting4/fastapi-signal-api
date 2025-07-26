@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # کنفیگریشن
 GOLD_SYMBOL = "XAU/USD"
-GOLD_TIMEFRAME = "15m"
+GOLD_TIMEFRAME = "15min"
 
 async def hunt_for_gold_signals_job():
     """
