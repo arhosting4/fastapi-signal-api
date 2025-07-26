@@ -1,7 +1,7 @@
 # filename: strategybot.py
 
 import pandas as pd
-import pandas_ta as ta
+import numpy as np  # numpy کو امپورٹ کریں
 from typing import List, Tuple, Optional, Dict
 
 # ==============================================================================
@@ -16,25 +16,41 @@ BBANDS_PERIOD = 20
 ATR_LENGTH = 14
 # ==============================================================================
 
+# ★★★ نئی تبدیلی: اپنی انڈیکیٹر منطق ★★★
+def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
+    delta = data.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_bbands(data: pd.Series, period: int) -> pd.DataFrame:
+    sma = data.rolling(window=period).mean()
+    std = data.rolling(window=period).std()
+    upper_band = sma + (std * 2)
+    lower_band = sma - (std * 2)
+    return pd.DataFrame({'BBl': lower_band, 'BBu': upper_band})
+
+def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
+    low_k = low.rolling(window=k).min()
+    high_k = high.rolling(window=k).max()
+    stoch_k = 100 * (close - low_k) / (high_k - low_k)
+    stoch_d = stoch_k.rolling(window=d).mean()
+    return pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
+
 def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
-    """
-    ATR اور حالیہ سوئنگ پوائنٹس کی بنیاد پر TP/SL کا حساب لگاتا ہے۔
-    """
-    if len(candles) < 20:
-        return None
-    
+    if len(candles) < 20: return None
     df = pd.DataFrame(candles)
-    
-    atr = ta.atr(df['high'], df['low'], df['close'], length=ATR_LENGTH)
-    if atr is None or atr.empty or pd.isna(atr.iloc[-1]):
-        return None
-        
+    df['h-l'] = df['high'] - df['low']
+    df['h-pc'] = np.abs(df['high'] - df['close'].shift())
+    df['l-pc'] = np.abs(df['low'] - df['close'].shift())
+    tr = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
+    atr = tr.rolling(window=ATR_LENGTH).mean()
+    if atr.empty or pd.isna(atr.iloc[-1]): return None
     last_atr = atr.iloc[-1]
     last_close = df['close'].iloc[-1]
-    
     recent_high = df['high'].tail(10).max()
     recent_low = df['low'].tail(10).min()
-    
     if signal_type == "buy":
         sl = recent_low - (last_atr * 0.5)
         tp = last_close + (last_close - sl) * 1.5
@@ -43,39 +59,34 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
         tp = last_close - (sl - last_close) * 1.5
     else:
         return None
-
     return tp, sl
 
 def generate_core_signal(candles: List[Dict]) -> Dict[str, Any]:
-    """
-    متعدد اشاروں (EMA, Stoch, RSI, BBands) پر مبنی بنیادی سگنل کی منطق۔
-    """
     if len(candles) < max(EMA_LONG_PERIOD, BBANDS_PERIOD, RSI_PERIOD):
         return {"signal": "wait", "indicators": {}}
-
     df = pd.DataFrame(candles)
     close = df['close']
     
-    # تمام انڈیکیٹرز کا حساب لگائیں
-    ema_fast = ta.ema(close, length=EMA_SHORT_PERIOD)
-    ema_slow = ta.ema(close, length=EMA_LONG_PERIOD)
-    stoch = ta.stoch(df['high'], df['low'], close, k=STOCH_K, d=STOCH_D)
-    rsi = ta.rsi(close, length=RSI_PERIOD)
-    bbands = ta.bbands(close, length=BBANDS_PERIOD)
+    ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
+    ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
+    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
+    rsi = calculate_rsi(close, RSI_PERIOD)
+    bbands = calculate_bbands(close, BBANDS_PERIOD)
     
-    if any(s is None or s.empty for s in [ema_fast, ema_slow, stoch, rsi, bbands]):
+    if any(s.empty for s in [ema_fast, ema_slow, stoch, rsi, bbands]):
         return {"signal": "wait", "indicators": {}}
 
-    # آخری قدریں حاصل کریں
     last_close = close.iloc[-1]
     last_ema_fast = ema_fast.iloc[-1]
     last_ema_slow = ema_slow.iloc[-1]
-    last_stoch_k = stoch.iloc[-1, 0]
+    last_stoch_k = stoch['STOCHk'].iloc[-1]
     last_rsi = rsi.iloc[-1]
-    last_bb_lower = bbands.iloc[-1, 0] # BBl_20_2.0
-    last_bb_upper = bbands.iloc[-1, 2] # BBu_20_2.0
+    last_bb_lower = bbands['BBl'].iloc[-1]
+    last_bb_upper = bbands['BBu'].iloc[-1]
 
-    # انڈیکیٹرز کی حالت کو محفوظ کریں تاکہ وجہ بنانے میں استعمال ہو سکے
+    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_stoch_k, last_rsi, last_bb_lower, last_bb_upper]):
+        return {"signal": "wait", "indicators": {}}
+
     indicators_data = {
         "ema_cross": "bullish" if last_ema_fast > last_ema_slow else "bearish",
         "stoch_k": round(last_stoch_k, 2),
@@ -83,27 +94,13 @@ def generate_core_signal(candles: List[Dict]) -> Dict[str, Any]:
         "price_vs_bb": "near_lower" if last_close <= last_bb_lower else ("near_upper" if last_close >= last_bb_upper else "middle")
     }
 
-    # خریدنے کی شرائط
-    buy_conditions = [
-        last_ema_fast > last_ema_slow,
-        last_stoch_k < 40,
-        last_rsi > 50,
-        last_close > last_bb_lower
-    ]
-
-    # بیچنے کی شرائط
-    sell_conditions = [
-        last_ema_fast < last_ema_slow,
-        last_stoch_k > 60,
-        last_rsi < 50,
-        last_close < last_bb_upper
-    ]
+    buy_conditions = [last_ema_fast > last_ema_slow, last_stoch_k < 40, last_rsi > 50, last_close > last_bb_lower]
+    sell_conditions = [last_ema_fast < last_ema_slow, last_stoch_k > 60, last_rsi < 50, last_close < last_bb_upper]
 
     if all(buy_conditions):
         return {"signal": "buy", "indicators": indicators_data}
-    
     if all(sell_conditions):
         return {"signal": "sell", "indicators": indicators_data}
         
     return {"signal": "wait", "indicators": {}}
-    
+                    
