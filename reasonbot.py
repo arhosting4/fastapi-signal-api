@@ -1,51 +1,51 @@
 # filename: reasonbot.py
-from typing import Dict
+from typing import Dict, Any
 
 def generate_reason(
     core_signal: str,
     pattern_data: Dict[str, str],
     risk_status: str,
-    news_impact: str,
+    news_data: Dict[str, Any],
     confidence: float,
-    market_structure: Dict[str, str]
+    market_structure: Dict[str, str],
+    indicators: Dict[str, Any]
 ) -> str:
     """
     AI سے تیار کردہ تجارتی سگنلز کے لیے انسانی پڑھنے کے قابل وجہ تیار کرتا ہے۔
     """
     reason_parts = []
-    pattern_name = pattern_data.get("pattern", "کوئی خاص پیٹرن نہیں")
-    pattern_type = pattern_data.get("type", "neutral")
+    signal_action = "خریدنے" if core_signal == "buy" else "بیچنے"
+    
+    # 1. بنیادی حکمت عملی کا خلاصہ
+    reason_parts.append(f"بنیادی حکمت عملی {signal_action} کا موقع بتا رہی ہے کیونکہ متعدد اشارے موافق ہیں۔")
+    
+    # 2. انڈیکیٹرز کی تفصیل
+    if indicators:
+        rsi_val = indicators.get('rsi', 0)
+        stoch_val = indicators.get('stoch_k', 0)
+        if core_signal == "buy":
+            reason_parts.append(f"EMA کراس اوور تیزی میں ہے، RSI ({rsi_val}) 50 سے اوپر ہے، اور Stochastic ({stoch_val}) اوور باٹ زون سے باہر ہے۔")
+        else:
+            reason_parts.append(f"EMA کراس اوور مندی میں ہے، RSI ({rsi_val}) 50 سے نیچے ہے، اور Stochastic ({stoch_val}) اوور سولڈ زون سے باہر ہے۔")
+
+    # 3. مارکیٹ کی ساخت اور پیٹرن
     trend = market_structure.get("trend", "غیر متعین")
+    if trend in ["اوپر کا رجحان", "نیچے کا رجحان"]:
+        reason_parts.append(f"مارکیٹ کی مجموعی ساخت ({trend}) بھی اس سگنل کی حمایت کرتی ہے۔")
+    
+    pattern_name = pattern_data.get("pattern", "کوئی خاص پیٹرن نہیں")
+    if pattern_data.get("type") in ["bullish", "bearish"]:
+        reason_parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) بھی دیکھا گیا ہے۔")
 
-    # بنیادی حکمت عملی اور مارکیٹ کی ساخت
-    if core_signal == "buy":
-        reason_parts.append("بنیادی حکمت عملی خریدنے کا موقع بتا رہی ہے۔")
-        if trend == "uptrend":
-            reason_parts.append("مارکیٹ کی ساخت تیزی کے رجحان کی تصدیق کرتی ہے۔")
-    elif core_signal == "sell":
-        reason_parts.append("بنیادی حکمت عملی بیچنے کا موقع بتا رہی ہے۔")
-        if trend == "downtrend":
-            reason_parts.append("مارکیٹ کی ساخت مندی کے رجحان کی تصدیق کرتی ہے۔")
+    # 4. رسک اور خبروں کا خلاصہ
+    if risk_status == "Critical":
+        reason_parts.append(f"**انتباہ: اعلیٰ اثر والی خبر ('{news_data.get('reason', '')[:50]}...') کی وجہ سے رسک انتہائی بلند (Critical) ہے۔**")
+    elif risk_status == "High":
+        reason_parts.append(f"**خبروں یا مارکیٹ کے اتار چڑھاؤ کی وجہ سے رسک بلند (High) ہے۔**")
 
-    # پیٹرن کی تصدیق
-    if (core_signal == "buy" and pattern_type == "bullish") or \
-       (core_signal == "sell" and pattern_type == "bearish"):
-        reason_parts.append(f"ایک موافق پیٹرن ({pattern_name}) اس کی تصدیق کرتا ہے۔")
-    elif pattern_type != "neutral":
-        reason_parts.append(f"ایک مخالف پیٹرن ({pattern_name}) موجود ہے۔")
-
-    # رسک اور خبریں
-    if risk_status != "Normal":
-        reason_parts.append(f"مارکیٹ کا رسک {risk_status.upper()} ہے۔")
-    if news_impact != "Clear":
-        reason_parts.append(f"اعلیٰ اثر والی خبروں کا امکان ہے۔")
-
-    # اعتماد کا خلاصہ
+    # 5. اعتماد کا خلاصہ
     if confidence < 60:
-        reason_parts.append(f"مجموعی اعتماد کم ہے ({confidence:.1f}%)۔")
-
-    if not reason_parts:
-        return "AI کا تجزیہ مکمل ہے۔ کوئی مضبوط اشارہ نہیں ملا۔"
+        reason_parts.append(f"کم اعتماد ({confidence:.1f}%) کی وجہ سے احتیاط برتیں۔")
 
     return " ".join(reason_parts)
     
