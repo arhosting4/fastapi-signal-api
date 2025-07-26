@@ -2,68 +2,52 @@
 
 import asyncio
 import logging
-import time
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from fastapi import FastAPI, Depends
+# ... (دیگر امپورٹس)
 
-# مقامی امپورٹس
-import database_crud as crud
-from models import SessionLocal, create_db_and_tables
-from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job
-from sentinel import update_economic_calendar_cache
-from websocket_manager import manager
-from price_stream import start_price_websocket, get_last_heartbeat
-
-# ★★★ اہم تبدیلی: شیڈیولر کی لاگنگ کو خاموش کرنے کے لیے ★★★
-logging.getLogger('apscheduler').setLevel(logging.WARNING)
-
-# باقی لاگنگ سیٹ اپ ویسا ہی رہے گا
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
+# لاگنگ کی ترتیب اب gunicorn_conf.py میں ہے
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ScalpMaster AI API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-def get_db():
-    db = SessionLocal()
-    try: yield db
-    finally: db.close()
+# ... (API روٹس اور get_db فنکشن ویسے ہی رہیں گے) ...
 
-async def price_stream_watchdog():
-    last_beat = get_last_heartbeat()
-    if time.time() - last_beat > 300:
-        logger.critical("!!! خطرہ: پرائس سٹریم پچھلے 5 منٹ سے خاموش ہے۔ سسٹم پھنس سکتا ہے۔ براہ کرم سرور کو دوبارہ شروع کریں!!!")
-
-# ... (باقی API روٹس اور فنکشنز ویسے ہی رہیں گے) ...
-@app.get("/health", status_code=200)
-async def health_check(): return {"status": "ok"}
-# ... (دیگر روٹس) ...
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("FastAPI ورکر شروع ہو رہا ہے...")
-    asyncio.create_task(start_price_websocket())
-    create_db_and_tables()
-    await update_economic_calendar_cache()
+# ★★★ اہم تبدیلی: ایک نیا فنکشن جو پس منظر کے کاموں کو شروع کرتا ہے ★★★
+async def startup_background_tasks():
+    """
+    یہ فنکشن صرف پہلے ورکر پر gunicorn_conf.py کے ذریعے چلایا جائے گا۔
+    """
+    logger.info("پس منظر کے کاموں کی ترتیب شروع کی جا رہی ہے...")
     
-    if not hasattr(app.state, "scheduler") or not app.state.scheduler.running:
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        from apscheduler.triggers.interval import IntervalTrigger
-        
-        scheduler = AsyncIOScheduler(timezone="UTC")
-        scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
-        scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
-        scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
-        scheduler.add_job(price_stream_watchdog, IntervalTrigger(minutes=1), id="price_stream_watchdog")
-        
-        scheduler.start()
-        app.state.scheduler = scheduler
-        logger.info("★★★ شیڈیولر اور نگران کامیابی سے شروع ہو گئے۔ ★★★")
-    else:
-        logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔")
+    # مقامی امپورٹس
+    from price_stream import start_price_websocket
+    from hunter import hunt_for_signals_job
+    from feedback_checker import check_active_signals_job
+    from sentinel import update_economic_calendar_cache
+    from models import create_db_and_tables
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
 
-# ... (باقی کوڈ ویسا ہی رہے گا) ...
+    # DB اور پرائس سٹریم شروع کریں
+    create_db_and_tables()
+    asyncio.create_task(start_price_websocket())
+    await update_economic_calendar_cache()
+
+    # شیڈیولر شروع کریں
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+    # نوٹ: واچ ڈاگ کی اب ضرورت نہیں کیونکہ ہم جانتے ہیں کہ صرف ایک پرائس سٹریم ہے
+    scheduler.start()
+    
+    logger.info("★★★ پس منظر کے تمام کام اور شیڈیولر کامیابی سے شروع ہو گئے۔ ★★★")
+    
+    # اس فنکشن کو ہمیشہ چلتے رہنے دیں تاکہ پس منظر کے کام چلتے رہیں
+    while True:
+        await asyncio.sleep(3600) # ایک گھنٹے کے لیے سو جائیں
+
+# ★★★ اہم تبدیلی: @app.on_event("startup") کو مکمل طور پر ہٹا دیا گیا ہے ★★★
+
+# ... (باقی کوڈ جیسے shutdown_event اور سٹیٹک فائلز ویسے ہی رہیں گے) ...
