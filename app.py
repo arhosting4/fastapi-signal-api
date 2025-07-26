@@ -11,9 +11,7 @@ from sqlalchemy.orm import Session
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables
-# ★★★ حتمی تبدیلی: پرانے ہنٹر کی جگہ نیا market_hunter اور bybit_listener امپورٹ کیا گیا ★★★
-from market_hunter import market_hunter_job 
-from bybit_listener import bybit_listener
+from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
@@ -86,12 +84,9 @@ async def startup_event():
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
     
-    # ★★★ خودکار اصلاح: سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں ★★★
+    # ★★★ اہم تبدیلی: سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں ★★★
+    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
     await update_economic_calendar_cache()
-    
-    # ★★★ حتمی تبدیلی: Bybit لسنر کو پس منظر میں ایک مستقل ٹاسک کے طور پر شروع کریں ★★★
-    asyncio.create_task(bybit_listener())
-    logger.info("Bybit WebSocket لسنر پس منظر میں شروع ہو گیا۔")
     
     # شیڈیولر کو صرف ایک بار شروع کریں
     if not hasattr(app.state, "scheduler") or not app.state.scheduler.running:
@@ -99,13 +94,12 @@ async def startup_event():
         from apscheduler.triggers.interval import IntervalTrigger
         
         scheduler = AsyncIOScheduler(timezone="UTC")
-        # ★★★ حتمی تبدیلی: شیڈیولر اب صرف سونے کے ہنٹر اور دیگر معاون کاموں کو چلائے گا ★★★
-        scheduler.add_job(market_hunter_job, IntervalTrigger(minutes=5), id="market_hunter")
+        scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
         scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
         scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
         scheduler.start()
         app.state.scheduler = scheduler
-        logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ (حتمی ورژن) ★★★")
+        logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
     else:
         logger.info("شیڈیولر پہلے ہی کسی دوسرے ورکر کے ذریعے شروع کیا جا چکا ہے۔")
 
@@ -118,4 +112,4 @@ async def shutdown_event():
 
 # سٹیٹک فائلز
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-    
+        
