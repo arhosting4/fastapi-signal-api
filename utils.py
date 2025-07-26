@@ -13,17 +13,38 @@ from schemas import TwelveDataTimeSeries, Candle
 logger = logging.getLogger(__name__)
 key_manager = KeyManager()
 
-AVAILABLE_PAIRS_WEEKDAY = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
-AVAILABLE_PAIRS_WEEKEND = ["BTC/USD"]
+# ★★★ اہم تبدیلی: ویک اینڈ کے لیے کرپٹو جوڑے شامل کیے گئے ★★★
+
+# ہفتے کے دنوں کے لیے جوڑے (فاریکس اور سونا)
+AVAILABLE_PAIRS_WEEKDAY = ["XAU/USD", "EUR/USD", "GBP/USD"]
+
+# ہفتے کے اختتام (ویک اینڈ) کے لیے جوڑے (کرپٹو)
+AVAILABLE_PAIRS_WEEKEND = ["BTC/USD", "ETH/USD", "XRP/USD"]
+
 CANDLE_COUNT = 100
 
 def get_available_pairs() -> List[str]:
-    today = datetime.utcnow().weekday()
-    return AVAILABLE_PAIRS_WEEKEND if today >= 5 else AVAILABLE_PAIRS_WEEKDAY
+    """
+    ہفتے کے دن کی بنیاد پر دستیاب تجارتی جوڑے واپس کرتا ہے۔
+    """
+    # datetime.utcnow().weekday() سوموار (0) سے اتوار (6) تک ایک نمبر واپس کرتا ہے
+    # 0-4: سوموار سے جمعہ
+    # 5-6: ہفتہ اور اتوار
+    is_weekend = datetime.utcnow().weekday() >= 5 
+
+    if is_weekend:
+        logger.info(f"ویک اینڈ ہے، کرپٹو جوڑے استعمال کیے جا رہے ہیں: {AVAILABLE_PAIRS_WEEKEND}")
+        return AVAILABLE_PAIRS_WEEKEND
+    else:
+        logger.info(f"ہفتے کا دن ہے، فاریکس جوڑے استعمال کیے جا رہے ہیں: {AVAILABLE_PAIRS_WEEKDAY}")
+        return AVAILABLE_PAIRS_WEEKDAY
+
+# --- باقی تمام فنکشنز ویسے ہی رہیں گے ---
 
 async def fetch_twelve_data_ohlc(symbol: str, interval: str) -> Optional[List[Candle]]:
     api_key = key_manager.get_api_key()
     if not api_key:
+        logger.warning(f"[{symbol}] کے لیے کوئی بھی Twelve Data API کلید دستیاب نہیں۔")
         return None
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={CANDLE_COUNT}&apikey={api_key}"
     try:
@@ -42,7 +63,6 @@ async def fetch_twelve_data_ohlc(symbol: str, interval: str) -> Optional[List[Ca
     except Exception:
         return None
 
-# ★★★ اہم تبدیلی: بیچ پرائس فنکشن ★★★
 async def get_batch_prices_twelve_data(symbols: List[str], client: httpx.AsyncClient) -> Optional[Dict[str, float]]:
     if not symbols: return {}
     api_key = key_manager.get_api_key()
@@ -69,4 +89,4 @@ async def get_batch_prices_twelve_data(symbols: List[str], client: httpx.AsyncCl
         return prices
     except Exception:
         return None
-            
+        
