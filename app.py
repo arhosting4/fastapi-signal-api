@@ -1,25 +1,19 @@
 # filename: app.py
 
-import asyncio
 import logging
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 
 # مقامی امپورٹس
 import database_crud as crud
-from models import SessionLocal, create_db_and_tables
-from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job, price_stream_logic # ★★★ اہم تبدیلی
-from sentinel import update_economic_calendar_cache
+from models import SessionLocal
 from websocket_manager import manager
 
 # لاگنگ سیٹ اپ
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [API_SERVER] - %(message)s')
 logger = logging.getLogger(__name__)
 
 # FastAPI ایپ
@@ -41,32 +35,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("FastAPI ایپلیکیشن شروع ہو رہی ہے...")
-    create_db_and_tables()
-    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    
-    # ریئل ٹائم پرائس سٹریم شروع کریں
-    asyncio.create_task(price_stream_logic()) # ★★★ اہم تبدیلی
-    logger.info("ریئل ٹائم پرائس سٹریم پس منظر میں شروع ہو گئی۔")
-    
-    # شیڈیولر شروع کریں
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
-    scheduler.start()
-    app.state.scheduler = scheduler
-    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("FastAPI ورکر بند ہو رہا ہے۔")
-    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        app.state.scheduler.shutdown()
-        logger.info("شیڈیولر بند ہو گیا۔")
 
 # WebSocket اینڈ پوائنٹ
 @app.websocket("/ws/live-signals")
