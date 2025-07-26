@@ -9,9 +9,9 @@ services:
     dockerfilePath: ./Dockerfile
     
     # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-    # ★★★ اہم اور حتمی تبدیلی: Gunicorn کو صرف 1 ورکر کے ساتھ چلانے کی کمانڈ ★★★
+    # ★★★ حتمی تبدیلی: سب سے سادہ اور معیاری Gunicorn کمانڈ ★★★
     # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-    startCommand: "gunicorn -w 1 -k uvicorn.workers.UvicornWorker -c gunicorn_conf.py app:app"
+    startCommand: "gunicorn -w 1 -k uvicorn.workers.UvicornWorker app:app"
     
     envVars:
       - key: DATABASE_URL
