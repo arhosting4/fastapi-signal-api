@@ -5,7 +5,6 @@ import logging
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-# ★★★ سب سے اہم اور حتمی تبدیلی: گمشدہ امپورٹ کو واپس شامل کریں ★★★
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -13,11 +12,10 @@ from sqlalchemy.orm import Session
 import database_crud as crud
 from models import SessionLocal
 
-# لاگنگ کی ترتیب اب gunicorn_conf.py میں ہے
+# لاگنگ کی ترتیب gunicorn_conf.py میں ہے
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ScalpMaster AI API")
-# اب یہ لائن کام کرے گی
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # DB انحصار
@@ -31,7 +29,6 @@ def get_db():
 # WebSocket اینڈ پوائنٹ
 @app.websocket("/ws/live-signals")
 async def websocket_endpoint(websocket: WebSocket):
-    # اس فنکشن کو چلانے کے لیے مینیجر کا امپورٹ ضروری ہے
     from websocket_manager import manager
     await manager.connect(websocket)
     try:
@@ -79,7 +76,6 @@ async def startup_background_tasks():
     from apscheduler.triggers.interval import IntervalTrigger
 
     create_db_and_tables()
-    # پرائس سٹریم کو ایک غیر بلاکنگ ٹاسک کے طور پر شروع کریں
     asyncio.create_task(start_price_websocket())
     await update_economic_calendar_cache()
 
@@ -94,6 +90,9 @@ async def startup_background_tasks():
     while True:
         await asyncio.sleep(3600)
 
+# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+# ★★★ حتمی اور درست تبدیلی: اصل کوڈ کو واپس شامل کرنا ★★★
+# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 # سٹیٹک فائلز
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
     
