@@ -5,39 +5,21 @@ import numpy as np
 from typing import List, Tuple, Optional, Dict
 
 # ==============================================================================
-# حکمت عملی کے پیرامیٹرز
+# حکمت عملی کے پیرامیٹرز (RSI کے بغیر)
 # ==============================================================================
 EMA_SHORT_PERIOD = 10
 EMA_LONG_PERIOD = 30
 STOCH_K = 14
 STOCH_D = 3
-RSI_PERIOD = 14
-BBANDS_PERIOD = 20
 ATR_LENGTH = 14
 # ==============================================================================
 
-# ★★★ حتمی اور محفوظ منطق ★★★
-def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
-    delta = data.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    
-    # صفر سے تقسیم کے مسئلے کو حل کرنا
-    rs = gain / loss.replace(0, 1e-9) # loss اگر 0 ہو تو اسے ایک بہت چھوٹی ویلیو سے بدل دیں
-    
-    return 100 - (100 / (1 + rs))
-
-def calculate_bbands(data: pd.Series, period: int) -> pd.DataFrame:
-    sma = data.rolling(window=period).mean()
-    std = data.rolling(window=period).std()
-    upper_band = sma + (std * 2)
-    lower_band = sma - (std * 2)
-    return pd.DataFrame({'BBl': lower_band, 'BBu': upper_band})
-
+# ★★★ صرف بنیادی اور قابل اعتماد انڈیکیٹرز ★★★
 def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
     low_k = low.rolling(window=k).min()
     high_k = high.rolling(window=k).max()
-    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9) # یہاں بھی صفر سے تقسیم کو روکیں
+    # صفر سے تقسیم کے مسئلے کو حل کرنا
+    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
     stoch_d = stoch_k.rolling(window=d).mean()
     return pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
 
@@ -65,43 +47,49 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
     return tp, sl
 
 def generate_core_signal(candles: List[Dict]) -> Dict[str, Any]:
-    if len(candles) < max(EMA_LONG_PERIOD, BBANDS_PERIOD, RSI_PERIOD):
+    """
+    RSI کے بغیر، صرف EMA اور Stochastic پر مبنی سگنل کی منطق۔
+    """
+    if len(candles) < EMA_LONG_PERIOD:
         return {"signal": "wait", "indicators": {}}
+    
     df = pd.DataFrame(candles)
     close = df['close']
     
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
-    rsi = calculate_rsi(close, RSI_PERIOD)
-    bbands = calculate_bbands(close, BBANDS_PERIOD)
     
-    if any(s.empty for s in [ema_fast, ema_slow, stoch, rsi, bbands]):
+    if any(s.empty for s in [ema_fast, ema_slow, stoch]):
         return {"signal": "wait", "indicators": {}}
 
-    last_close = close.iloc[-1]
+    # آخری قدریں حاصل کریں
     last_ema_fast = ema_fast.iloc[-1]
     last_ema_slow = ema_slow.iloc[-1]
     last_stoch_k = stoch['STOCHk'].iloc[-1]
-    last_rsi = rsi.iloc[-1]
-    last_bb_lower = bbands['BBl'].iloc[-1]
-    last_bb_upper = bbands['BBu'].iloc[-1]
 
-    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_stoch_k, last_rsi, last_bb_lower, last_bb_upper]):
+    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_stoch_k]):
         return {"signal": "wait", "indicators": {}}
 
     indicators_data = {
         "ema_cross": "bullish" if last_ema_fast > last_ema_slow else "bearish",
-        "stoch_k": round(last_stoch_k, 2),
-        "rsi": round(last_rsi, 2),
-        "price_vs_bb": "near_lower" if last_close <= last_bb_lower else ("near_upper" if last_close >= last_bb_upper else "middle")
+        "stoch_k": round(last_stoch_k, 2)
     }
 
-    buy_conditions = [last_ema_fast > last_ema_slow, last_stoch_k < 40, last_rsi > 50, last_close > last_bb_lower]
-    sell_conditions = [last_ema_fast < last_ema_slow, last_stoch_k > 60, last_rsi < 50, last_close < last_bb_upper]
+    # سگنل کی شرائط کو سادہ کر دیا گیا ہے
+    buy_conditions = [
+        last_ema_fast > last_ema_slow,
+        last_stoch_k < 35  # Stochastic کی شرط
+    ]
+
+    sell_conditions = [
+        last_ema_fast < last_ema_slow,
+        last_stoch_k > 65  # Stochastic کی شرط
+    ]
 
     if all(buy_conditions):
         return {"signal": "buy", "indicators": indicators_data}
+    
     if all(sell_conditions):
         return {"signal": "sell", "indicators": indicators_data}
         
