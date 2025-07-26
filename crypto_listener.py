@@ -4,8 +4,8 @@ import asyncio
 import json
 import logging
 import websockets
-import socket # <-- ★★★ نیا امپورٹ: DNS مسائل کو بائی پاس کرنے کے لیے
-from typing import List, Dict
+import httpx  # <-- ★★★ نیا امپورٹ: ٹوکن حاصل کرنے کے لیے
+import time
 
 # مقامی امپورٹس
 from ai_engine_wrapper import process_data_for_ai
@@ -14,65 +14,86 @@ from ai_engine_wrapper import process_data_for_ai
 logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن ---
-CRYPTO_PAIRS = ["btc", "eth", "ltc", "xrp", "bch"]
+# KuCoin کے لیے علامتوں کو '-' کے ساتھ فارمیٹ کیا جاتا ہے
+CRYPTO_PAIRS = ["BTC-USDT", "ETH-USDT", "LTC-USDT", "XRP-USDT", "BCH-USDT"]
 TIMEFRAMES = ["1m", "3m", "5m", "15m"]
-RECONNECT_DELAY_SECONDS = 10 # دوبارہ کوشش کے لیے تاخیر کو تھوڑا بڑھایا گیا
+RECONNECT_DELAY_SECONDS = 10
 
-# --- ★★★ خودکار اصلاح: DNS مسائل کو مکمل طور پر بائی پاس کرنے کی حکمت عملی ★★★ ---
-# ہم ڈومین کو پہلے IP ایڈریس میں تبدیل کریں گے
-HOSTNAME = "stream.binance.vision"
-PORT = 9443
+# --- ★★★ خودکار اصلاح: KuCoin API کا استعمال ★★★ ---
+KUCOIN_API_ENDPOINT = "https://api.kucoin.com/api/v1/bullet-public"
 
-def get_websocket_uri() -> str:
+async def get_kucoin_ws_connection_details():
     """
-    ڈومین نام کو IP ایڈریس میں تبدیل کرتا ہے تاکہ DNS کی خرابیوں سے بچا جا سکے۔
+    KuCoin سے ایک عارضی WebSocket کنکشن ٹوکن اور سرور کا پتہ حاصل کرتا ہے۔
     """
     try:
-        # getaddrinfo ایک قابل اعتماد طریقہ ہے جو IPv4 اور IPv6 دونوں کو سنبھالتا ہے
-        addr_info = socket.getaddrinfo(HOSTNAME, PORT, proto=socket.IPPROTO_TCP)
-        # ہم ملنے والے پہلے پتے کو استعمال کریں گے
-        ip_address = addr_info[0][4][0]
-        uri = f"wss://{ip_address}:{PORT}/stream"
-        logger.info(f"کامیابی سے '{HOSTNAME}' کو IP ایڈریس '{ip_address}' میں تبدیل کر دیا گیا۔ URI: {uri}")
-        return uri
-    except socket.gaierror as e:
-        logger.error(f"DNS ریزولوشن ناکام: '{HOSTNAME}' کا IP ایڈریس حاصل نہیں کیا جا سکا۔ خرابی: {e}")
-        # اگر IP حاصل نہ ہو سکے تو فال بیک کے طور پر پرانا URL استعمال کریں
-        return f"wss://{HOSTNAME}:{PORT}/stream"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(KUCOIN_API_ENDPOINT, timeout=10)
+            response.raise_for_status()
+            data = response.json()['data']
+            
+            token = data['token']
+            ws_server = data['instanceServers'][0]['endpoint']
+            ping_interval = int(data['instanceServers'][0]['pingInterval']) / 1000
+            
+            # مکمل WebSocket URI بنائیں
+            ws_uri = f"{ws_server}?token={token}"
+            logger.info("KuCoin سے WebSocket کنکشن کی تفصیلات کامیابی سے حاصل کی گئیں۔")
+            return ws_uri, ping_interval
+            
+    except Exception as e:
+        logger.error(f"KuCoin سے کنکشن ٹوکن حاصل کرنے میں ناکامی: {e}")
+        return None, None
 
-# ------------------------------------------------------------------------------------
-
-def create_subscription_payload() -> Dict:
-    """Binance WebSocket کے لیے سبسکرپشن پے لوڈ بناتا ہے۔"""
-    streams = [f"{pair}usdt@kline_{tf}" for pair in CRYPTO_PAIRS for tf in TIMEFRAMES]
-    logger.info(f"کل {len(streams)} WebSocket اسٹریمز کو سبسکرائب کیا جا رہا ہے۔")
-    return { "method": "SUBSCRIBE", "params": streams, "id": 1 }
-
-async def binance_websocket_listener():
+async def binance_websocket_listener(): # فنکشن کا نام وہی رکھا تاکہ app.py میں تبدیلی نہ کرنی پڑے
     """
-    Binance WebSocket سے جڑتا ہے، کینڈل ڈیٹا سنتا ہے، اور اسے تجزیے کے لیے بھیجتا ہے۔
+    اب یہ KuCoin WebSocket سے جڑتا ہے، کینڈل ڈیٹا سنتا ہے، اور اسے تجزیے کے لیے بھیجتا ہے۔
     """
-    subscription_payload = create_subscription_payload()
-    
     while True:
-        websocket_uri = get_websocket_uri() # ہر کوشش پر تازہ URI حاصل کریں
+        ws_uri, ping_interval = await get_kucoin_ws_connection_details()
+        
+        if not ws_uri:
+            logger.info(f"{RECONNECT_DELAY_SECONDS} سیکنڈ بعد دوبارہ کوشش کی جائے گی۔")
+            await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+            continue
+
         try:
-            async with websockets.connect(websocket_uri, ping_interval=20, ping_timeout=20) as websocket:
-                logger.info(f"Binance WebSocket ({websocket.remote_address}) سے کامیابی سے جڑ گیا۔")
-                await websocket.send(json.dumps(subscription_payload))
-                logger.info("سبسکرپشن کی درخواست بھیجی گئی۔")
+            async with websockets.connect(ws_uri, ping_interval=ping_interval) as websocket:
+                logger.info(f"KuCoin WebSocket ({websocket.remote_address}) سے کامیابی سے جڑ گیا۔")
+                
+                # تمام جوڑوں اور ٹائم فریمز کے لیے سبسکرائب کریں
+                topics = [f"/market/candles:{pair}_{tf}" for pair in CRYPTO_PAIRS for tf in TIMEFRAMES]
+                sub_message = {
+                    "id": int(time.time()),
+                    "type": "subscribe",
+                    "topic": ",".join(topics),
+                    "privateChannel": False,
+                    "response": True
+                }
+                await websocket.send(json.dumps(sub_message))
+                logger.info(f"KuCoin پر {len(topics)} اسٹریمز کے لیے سبسکرپشن کی درخواست بھیجی گئی۔")
 
                 while True:
                     message_str = await websocket.recv()
                     message = json.loads(message_str)
-                    if "stream" in message and "@kline_" in message["stream"]:
-                        kline_data = message['data']['k']
-                        if kline_data['x']:
-                            symbol, timeframe = kline_data['s'], kline_data['i']
-                            logger.info(f"بند کینڈل موصول ہوئی: {symbol} ({timeframe})")
-                            await process_data_for_ai(symbol=symbol, timeframe=timeframe, source="Binance")
+
+                    if message.get('type') == 'message' and 'candles' in message.get('topic', ''):
+                        # KuCoin ہر کینڈل کے بند ہونے پر نہیں، بلکہ ہر ٹِک پر ڈیٹا بھیجتا ہے۔
+                        # ہمیں صرف بند کینڈل پر کارروائی کرنی ہے۔
+                        # KuCoin کا ڈیٹا فارمیٹ: [time, open, close, high, low, volume, turnover]
+                        candle_data = message['data']['candles']
+                        symbol_full, timeframe = message['topic'].split(':')[-1].split('_')
+                        
+                        # KuCoin ہر سیکنڈ ڈیٹا بھیجتا ہے، ہمیں صرف ہر منٹ کے آخر میں کارروائی کرنی ہے
+                        # یہ ایک سادہ چیک ہے کہ کیا کینڈل کا وقت ایک منٹ کا ملٹیپل ہے
+                        candle_timestamp = int(candle_data[0])
+                        if candle_timestamp % 60 == 0:
+                            logger.info(f"KuCoin سے بند کینڈل کا ڈیٹا موصول ہوا: {symbol_full} ({timeframe})")
+                            # علامت کو ہمارے معیاری فارمیٹ میں تبدیل کریں (مثلاً BTC-USDT سے BTCUSDT)
+                            formatted_symbol = symbol_full.replace('-', '')
+                            await process_data_for_ai(symbol=formatted_symbol, timeframe=timeframe, source="Binance") # ذریعہ Binance ہی رکھیں تاکہ utils.py کام کرے
 
         except Exception as e:
-            logger.error(f"WebSocket کنکشن میں خرابی: {e}. {RECONNECT_DELAY_SECONDS} سیکنڈ میں دوبارہ جڑنے کی کوشش کی جائے گی۔")
+            logger.error(f"KuCoin WebSocket کنکشن میں خرابی: {e}. {RECONNECT_DELAY_SECONDS} سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
             await asyncio.sleep(RECONNECT_DELAY_SECONDS)
-
+                    
