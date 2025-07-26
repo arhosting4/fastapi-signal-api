@@ -32,20 +32,18 @@ async def start_price_websocket():
     symbols = ",".join(get_available_pairs())
     uri = f"wss://ws.twelvedata.com/v1/quotes/price?apikey={API_KEY}"
     
-    # ★★★ سب سے اہم تبدیلی: متغیرات کو لوپ سے باہر منتقل کر دیا گیا ہے ★★★
     last_summary_time = time.time()
     reconnect_count = 0
     
+    # صرف ایک بار شروع میں پیغام دکھائیں
+    logger.info("پرائس سٹریم سروس شروع ہو رہی ہے...")
+
     while True:
         try:
             async with websockets.connect(uri, ping_interval=30, ping_timeout=20) as websocket:
-                # کنکشن کامیاب ہونے پر لاگ کریں
-                if reconnect_count > 0:
-                    logger.info(f"WebSocket کنکشن کامیابی سے بحال ہو گیا۔")
-                else:
-                    logger.info(f"Twelve Data WebSocket سے کامیابی سے منسلک ہو گئے۔")
+                # ★★★ اہم تبدیلی: یہاں سے تمام غیر ضروری لاگز ہٹا دیے گئے ہیں ★★★
                 
-                # کاؤنٹر کو دوبارہ صفر کر دیں
+                # کنکشن کامیاب ہونے پر کاؤنٹر کو دوبارہ صفر کر دیں
                 reconnect_count = 0
                 
                 await websocket.send(json.dumps({
@@ -61,26 +59,21 @@ async def start_price_websocket():
                             symbol, price = data.get("symbol"), data.get("price")
                             if symbol and price:
                                 PRICE_CACHE[symbol] = float(price)
-                        elif data.get("event") == "heartbeat":
-                            logger.debug("WebSocket Heartbeat موصول ہوا۔")
-                    except json.JSONDecodeError:
+                    except (json.JSONDecodeError, TypeError):
                         pass
         
-        except websockets.exceptions.ConnectionClosed as e:
+        except websockets.exceptions.ConnectionClosed:
             reconnect_count += 1
             current_time = time.time()
             
-            # ہر 5 منٹ (300 سیکنڈ) بعد خلاصہ لاگ کریں
-            if current_time - last_summary_time > 300:
+            if current_time - last_summary_time > 300: # 5 منٹ
                 logger.warning(f"WebSocket پچھلے 5 منٹ میں {reconnect_count} بار دوبارہ منسلک ہوا۔ یہ ایک متوقع عمل ہے۔")
                 last_summary_time = current_time
                 reconnect_count = 0
-            else:
-                logger.debug(f"WebSocket کنکشن بند ہوا۔ دوبارہ کوشش کی جا رہی ہے۔ وجہ: {e}")
-
+            
             await asyncio.sleep(10)
 
         except Exception as e:
             logger.error(f"WebSocket میں ایک غیر متوقع خرابی واقع ہوئی: {e}۔ 15 سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
             await asyncio.sleep(15)
-                    
+            
