@@ -1,19 +1,22 @@
-# filename: Dockerfile
-
-# Python 3.11 کے سلم ورژن سے شروع کریں
+# Python کا بنیادی امیج استعمال کریں
 FROM python:3.11-slim
 
-# کنٹینر کے اندر ایک ورکنگ ڈائرکٹری بنائیں
+# کام کرنے کی ڈائرکٹری سیٹ کریں
 WORKDIR /app
 
-# پہلے requirements.txt کو کاپی کریں
+# انحصار کی فائلیں کاپی کریں
 COPY requirements.txt .
 
-# requirements.txt میں دی گئی تمام لائبریریز انسٹال کریں
+# انحصار انسٹال کریں
 RUN pip install --no-cache-dir -r requirements.txt
 
-# باقی تمام ایپلیکیشن کوڈ کو کاپی کریں
+# تمام پروجیکٹ فائلیں کاپی کریں
 COPY . .
 
-# Gunicorn سرور کو چلانے کے لیے کمانڈ
-CMD ["sh", "-c", "gunicorn -w 4 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:${PORT}"]
+# پورٹ کو ظاہر کریں جس پر ایپ چلے گی
+EXPOSE 10000
+
+# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+# ★★★ حتمی تبدیلی: ایپ کو صرف 1 ورکر کے ساتھ شروع کرنے کی کمانڈ ★★★
+# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "app:app"]
