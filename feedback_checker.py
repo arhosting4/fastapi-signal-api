@@ -1,57 +1,83 @@
-# filename: feedback_checker.py
-
 import httpx
 import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from utils import get_batch_prices_twelve_data
+# config.py پر انحصار ختم کر دیا گیا ہے
+# import config
 from signal_tracker import get_all_signals, remove_active_signal
+from utils import get_current_price_twelve_data
 from database_crud import add_completed_trade, add_feedback_entry
 from models import SessionLocal
-from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
+
+# ==============================================================================
+# کنفیگریشن پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
+# ==============================================================================
 EXPIRY_MINUTES = 15
+# ==============================================================================
 
 async def check_active_signals_job():
+    """
+    یہ جاب تمام فعال سگنلز کی جانچ کرتی ہے اور ان کے نتیجے کا اندازہ لگاتی ہے۔
+    """
     active_signals = get_all_signals()
-    if not active_signals: return
+    if not active_signals:
+        return
 
-    symbols_to_check = list(set([s['symbol'] for s in active_signals]))
     db = SessionLocal()
     try:
         async with httpx.AsyncClient() as client:
-            # ★★★ مرکزی تبدیلی: ایک ہی API کال میں تمام قیمتیں حاصل کریں ★★★
-            current_prices = await get_batch_prices_twelve_data(symbols_to_check, client)
-            if current_prices is None: return
-
             for signal in active_signals:
-                symbol = signal.get("symbol")
-                if symbol in current_prices:
-                    await process_single_signal(db, signal, current_prices[symbol])
+                try:
+                    signal_id = signal.get("signal_id")
+                    symbol = signal.get("symbol")
+                    signal_type = signal.get("signal")
+                    tp = signal.get("tp")
+                    sl = signal.get("sl")
+                    signal_time_str = signal.get("timestamp")
+
+                    if not all([signal_id, symbol, signal_type, tp, sl, signal_time_str]):
+                        logger.warning(f"نامکمل سگنل ڈیٹا: {signal}")
+                        continue
+
+                    signal_time = datetime.fromisoformat(signal_time_str)
+                    current_price = await get_current_price_twelve_data(symbol, client)
+                    if current_price is None:
+                        logger.warning(f"{symbol} کے لیے قیمت حاصل کرنے میں ناکامی")
+                        continue
+
+                    outcome = None
+                    feedback = None
+
+                    if signal_type == "buy":
+                        if current_price >= tp:
+                            outcome = "tp_hit"
+                            feedback = "correct"
+                        elif current_price <= sl:
+                            outcome = "sl_hit"
+                            feedback = "incorrect"
+                    elif signal_type == "sell":
+                        if current_price <= tp:
+                            outcome = "tp_hit"
+                            feedback = "correct"
+                        elif current_price >= sl:
+                            outcome = "sl_hit"
+                            feedback = "incorrect"
+
+                    if outcome is None and datetime.utcnow() - signal_time >= timedelta(minutes=EXPIRY_MINUTES):
+                        outcome = "expired"
+                        feedback = "incorrect"
+
+                    if outcome:
+                        add_completed_trade(db, signal, outcome)
+                        add_feedback_entry(db, symbol, signal.get("timeframe", "15min"), feedback)
+                        remove_active_signal(signal_id)
+                        logger.info(f"سگنل {signal_id} کو {outcome} کے طور پر نشان زد کیا گیا")
+
+                except Exception as e:
+                    logger.error(f"سگنل {signal.get('signal_id')} پر کارروائی کے دوران خرابی: {e}")
     finally:
-        if db.is_active: db.close()
-
-async def process_single_signal(db, signal, current_price):
-    try:
-        signal_id, signal_type, tp, sl = signal.get("signal_id"), signal.get("signal"), signal.get("tp"), signal.get("sl")
-        signal_time = datetime.fromisoformat(signal.get("timestamp"))
-        outcome, feedback = None, None
-
-        if signal_type == "buy" and current_price >= tp: outcome, feedback = "tp_hit", "correct"
-        elif signal_type == "buy" and current_price <= sl: outcome, feedback = "sl_hit", "incorrect"
-        elif signal_type == "sell" and current_price <= tp: outcome, feedback = "tp_hit", "correct"
-        elif signal_type == "sell" and current_price >= sl: outcome, feedback = "sl_hit", "incorrect"
-        
-        if not outcome and (datetime.utcnow() - signal_time) >= timedelta(minutes=EXPIRY_MINUTES):
-            outcome, feedback = "expired", "incorrect"
-
-        if outcome:
-            add_completed_trade(db, signal, outcome)
-            add_feedback_entry(db, signal.get("symbol"), "M5/M15", feedback)
-            remove_active_signal(signal_id)
-            await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id}})
-    except Exception:
-        pass
+        db.close()
         
