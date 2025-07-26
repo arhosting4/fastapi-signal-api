@@ -9,6 +9,14 @@ services:
     branch: main
     healthCheckPath: /health
     dockerfilePath: ./Dockerfile
+    
+    # ★★★ یہ سیکشن شامل کریں ★★★
+    # یہ یقینی بناتا ہے کہ ضروری سسٹم لائبریریز انسٹال ہوں
+    build:
+      apt:
+        - build-essential
+    # ★★★ یہاں تک ★★★
+
     envVars:
       - key: DATABASE_URL
         fromDatabase:
