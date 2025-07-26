@@ -112,4 +112,3 @@ async def shutdown_event():
 
 # سٹیٹک فائلز
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-        
