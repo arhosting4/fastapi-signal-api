@@ -31,4 +31,3 @@ class SignalData(BaseModel):
     confidence: float
     reason: str
     timestamp: str
-    
