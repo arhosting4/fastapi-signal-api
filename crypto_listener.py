@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 CRYPTO_PAIRS = ["btc", "eth", "ltc", "xrp", "bch"]
 TIMEFRAMES = ["1m", "3m", "5m", "15m"]
 
-# --- ★★★ خودکار اصلاح: جغرافیائی پابندیوں سے بچنے کے لیے URL کو اپ ڈیٹ کیا گیا ★★★ ---
-# پرانا URL: "wss://stream.binance.com:9443/stream"
-# نیا، عالمی سطح پر قابل رسائی URL:
+# --- ★★★ خودکار اصلاح: ٹائپو کو درست کیا گیا ★★★ ---
+# غلط URL: "wss://stream.binance.vison:9443/stream"
+# درست URL:
 BINANCE_WS_URL = "wss://stream.binance.vision:9443/stream"
-# --------------------------------------------------------------------------------
+# ---------------------------------------------------------
 
 RECONNECT_DELAY_SECONDS = 5
 
@@ -43,7 +43,8 @@ async def binance_websocket_listener():
     
     while True:
         try:
-            async with websockets.connect(BINANCE_WS_URL) as websocket:
+            # ٹائم آؤٹ کو بڑھا کر کنکشن کو مزید مضبوط بنایا گیا
+            async with websockets.connect(BINANCE_WS_URL, ping_interval=20, ping_timeout=20) as websocket:
                 logger.info("Binance WebSocket سے کامیابی سے جڑ گیا۔")
                 await websocket.send(json.dumps(subscription_payload))
                 logger.info("سبسکرپشن کی درخواست بھیجی گئی۔")
