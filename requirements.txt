@@ -25,3 +25,5 @@ requests==2.32.3
 
 # Data Validation
 pydantic==2.8.2
+
+websockets==12.0
