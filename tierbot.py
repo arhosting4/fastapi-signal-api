@@ -1,6 +1,9 @@
 # filename: tierbot.py
-def get_tier(confidence: float) -> str:
-    """اعتماد کے اسکور کی بنیاد پر AI کا درجہ متعین کرتا ہے۔"""
+def get_tier(confidence: float, risk_status: str) -> str:
+    """اعتماد اور رسک کی بنیاد پر AI کا درجہ متعین کرتا ہے۔"""
+    if risk_status == "Critical":
+        return "Tier 5 – Critical Risk"
+    
     if confidence >= 90:
         return "Tier 1 – Elite"
     elif confidence >= 80:
