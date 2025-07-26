@@ -5,7 +5,7 @@ import httpx
 import asyncio
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 
 from key_manager import KeyManager
 from schemas import TwelveDataTimeSeries, Candle
@@ -13,26 +13,33 @@ from schemas import TwelveDataTimeSeries, Candle
 logger = logging.getLogger(__name__)
 key_manager = KeyManager()
 
-# --- کنفیگریشن ---
+# ==============================================================================
+# کنفیگریشن پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
+# ==============================================================================
 AVAILABLE_PAIRS_WEEKDAY = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
 AVAILABLE_PAIRS_WEEKEND = ["BTC/USD"]
 CANDLE_COUNT = 100
+PRIMARY_TIMEFRAME = "15min"
+# ==============================================================================
 
 def get_available_pairs() -> List[str]:
     """ہفتے کے دن کی بنیاد پر دستیاب جوڑے واپس کرتا ہے۔"""
     today = datetime.utcnow().weekday()
-    return AVAILABLE_PAIRS_WEEKEND if today >= 5 else AVAILABLE_PAIRS_WEEKDAY
+    # 0-4 سوموار سے جمعہ، 5-6 ہفتہ-اتوار
+    if today >= 5: 
+        return AVAILABLE_PAIRS_WEEKEND
+    return AVAILABLE_PAIRS_WEEKDAY
 
-async def fetch_twelve_data_ohlc(symbol: str, timeframe: str) -> Optional[List[Dict[str, Any]]]:
+async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
     """
-    TwelveData API سے OHLC کینڈلز لاتا ہے اور انہیں ڈکشنری کی فہرست کے طور پر واپس کرتا ہے۔
+    TwelveData API سے OHLC کینڈلز لاتا ہے اور انہیں Pydantic ماڈلز کی فہرست کے طور پر واپس کرتا ہے۔
     """
     api_key = key_manager.get_api_key()
     if not api_key:
         logger.warning("کوئی بھی Twelve Data API کلید دستیاب نہیں۔")
         return None
     
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&outputsize={CANDLE_COUNT}&apikey={api_key}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
     logger.info(f"[{symbol}] کے لیے Twelve Data API سے ڈیٹا حاصل کیا جا رہا ہے...")
     
     try:
@@ -40,9 +47,10 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str) -> Optional[List[D
             response = await client.get(url, timeout=15)
         
         if response.status_code == 429:
+            logger.warning(f"API کلید کی حد ختم ہو گئی۔ کلید کو گھمایا جا رہا ہے۔")
             key_manager.mark_key_as_limited(api_key)
             await asyncio.sleep(1)
-            return await fetch_twelve_data_ohlc(symbol, timeframe)
+            return await fetch_twelve_data_ohlc(symbol)
 
         response.raise_for_status()
         data = response.json()
@@ -52,49 +60,25 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str) -> Optional[List[D
             logger.warning(f"[{symbol}] کے لیے Twelve Data API نے خرابی واپس کی: {error_message}")
             return None
 
-        # ★★★ خودکار اصلاح: Pydantic ماڈل کی توثیق کے بعد اسے معیاری ڈکشنری میں تبدیل کیا گیا ★★★
         validated_data = TwelveDataTimeSeries.model_validate(data)
-        candle_dicts = [c.model_dump() for c in validated_data.values]
         
-        logger.info(f"[{symbol}] کے لیے کامیابی سے {len(candle_dicts)} کینڈلز حاصل کی گئیں۔")
-        return candle_dicts[::-1] # ڈیٹا کو پرانے سے نئے کی ترتیب میں واپس کریں
+        logger.info(f"[{symbol}] کے لیے کامیابی سے {len(validated_data.values)} کینڈلز حاصل کی گئیں۔")
+        
+        # --- اہم اور حتمی تبدیلی یہاں ہے ---
+        # اب ہم Pydantic ماڈلز کو براہ راست واپس بھیج رہے ہیں، ڈکشنری میں تبدیل کیے بغیر
+        return validated_data.values[::-1]
             
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-async def fetch_binance_ohlc(symbol: str, timeframe: str) -> Optional[List[Dict[str, Any]]]:
-    """
-    Binance/KuCoin کے لیے تاریخی OHLC کینڈلز لاتا ہے اور انہیں ڈکشنری کی فہرست کے طور پر واپس کرتا ہے۔
-    """
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={timeframe}&limit={CANDLE_COUNT}"
-    logger.info(f"[{symbol}] کے لیے Binance API سے تاریخی ڈیٹا حاصل کیا جا رہا ہے...")
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10)
-        response.raise_for_status()
-        klines = response.json()
-        
-        # ★★★ خودکار اصلاح: ڈیٹا کو معیاری ڈکشنری کی شکل میں تبدیل کیا گیا ★★★
-        candle_dicts = [{
-            "datetime": datetime.fromtimestamp(k[0] / 1000).isoformat(),
-            "open": float(k[1]),
-            "high": float(k[2]),
-            "low": float(k[3]),
-            "close": float(k[4]),
-            "volume": float(k[5])
-        } for k in klines]
-        
-        logger.info(f"[{symbol}] کے لیے کامیابی سے {len(candle_dicts)} تاریخی کینڈلز حاصل کی گئیں۔")
-        return candle_dicts
-    except Exception as e:
-        logger.error(f"[{symbol}] کے لیے تاریخی ڈیٹا حاصل کرنے میں ناکامی: {e}", exc_info=True)
-        return None
-
 async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Optional[float]:
-    """کسی جوڑے کی موجودہ قیمت حاصل کرتا ہے۔"""
+    """
+    کسی جوڑے کی موجودہ قیمت حاصل کرتا ہے۔
+    """
     api_key = key_manager.get_api_key()
-    if not api_key: return None
+    if not api_key:
+        return None
     url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={api_key}"
     try:
         response = await client.get(url, timeout=10)
@@ -107,4 +91,4 @@ async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) 
         return float(data.get("price")) if data.get("price") else None
     except Exception:
         return None
-            
+        
