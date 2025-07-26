@@ -1,5 +1,3 @@
-# filename: models.py
-
 import os
 import time
 import logging
@@ -15,11 +13,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./signals.db")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
+# SQLite کے لیے check_same_thread=False ضروری ہے
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if "sqlite" in DATABASE_URL else create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- ماڈلز ویسے ہی رہیں گے ---
+# --- ماڈلز ---
 class CompletedTrade(Base):
     __tablename__ = "completed_trades"
     id = Column(Integer, primary_key=True, index=True)
@@ -32,14 +31,17 @@ class CompletedTrade(Base):
     sl_price = Column(Float)
     outcome = Column(String, index=True)
     closed_at = Column(DateTime, default=func.now())
-    def as_dict(self): return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+    
+    def as_dict(self):
+        """ماڈل آبجیکٹ کو ڈکشنری میں تبدیل کرتا ہے۔"""
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 class FeedbackEntry(Base):
     __tablename__ = "feedback_entries"
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String, index=True)
     timeframe = Column(String)
-    feedback = Column(String)
+    feedback = Column(String) # 'correct' or 'incorrect'
     created_at = Column(DateTime, default=func.now())
 
 class CachedNews(Base):
@@ -48,12 +50,14 @@ class CachedNews(Base):
     content = Column(JSON)
     updated_at = Column(DateTime, default=func.now())
 
-# --- اپ ڈیٹ شدہ فنکشن ---
+# --- ڈیٹا بیس بنانے کا فنکشن ---
 def create_db_and_tables():
     """
-    ریس کنڈیشن سے بچنے کے لیے فائل لاک کا استعمال کرتے ہوئے ڈیٹا بیس ٹیبلز بناتا ہے۔
+    ریس کنڈیشن (race condition) سے بچنے کے لیے فائل لاک کا استعمال کرتے ہوئے ڈیٹا بیس ٹیبلز بناتا ہے۔
+    یہ خاص طور پر متعدد gunicorn ورکرز والے ماحول میں مفید ہے۔
     """
-    lock_file_path = "/tmp/db_lock" # Render.com پر /tmp ڈائرکٹری قابل تحریر ہے
+    # Render.com جیسے پلیٹ فارمز پر /tmp ڈائرکٹری قابل تحریر ہوتی ہے
+    lock_file_path = "/tmp/db_create.lock"
     
     # 10 سیکنڈ تک لاک حاصل کرنے کی کوشش کریں
     for _ in range(10):
@@ -79,5 +83,6 @@ def create_db_and_tables():
             time.sleep(1)
             
     # اگر 10 سیکنڈ کے بعد بھی لاک فائل موجود ہے، تو شاید کوئی مسئلہ ہے
-    logger.warning("ڈیٹا بیس لاک حاصل کرنے میں ناکام۔ شاید کوئی دوسرا ورکر پھنس گیا ہے۔")
-
+    # اس صورت میں، ہم فرض کرتے ہیں کہ ٹیبلز بن چکے ہیں اور آگے بڑھتے ہیں
+    logger.warning("ڈیٹا بیس لاک حاصل کرنے میں ناکام۔ فرض کیا جا رہا ہے کہ ٹیبلز پہلے سے موجود ہیں۔")
+    
