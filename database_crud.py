@@ -1,4 +1,3 @@
-# filename: database_crud.py
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import datetime
