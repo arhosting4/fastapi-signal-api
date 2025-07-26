@@ -20,7 +20,7 @@ def get_price_from_cache(symbol: str) -> Optional[float]:
 
 async def start_price_websocket():
     """
-    Twelve Data کے ساتھ WebSocket کنکشن شروع کرتا ہے اور اسے زندہ رکھنے کے لیے پنگ بھیجتا ہے۔
+    Twelve Data کے ساتھ WebSocket کنکشن شروع کرتا ہے اور کنکشن ٹوٹنے کو احسن طریقے سے سنبھالتا ہے۔
     """
     if not API_KEY:
         logger.error("WebSocket کے لیے Twelve Data API کلید (TWELVE_DATA_API_KEY_1) سیٹ نہیں ہے۔")
@@ -31,11 +31,7 @@ async def start_price_websocket():
     
     while True:
         try:
-            async with websockets.connect(
-                uri, 
-                ping_interval=30, # ★★★ اہم تبدیلی: ہر 30 سیکنڈ میں خودکار پنگ بھیجیں ★★★
-                ping_timeout=20
-            ) as websocket:
+            async with websockets.connect(uri, ping_interval=30, ping_timeout=20) as websocket:
                 logger.info(f"Twelve Data WebSocket سے کامیابی سے منسلک ہو گئے۔ {symbols} کو سبسکرائب کیا جا رہا ہے۔")
                 await websocket.send(json.dumps({
                     "action": "subscribe",
@@ -51,16 +47,16 @@ async def start_price_websocket():
                             if symbol and price:
                                 PRICE_CACHE[symbol] = float(price)
                                 logger.debug(f"قیمت اپ ڈیٹ: {symbol} = {price}")
-                        # Twelve Data کی طرف سے آنے والے heartbeat/pong پیغامات کو نظر انداز کریں
                         elif data.get("event") == "heartbeat":
                             logger.debug("WebSocket Heartbeat موصول ہوا۔ کنکشن زندہ ہے۔")
                     except json.JSONDecodeError:
                         logger.warning(f"ایک نامعلوم WebSocket پیغام موصول ہوا: {message}")
         
-        except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError) as e:
-            logger.error(f"WebSocket کنکشن بند ہو گیا: {e}۔ 5 سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
-            await asyncio.sleep(5)
+        # ★★★ اہم تبدیلی: اب یہ ایک 'ERROR' نہیں بلکہ 'INFO' ہے ★★★
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.info(f"WebSocket کنکشن معمول کے مطابق بند ہوا۔ 10 سیکنڈ میں دوبارہ کوشش کی جائے گی۔ وجہ: {e}")
+            await asyncio.sleep(10) # <-- وقفہ بڑھا دیا گیا
         except Exception as e:
-            logger.error(f"WebSocket میں ایک غیر متوقع خرابی واقع ہوئی: {e}۔ 10 سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
-            await asyncio.sleep(10)
+            logger.error(f"WebSocket میں ایک غیر متوقع خرابی واقع ہوئی: {e}۔ 15 سیکنڈ میں دوبارہ کوشش کی جائے گی۔")
+            await asyncio.sleep(15)
             
