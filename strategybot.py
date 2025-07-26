@@ -5,13 +5,12 @@ import pandas_ta as ta
 from typing import List, Tuple, Optional, Dict
 
 # ==============================================================================
-# حکمت عملی کے پیرامیٹرز
+# حکمت عملی کے پیرامیٹرز براہ راست یہاں شامل کر دیے گئے ہیں
 # ==============================================================================
 EMA_SHORT_PERIOD = 10
 EMA_LONG_PERIOD = 30
 STOCH_K = 14
 STOCH_D = 3
-RSI_PERIOD = 14
 BBANDS_PERIOD = 20
 ATR_LENGTH = 14
 # ==============================================================================
@@ -23,6 +22,7 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
     if len(candles) < 20:
         return None
     
+    # --- اہم تبدیلی: اب یہ پہلے سے ہی ڈکشنری ہے ---
     df = pd.DataFrame(candles)
     
     atr = ta.atr(df['high'], df['low'], df['close'], length=ATR_LENGTH)
@@ -48,62 +48,33 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
 
 def generate_core_signal(candles: List[Dict]) -> Dict[str, Any]:
     """
-    متعدد اشاروں (EMA, Stoch, RSI, BBands) پر مبنی بنیادی سگنل کی منطق۔
+    تیز رفتار اسکیلپنگ کے لیے بہتر بنائی گئی بنیادی سگنل کی منطق۔
+    (عارضی طور پر سادہ ورژن)
     """
-    if len(candles) < max(EMA_LONG_PERIOD, BBANDS_PERIOD, RSI_PERIOD):
+    if len(candles) < BBANDS_PERIOD:
         return {"signal": "wait", "indicators": {}}
 
+    # --- اہم تبدیلی: اب یہ پہلے سے ہی ڈکشنری ہے ---
     df = pd.DataFrame(candles)
     close = df['close']
     
-    # تمام انڈیکیٹرز کا حساب لگائیں
     ema_fast = ta.ema(close, length=EMA_SHORT_PERIOD)
     ema_slow = ta.ema(close, length=EMA_LONG_PERIOD)
     stoch = ta.stoch(df['high'], df['low'], close, k=STOCH_K, d=STOCH_D)
-    rsi = ta.rsi(close, length=RSI_PERIOD)
-    bbands = ta.bbands(close, length=BBANDS_PERIOD)
     
-    if any(s is None or s.empty for s in [ema_fast, ema_slow, stoch, rsi, bbands]):
+    if any(s is None or s.empty for s in [ema_fast, ema_slow, stoch]):
         return {"signal": "wait", "indicators": {}}
 
-    # آخری قدریں حاصل کریں
-    last_close = close.iloc[-1]
     last_ema_fast = ema_fast.iloc[-1]
     last_ema_slow = ema_slow.iloc[-1]
     last_stoch_k = stoch.iloc[-1, 0]
-    last_rsi = rsi.iloc[-1]
-    last_bb_lower = bbands.iloc[-1, 0] # BBl_20_2.0
-    last_bb_upper = bbands.iloc[-1, 2] # BBu_20_2.0
 
-    # انڈیکیٹرز کی حالت کو محفوظ کریں تاکہ وجہ بنانے میں استعمال ہو سکے
-    indicators_data = {
-        "ema_cross": "bullish" if last_ema_fast > last_ema_slow else "bearish",
-        "stoch_k": round(last_stoch_k, 2),
-        "rsi": round(last_rsi, 2),
-        "price_vs_bb": "near_lower" if last_close <= last_bb_lower else ("near_upper" if last_close >= last_bb_upper else "middle")
-    }
-
-    # خریدنے کی شرائط
-    buy_conditions = [
-        last_ema_fast > last_ema_slow,  # تیزی کا رجحان
-        last_stoch_k < 40,              # اوور سولڈ نہیں، لیکن نیچے ہے
-        last_rsi > 50,                  # تیزی کا مومینٹم
-        last_close > last_bb_lower      # قیمت نچلے بینڈ سے نیچے نہیں گری
-    ]
-
-    # بیچنے کی شرائط
-    sell_conditions = [
-        last_ema_fast < last_ema_slow,  # مندی کا رجحان
-        last_stoch_k > 60,              # اوور باٹ نہیں، لیکن اوپر ہے
-        last_rsi < 50,                  # مندی کا مومینٹم
-        last_close < last_bb_upper      # قیمت اوپری بینڈ سے اوپر نہیں گئی
-    ]
-
-    if all(buy_conditions):
-        return {"signal": "buy", "indicators": indicators_data}
+    # سادہ منطق
+    if last_ema_fast > last_ema_slow and last_stoch_k < 35:
+        return {"signal": "buy", "indicators": {}}
     
-    if all(sell_conditions):
-        return {"signal": "sell", "indicators": indicators_data}
+    if last_ema_fast < last_ema_slow and last_stoch_k > 65:
+        return {"signal": "sell", "indicators": {}}
         
     return {"signal": "wait", "indicators": {}}
     
