@@ -15,6 +15,7 @@ from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
+from price_stream import start_price_websocket # ★★★ نیا اور اہم امپورٹ ★★★
 
 # لاگنگ سیٹ اپ
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(module)s] - %(message)s')
@@ -40,7 +41,7 @@ def get_db():
     finally:
         db.close()
 
-# WebSocket اینڈ پوائنٹ
+# WebSocket اینڈ پوائنٹ (یہ کلائنٹ سائیڈ کے لیے ہے)
 @app.websocket("/ws/live-signals")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -81,11 +82,14 @@ async def get_news(db: Session = Depends(get_db)):
 @app.on_event("startup")
 async def startup_event():
     logger.info("FastAPI ورکر شروع ہو رہا ہے...")
+    
+    # ★★★ اہم تبدیلی: قیمتوں کے لیے WebSocket ٹاسک کو پس منظر میں شروع کریں ★★★
+    asyncio.create_task(start_price_websocket())
+    
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
     
-    # ★★★ اہم تبدیلی: سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں ★★★
-    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    # سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں
     await update_economic_calendar_cache()
     
     # شیڈیولر کو صرف ایک بار شروع کریں
