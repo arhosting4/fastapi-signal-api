@@ -1,50 +1,32 @@
-# --- اسٹیج 1: بلڈ انوائرمنٹ ---
-# پائتھن کا بیس امیج استعمال کریں
-FROM python:3.11-slim as builder
+# filename: Dockerfile
 
-# ورکنگ ڈائرکٹری سیٹ کریں
-WORKDIR /app
-
-# انحصار (dependencies) کے لیے ضروری پیکیجز انسٹال کریں
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# requirements.txt کو کاپی کریں اور انحصار انسٹال کریں
-COPY requirements.txt .
-RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
-
-
-# --- اسٹیج 2: فائنل امیج ---
-# ایک چھوٹا اور محفوظ بیس امیج استعمال کریں
+# ★★★ مرحلہ 1: بنیادی امیج ★★★
+# Python 3.11 کے سلم ورژن سے شروع کریں
 FROM python:3.11-slim
 
-# ورکنگ ڈائرکٹری سیٹ کریں
-WORKDIR /app
-
-# PostgreSQL کلائنٹ انسٹال کریں (اگر ضرورت ہو)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
+# ★★★ مرحلہ 2: سسٹم-لیول ڈیپینڈنسیز ★★★
+# apt کو اپ ڈیٹ کریں اور build-essential انسٹال کریں
+# یہ pandas-ta جیسی لائبریریز کے لیے ضروری ہے
+RUN apt-get update && apt-get install -y \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# بلڈر اسٹیج سے وہیلز (wheels) کاپی کریں
-COPY --from=builder /app/wheels /wheels
+# ★★★ مرحلہ 3: ورکنگ ڈائرکٹری ★★★
+# کنٹینر کے اندر ایک ورکنگ ڈائرکٹری بنائیں
+WORKDIR /app
 
-# وہیلز سے انحصار انسٹال کریں
-RUN pip install --no-index --find-links=/wheels /wheels/*
+# ★★★ مرحلہ 4: پائیتھون ڈیپینڈنسیز ★★★
+# پہلے requirements.txt کو کاپی کریں تاکہ Docker کیشنگ سے فائدہ اٹھایا جا سکے
+COPY requirements.txt .
 
-# باقی تمام ایپلیکیشن کوڈ کاپی کریں
+# requirements.txt میں دی گئی تمام لائبریریز انسٹال کریں
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ★★★ مرحلہ 5: ایپلیکیشن کوڈ ★★★
+# باقی تمام ایپلیکیشن کوڈ کو کاپی کریں
 COPY . .
 
-# Gunicorn کے لیے ماحول کے متغیرات سیٹ کریں
-ENV MODULE_NAME="app:app"
-ENV VARIABLE_NAME="app"
-ENV LOG_LEVEL="info"
-
-# پورٹ 8000 کو ایکسپوز کریں
-EXPOSE 8000
-
-# ایپلیکیشن چلانے کے لیے کمانڈ
-# Render.com $PORT متغیر خود سیٹ کرتا ہے
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "app:app"]
+# ★★★ مرحلہ 6: کمانڈ ★★★
+# Gunicorn سرور کو چلانے کے لیے کمانڈ
+# Render خود بخود PORT ماحول متغیر فراہم کرتا ہے
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:${PORT}"]
