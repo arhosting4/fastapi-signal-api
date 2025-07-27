@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, status, Header
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
-from typing import Optional
+from typing import Dict # pydantic ماڈل کے لیے امپورٹ
 
 # مقامی امپورٹس
 import database_crud as crud
@@ -20,10 +20,6 @@ from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
-
-# ==============================================================================
-# ★★★ بنیادی سیکیورٹی اپ گریڈ: API کلید کی توثیق شامل کی گئی ★★★
-# ==============================================================================
 
 # لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
@@ -42,18 +38,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ★★★ نیا: API کلید کی توثیق کا انحصار ★★★
-API_KEY = os.getenv("API_KEY") # اپنی API کلید .env فائل سے حاصل کریں
-
-async def verify_api_key(x_api_key: Optional[str] = Header(None)):
-    """API کلید کی توثیق کرتا ہے۔"""
-    if not API_KEY:
-        # اگر سرور پر API کلید سیٹ نہیں ہے، تو سیکیورٹی کو غیر فعال سمجھیں (صرف ڈیولپمنٹ کے لیے)
-        logger.warning("API_KEY ماحول کا متغیر سیٹ نہیں ہے۔ API کی توثیق غیر فعال ہے۔")
-        return
-    if not x_api_key or x_api_key != API_KEY:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API Key")
-
 # DB انحصار
 def get_db():
     db = SessionLocal()
@@ -63,8 +47,7 @@ def get_db():
         db.close()
 
 # API روٹس
-# ★★★ اب تمام حساس روٹس `verify_api_key` پر منحصر ہیں ★★★
-@app.get("/api/active-signals", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
+@app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
     """تمام فعال سگنلز کو ڈیٹا بیس سے حاصل کرتا ہے۔"""
     try:
@@ -74,18 +57,22 @@ async def get_active_signals(db: Session = Depends(get_db)):
         logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
+# ★★★ Pydantic ماڈل کا استعمال تاکہ FastAPI خود باڈی کو پارس کرے ★★★
+from pydantic import BaseModel
+class PasswordData(BaseModel):
+    password: str
+
 @app.post("/api/delete-signal/{signal_id}", response_class=JSONResponse)
-async def delete_signal_endpoint(signal_id: str, password_data: dict, db: Session = Depends(get_db)):
+async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db: Session = Depends(get_db)):
     """ایک فعال سگنل کو دستی طور پر ڈیلیٹ کرتا ہے۔"""
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-    password = password_data.get("password")
-
+    
     if not ADMIN_PASSWORD:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="ایڈمن پاس ورڈ سرور پر کنفیگر نہیں ہے۔",
         )
-    if not password or password != ADMIN_PASSWORD:
+    if not password_data.password or password_data.password != ADMIN_PASSWORD:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="غلط پاس ورڈ",
@@ -101,14 +88,65 @@ async def delete_signal_endpoint(signal_id: str, password_data: dict, db: Sessio
             detail=f"سگنل {signal_id} نہیں ملا۔"
         )
 
-# ... (باقی کے فنکشنز جیسے start_background_tasks, startup_event, shutdown_event میں کوئی تبدیلی نہیں) ...
+async def start_background_tasks():
+    """پس منظر کے تمام کاموں کو شروع کرتا ہے۔"""
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        logger.info("پس منظر کے کام پہلے ہی چل رہے ہیں۔")
+        return
+
+    logger.info(">>> پس منظر کے تمام کام شروع ہو رہے ہیں...")
+    
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    
+    scheduler.add_job(lambda: logger.info("❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔"), IntervalTrigger(minutes=5), id="system_heartbeat")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+    
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+
+@app.on_event("startup")
+async def startup_event():
+    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
+    logger.info("FastAPI سرور شروع ہو رہا ہے...")
+    create_db_and_tables()
+    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    # پہلی بار خبروں کا کیش اپ ڈیٹ کریں
+    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    await update_economic_calendar_cache()
+    logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
+    
+    # پس منظر کے کام شروع کریں
+    asyncio.create_task(start_background_tasks())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
+    logger.info("FastAPI سرور بند ہو رہا ہے۔")
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        app.state.scheduler.shutdown()
+        logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
+
+@app.websocket("/ws/live-signals")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket کنکشن کو سنبھالتا ہے۔"""
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
 
 @app.get("/health", status_code=200)
 async def health_check():
-    """سروس کی صحت کی جانچ کرتا ہے۔ (یہ عوامی رہتا ہے)"""
+    """سروس کی صحت کی جانچ کرتا ہے۔"""
     return {"status": "ok"}
 
-@app.get("/api/history", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
+@app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
     """مکمل شدہ ٹریڈز کی تاریخ حاصل کرتا ہے۔"""
     try:
@@ -118,7 +156,7 @@ async def get_history(db: Session = Depends(get_db)):
         logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-@app.get("/api/news", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
+@app.get("/api/news", response_class=JSONResponse)
 async def get_news(db: Session = Depends(get_db)):
     """کیش شدہ خبریں حاصل کرتا ہے۔"""
     try:
@@ -128,10 +166,6 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-# فرنٹ اینڈ کو ماؤنٹ کرنا آخر میں ہونا چاہیے
+# فرنٹ اینڈ کو ماؤنٹ کرنا آخر میں ہونا چاہیے تاکہ یہ دوسرے روٹس کو اووررائڈ نہ کرے۔
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-
-# نوٹ: فرنٹ اینڈ سے API کالز کو اپ ڈیٹ کرنے کی ضرورت ہوگی تاکہ وہ `X-API-KEY` ہیڈر بھیجیں۔
-# چونکہ ہم براہ راست فرنٹ اینڈ فائلز کو اپ ڈیٹ نہیں کر سکتے، یہ ایک ضروری قدم ہوگا جسے
-# فرنٹ اینڈ ڈیولپر کو کرنا ہوگا۔
-         
+    
