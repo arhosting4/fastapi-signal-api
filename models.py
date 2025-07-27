@@ -20,9 +20,6 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ==============================================================================
-# ★★★ بنیادی غلطی کا ازالہ: updated_at کالم شامل کیا گیا ★★★
-# ==============================================================================
 class ActiveSignal(Base):
     __tablename__ = "active_signals"
     id = Column(Integer, primary_key=True, index=True)
@@ -36,10 +33,17 @@ class ActiveSignal(Base):
     confidence = Column(Float)
     reason = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow) # ★★★ یہ لائن شامل کی گئی ہے ★★★
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # ★★★ اپ ڈیٹ شدہ فنکشن ★★★
     def as_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        # datetime آبجیکٹس کو ISO اسٹرنگ میں تبدیل کریں
+        if isinstance(d.get('created_at'), datetime):
+            d['created_at'] = d['created_at'].isoformat()
+        if isinstance(d.get('updated_at'), datetime):
+            d['updated_at'] = d['updated_at'].isoformat()
+        return d
 
 class CompletedTrade(Base):
     __tablename__ = "completed_trades"
@@ -55,7 +59,19 @@ class CompletedTrade(Base):
     confidence = Column(Float)
     reason = Column(String)
     closed_at = Column(DateTime, default=datetime.utcnow)
-    def as_dict(self): return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+    
+    # ★★★ اپ ڈیٹ شدہ فنکشن ★★★
+    def as_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        # datetime آبجیکٹ کو ISO اسٹرنگ میں تبدیل کریں
+        if isinstance(d.get('closed_at'), datetime):
+            d['closed_at'] = d['closed_at'].isoformat()
+        # احتیاط کے طور پر created_at/updated_at بھی شامل کر سکتے ہیں اگر وہ مستقبل میں شامل کیے جائیں
+        if isinstance(d.get('created_at'), datetime):
+            d['created_at'] = d['created_at'].isoformat()
+        if isinstance(d.get('updated_at'), datetime):
+            d['updated_at'] = d['updated_at'].isoformat()
+        return d
 
 class FeedbackEntry(Base):
     __tablename__ = "feedback_entries"
@@ -72,9 +88,6 @@ class CachedNews(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 def create_db_and_tables():
-    """
-    ڈیٹا بیس ٹیبلز بناتا ہے۔
-    """
     lock_file_path = "/tmp/db_lock"
     try:
         fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
