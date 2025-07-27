@@ -1,150 +1,41 @@
-# filename: app.py
+# filename: app.py (Temporary Version for Cleanup)
 
-import asyncio
-import logging
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+# ... (تمام امپورٹس ویسے ہی رہیں گے) ...
+from sqlalchemy import desc
 
-# مقامی امپورٹس
-import database_crud as crud
-from models import SessionLocal, create_db_and_tables, ActiveSignal
-from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job
-from sentinel import update_economic_calendar_cache
-from websocket_manager import manager
+# ... (باقی تمام کوڈ ویسا ہی رہے گا) ...
 
-# ==============================================================================
-# لاگنگ کی ترتیب
-# ==============================================================================
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
-logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
-logger = logging.getLogger(__name__)
-# ==============================================================================
-
-# FastAPI ایپ کی تعریف
-app = FastAPI(title="ScalpMaster AI API")
-
-# CORS مڈل ویئر
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ==============================================================================
-# ہیلپر فنکشنز اور ایونٹس
-# ==============================================================================
-
-def get_db():
-    """ڈیٹا بیس سیشن فراہم کرتا ہے۔"""
-    db = SessionLocal()
+# ★★★ صرف ایک بار چلانے کے لیے عارضی صفائی کا فنکشن ★★★
+@app.get("/api/cleanup-duplicates", response_class=JSONResponse)
+async def cleanup_duplicate_signals(db: Session = Depends(get_db)):
+    """
+    ہر علامت کے لیے صرف سب سے نیا فعال سگنل رکھتا ہے اور باقی تمام کو حذف کر دیتا ہے۔
+    یہ فنکشن صرف ایک بار چلانے کے لیے ہے۔
+    """
     try:
-        yield db
-    finally:
-        db.close()
+        logger.info("ڈپلیکیٹ فعال سگنلز کی صفائی کا عمل شروع ہو رہا ہے...")
+        all_signals = db.query(ActiveSignal).order_by(desc(ActiveSignal.created_at)).all()
+        
+        kept_signals = {}
+        deleted_count = 0
 
-async def start_background_tasks():
-    """تمام پس منظر کے کاموں کو شروع کرتا ہے۔"""
-    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        logger.info("پس منظر کے کام پہلے ہی چل رہے ہیں۔")
-        return
-
-    logger.info(">>> پس منظر کے تمام کام شروع ہو رہے ہیں...")
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    
-    scheduler.add_job(lambda: logger.info("❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔"), IntervalTrigger(minutes=5), id="system_heartbeat")
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
-    
-    scheduler.start()
-    app.state.scheduler = scheduler
-    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-    logger.info("پرائس سٹریم غیر فعال ہے۔ قیمتیں ہر منٹ REST API کے ذریعے حاصل کی جائیں گی۔")
-
-@app.on_event("startup")
-async def startup_event():
-    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
-    logger.info("FastAPI سرور شروع ہو رہا ہے...")
-    create_db_and_tables()
-    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    
-    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
-    try:
-        await update_economic_calendar_cache()
-        logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
+        for signal in all_signals:
+            if signal.symbol not in kept_signals:
+                kept_signals[signal.symbol] = signal.signal_id
+                logger.info(f"[{signal.symbol}] کے لیے سگنل {signal.signal_id} کو رکھا جا رہا ہے۔")
+            else:
+                db.delete(signal)
+                deleted_count += 1
+                logger.warning(f"[{signal.symbol}] کے لیے پرانا ڈپلیکیٹ سگنل {signal.signal_id} حذف کیا جا رہا ہے۔")
+        
+        db.commit()
+        message = f"صفائی مکمل ہوئی۔ {deleted_count} ڈپلیکیٹ سگنلز حذف کر دیے گئے۔"
+        logger.info(message)
+        return {"status": "ok", "message": message}
+        
     except Exception as e:
-        logger.error(f"شروع میں خبروں کا کیش اپ ڈیٹ کرنے میں ناکامی: {e}", exc_info=True)
-
-    asyncio.create_task(start_background_tasks())
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
-    logger.info("FastAPI سرور بند ہو رہا ہے۔")
-    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        app.state.scheduler.shutdown()
-        logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
-
-# ==============================================================================
-# API روٹس (اینڈ پوائنٹس)
-# ==============================================================================
-
-@app.websocket("/ws/live-signals")
-async def websocket_endpoint(websocket: WebSocket):
-    """لائیو سگنلز کے لیے WebSocket کنکشن۔"""
-    await manager.connect(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
-
-@app.get("/health", status_code=200)
-async def health_check():
-    """سروس کی صحت کی جانچ کے لیے۔"""
-    return {"status": "ok"}
-
-@app.get("/api/active-signals", response_class=JSONResponse)
-async def get_active_signals(db: Session = Depends(get_db)):
-    """تمام فعال سگنلز کی فہرست واپس کرتا ہے۔"""
-    try:
-        signals = crud.get_all_active_signals_from_db(db)
-        return [signal.as_dict() for signal in signals]
-    except Exception as e:
-        logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
+        logger.error(f"صفائی کے عمل میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-@app.get("/api/history", response_class=JSONResponse)
-async def get_history(db: Session = Depends(get_db)):
-    """مکمل شدہ ٹریڈز کی تاریخ واپس کرتا ہے۔"""
-    try:
-        trades = crud.get_completed_trades(db)
-        return trades
-    except Exception as e:
-        logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-@app.get("/api/news", response_class=JSONResponse)
-async def get_news(db: Session = Depends(get_db)):
-    """کیش شدہ خبریں واپس کرتا ہے۔"""
-    try:
-        news = crud.get_cached_news(db)
-        return news
-    except Exception as e:
-        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
-
-# ==============================================================================
-# ★★★ اسٹیٹک فائلوں کو ہمیشہ آخر میں ماؤنٹ کریں ★★★
-# ==============================================================================
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+# ... (باقی تمام API روٹس اور app.mount(...) ویسے ہی رہیں گے) ...
