@@ -1,17 +1,13 @@
 # filename: feedback_checker.py
 
 import asyncio
-import json
 import logging
-import httpx
-from datetime import datetime
 from sqlalchemy.orm import Session
 
 # مقامی امپورٹس
-import database_crud as crud  # ★★★ نیا امپورٹ ★★★
-from models import SessionLocal, ActiveSignal
-from key_manager import key_manager
-from utils import get_current_prices_from_api # ★★★ نیا امپورٹ ★★★
+import database_crud as crud
+from models import SessionLocal
+from utils import get_current_prices_from_api # ★★★ اب یہ امپورٹ کام کرے گا ★★★
 from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -23,19 +19,14 @@ async def check_active_signals_job():
     """
     db = SessionLocal()
     try:
-        # ★★★ بنیادی غلطی کا ازالہ: ڈیٹا بیس سے فعال سگنلز حاصل کریں ★★★
         active_signals = crud.get_all_active_signals_from_db(db)
         
         if not active_signals:
-            # اگر کوئی فعال سگنل نہیں ہے تو خاموشی سے باہر نکل جائیں
             return
 
         logger.info(f"📈 پرائس چیک شروع: {len(active_signals)} فعال سگنلز کی نگرانی کی جا رہی ہے۔")
 
-        # تمام فعال سگنلز کے لیے علامتوں کی ایک منفرد فہرست بنائیں
         symbols_to_check = list(set([s.symbol for s in active_signals]))
-        
-        # API سے ان علامتوں کے لیے تازہ ترین قیمتیں حاصل کریں
         live_prices = await get_current_prices_from_api(symbols_to_check)
 
         if not live_prices:
@@ -72,30 +63,25 @@ async def check_active_signals_job():
                 if outcome:
                     logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو '{outcome}' کے طور پر نشان زد کیا گیا ★★★")
                     
-                    # 1. سگنل کو مکمل شدہ ٹریڈز میں شامل کریں
                     crud.add_completed_trade_from_active(db, signal, outcome)
-                    
-                    # 2. فیڈ بیک اندراج شامل کریں
                     crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
                     
-                    # 3. فعال سگنل کو حذف کریں
+                    signal_id_to_broadcast = signal.signal_id
                     db.delete(signal)
+                    db.commit() # ★★★ ہر سگنل کو بند کرنے کے بعد فوری کمٹ کریں ★★★
                     
-                    # 4. فرنٹ اینڈ کو اطلاع دیں
                     await manager.broadcast({
                         "type": "signal_closed",
-                        "data": {"signal_id": signal.signal_id}
+                        "data": {"signal_id": signal_id_to_broadcast}
                     })
                     
             except Exception as e:
                 logger.error(f"سگنل {signal.signal_id} پر کارروائی کے دوران خرابی: {e}", exc_info=True)
-        
-        # تمام تبدیلیوں کو ایک ساتھ ڈیٹا بیس میں محفوظ کریں
-        db.commit()
+                db.rollback()
 
     except Exception as e:
         logger.error(f"فعال سگنلز کی جانچ کے دوران مہلک خرابی: {e}", exc_info=True)
-        db.rollback() # کسی بھی خرابی کی صورت میں تمام تبدیلیوں کو واپس لے لیں
+        db.rollback()
     finally:
         db.close()
         
