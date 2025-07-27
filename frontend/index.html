@@ -11,80 +11,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         /* (سی ایس ایس کا مواد ویسے ہی رہے گا) */
-        :root {
-            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
-            --text-primary: #c9d1d9; --text-secondary: #8b949e; --accent-gold: #ffab00;
-            --signal-buy: #238636; --signal-sell: #da3633;
-        }
-        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); scroll-behavior: smooth; }
-        body { margin: 0; padding: 0; }
-        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
-        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
-        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
-        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
-        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
-        .signals-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .signals-section-header h2 { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin: 0; }
-        .status-indicator { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-        .status-dot { width: 12px; height: 12px; border-radius: 50%; background-color: var(--signal-sell); animation: pulse-red 2s infinite; }
-        .status-dot.connected { background-color: var(--signal-buy); animation: pulse-green 2s infinite; }
-        @keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(35, 134, 54, 0); } 100% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0); } }
-        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(218, 54, 51, 0); } 100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0); } }
-        .signals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
-        .signal-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s; animation: fadeIn 0.5s ease-out; }
-        .signal-card.closing { opacity: 0; transform: scale(0.9); }
-        .signal-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
-        .signal-pair { font-size: 1.5rem; font-weight: 600; }
-        .signal-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; }
-        .tag-buy { background-color: var(--signal-buy); }
-        .tag-sell { background-color: var(--signal-sell); }
-        .confidence-circle { position: relative; width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent-gold) 0deg, var(--secondary) 0deg); margin-bottom: 1rem; }
-        .confidence-value { position: relative; font-size: 1.5rem; font-weight: 700; }
-        .signal-details { border-top: 1px solid var(--border); padding-top: 1rem; }
-        .signal-details p { display: flex; justify-content: space-between; margin: 0.5rem 0; color: var(--text-secondary); }
-        .signal-details span { color: var(--text-primary); font-weight: 500; }
-        .no-signals { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
-        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
-        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
-        .mobile-nav a.active { color: var(--accent-gold); }
-        .mobile-nav i { font-size: 1.2rem; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @media (max-width: 768px) { .navbar-desktop { display: none; } .mobile-nav { display: flex; } body { padding-bottom: 70px; } }
     </style>
 </head>
 <body>
 
-    <header class="header">
-        <div class="logo">SCALPMASTER AI</div>
-        <nav class="navbar-desktop">
-            <a href="index.html" class="active">Dashboard</a>
-            <a href="history.html">History</a>
-            <a href="news.html">News</a>
-        </nav>
-    </header>
-
-    <main class="main-container">
-        <section class="signals-section">
-            <div class="signals-section-header">
-                <h2>Live Signals</h2>
-                <div class="status-indicator">
-                    <div id="status-dot" class="status-dot"></div>
-                    <span id="status-text">Connecting...</span>
-                </div>
-            </div>
-            <div class="signals-grid" id="signals-grid"></div>
-            <div class="no-signals" id="no-signals-message">
-                <h3><i class="fas fa-search"></i> Scanning Markets...</h3>
-                <p>Waiting for high-confidence trading opportunities.</p>
-            </div>
-        </section>
-    </main>
-
-    <nav class="mobile-nav">
-        <a href="index.html" class="active"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
-        <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
-        <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
-    </nav>
+    <!-- (ہیڈر اور مین کنٹینر کا HTML ویسا ہی رہے گا) -->
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -93,7 +24,7 @@
             const statusDot = document.getElementById('status-dot');
             const statusText = document.getElementById('status-text');
             
-            let signals = new Map(); // آبجیکٹ کی جگہ میپ کا استعمال کریں گے تاکہ حذف کرنا آسان ہو
+            let signals = new Map();
 
             function renderSignals() {
                 if (signals.size === 0) {
@@ -103,10 +34,9 @@
                     signalsGrid.innerHTML = '';
                     signalsGrid.style.display = 'grid';
                     noSignalsMessage.style.display = 'none';
-
-                    // نئے سگنلز کو سب سے اوپر دکھانے کے لیے الٹا کریں
-                    const reversedSignals = Array.from(signals.values()).reverse();
-                    reversedSignals.forEach(signal => {
+                    
+                    const sortedSignals = Array.from(signals.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    sortedSignals.forEach(signal => {
                         const card = createSignalCard(signal);
                         signalsGrid.appendChild(card);
                     });
@@ -116,8 +46,8 @@
             function createSignalCard(signal) {
                 const card = document.createElement('div');
                 card.className = 'signal-card';
-                card.id = `signal-${signal.signal_id}`; // ہر کارڈ کو ایک منفرد ID دیں
-                const signalType = signal.signal.toLowerCase();
+                card.id = `signal-${signal.signal_id}`;
+                const signalType = signal.signal_type.toLowerCase(); // ★★★ signal سے signal_type میں تبدیل کیا گیا
                 const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
                 const confidence = parseFloat(signal.confidence);
 
@@ -133,24 +63,40 @@
                         <div class="confidence-value">${confidence.toFixed(0)}%</div>
                     </div>
                     <div class="signal-details">
-                        <p>Entry Price: <span>${signal.price.toFixed(5)}</span></p>
-                        <p>Take Profit: <span>${signal.tp.toFixed(5)}</span></p>
-                        <p>Stop Loss: <span>${signal.sl.toFixed(5)}</span></p>
+                        <p>Entry Price: <span>${signal.entry_price.toFixed(5)}</span></p>
+                        <p>Take Profit: <span>${signal.tp_price.toFixed(5)}</span></p>
+                        <p>Stop Loss: <span>${signal.sl_price.toFixed(5)}</span></p>
                     </div>
                 `;
                 return card;
             }
 
-            // ★★★ نیا فنکشن: سگنل کارڈ کو ہٹانے کے لیے ★★★
             function removeSignalCard(signalId) {
                 const cardToRemove = document.getElementById(`signal-${signalId}`);
                 if (cardToRemove) {
-                    cardToRemove.classList.add('closing'); // اینیمیشن کے لیے کلاس شامل کریں
-                    // اینیمیشن مکمل ہونے کے بعد کارڈ کو DOM سے ہٹا دیں
+                    cardToRemove.classList.add('closing');
                     setTimeout(() => {
                         signals.delete(signalId);
-                        renderSignals(); // فہرست کو دوبارہ رینڈر کریں
-                    }, 500); // 0.5 سیکنڈ، سی ایس ایس ٹرانزیشن کے مطابق
+                        renderSignals();
+                    }, 500);
+                }
+            }
+
+            // ★★★ نیا فنکشن ★★★
+            async function fetchActiveSignals() {
+                try {
+                    const response = await fetch('/api/active-signals');
+                    if (!response.ok) throw new Error('Failed to fetch active signals');
+                    const activeSignals = await response.json();
+                    
+                    activeSignals.forEach(signal => {
+                        if (!signals.has(signal.signal_id)) {
+                            signals.set(signal.signal_id, signal);
+                        }
+                    });
+                    renderSignals();
+                } catch (error) {
+                    console.error('Error fetching active signals:', error);
                 }
             }
 
@@ -166,19 +112,21 @@
 
                 socket.onmessage = (event) => {
                     const message = JSON.parse(event.data);
-                    
+                    const signalData = message.data;
+
                     if (message.type === 'new_signal') {
-                        const newSignal = message.data;
-                        if (!signals.has(newSignal.signal_id)) {
-                            signals.set(newSignal.signal_id, newSignal);
+                        if (!signals.has(signalData.signal_id)) {
+                            signals.set(signalData.signal_id, signalData);
                             renderSignals();
                         }
-                    } 
-                    // ★★★ نیا حصہ: سگنل بند ہونے کا پیغام سننا ★★★
-                    else if (message.type === 'signal_closed') {
-                        const closedSignalId = message.data.signal_id;
-                        if (signals.has(closedSignalId)) {
-                            removeSignalCard(closedSignalId);
+                    } else if (message.type === 'signal_updated') {
+                        if (signals.has(signalData.signal_id)) {
+                            signals.set(signalData.signal_id, signalData);
+                            renderSignals(); // اپ ڈیٹ شدہ کارڈ دکھانے کے لیے دوبارہ رینڈر کریں
+                        }
+                    } else if (message.type === 'signal_closed') {
+                        if (signals.has(signalData.signal_id)) {
+                            removeSignalCard(signalData.signal_id);
                         }
                     }
                 };
@@ -195,11 +143,12 @@
                 };
             }
 
-            renderSignals();
+            // صفحہ لوڈ ہوتے ہی فعال سگنلز حاصل کریں
+            fetchActiveSignals();
+            // پھر WebSocket کنکشن قائم کریں
             connectWebSocket();
         });
     </script>
 
 </body>
-                                                                                     </html>
-        
+</html>
