@@ -15,7 +15,7 @@ from datetime import datetime
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables
 from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job # price_stream_logic کو یہاں سے ہٹا دیا گیا ہے
+from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 
@@ -76,6 +76,16 @@ async def startup_event():
     logger.info("FastAPI سرور شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    # سرور شروع ہوتے ہی خبروں کو فوری اپ ڈیٹ کریں
+    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    try:
+        await update_economic_calendar_cache()
+        logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
+    except Exception as e:
+        logger.error(f"شروع میں خبروں کا کیش اپ ڈیٹ کرنے میں ناکامی: {e}", exc_info=True)
+
+    # پس منظر کے کاموں کو شروع کریں
     asyncio.create_task(start_background_tasks())
 
 @app.on_event("shutdown")
