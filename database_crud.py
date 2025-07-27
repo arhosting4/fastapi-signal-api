@@ -151,4 +151,4 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
-                                    
+            
