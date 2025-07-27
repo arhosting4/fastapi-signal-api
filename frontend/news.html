@@ -77,12 +77,16 @@
                 noNewsMessage.style.display = 'block';
                 const response = await fetch('/api/news');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                // ★★★ تبدیلی: خالی جواب کو ہینڈل کریں ★★★
                 const newsData = await response.json();
                 
                 newsGrid.innerHTML = '';
-                const articles = newsData.articles || [];
+                
+                // چیک کریں کہ آیا newsData null نہیں ہے اور اس میں articles ہیں
+                const articles = newsData ? newsData.articles : [];
 
-                if (articles.length > 0) {
+                if (articles && articles.length > 0) {
                     noNewsMessage.style.display = 'none';
                     newsGrid.style.display = 'grid';
                     articles.forEach(item => {
@@ -92,15 +96,16 @@
                         card.innerHTML = `
                             <div class="news-content">
                                 <h3 class="news-title">${item.title || 'No Title'}</h3>
-                                <p class="news-source">${item.source || 'Unknown Source'} - ${new Date(item.published_at).toLocaleString()}</p>
-                                <p class="news-snippet">${snippet.substring(0, 150)}...</p>
+                                <p class="source">${item.source || 'Unknown Source'} - ${new Date(item.published_at).toLocaleString()}</p>
+                                <p class="snippet">${snippet.substring(0, 150)}...</p>
                                 <a href="${item.url || '#'}" target="_blank" rel="noopener noreferrer" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
                             </div>
                         `;
                         newsGrid.appendChild(card);
                     });
                 } else {
-                    noNewsMessage.innerHTML = '<h3><i class="fas fa-search"></i> No News Found</h3><p>Could not retrieve market news at this time.</p>';
+                    // معلوماتی پیغام دکھائیں
+                    noNewsMessage.innerHTML = '<h3><i class="fas fa-search"></i> No News Found</h3><p>Could not retrieve market news at this time. Please check back later.</p>';
                 }
             } catch (error) {
                 console.error('Error fetching news:', error);
@@ -109,6 +114,7 @@
         }
         
         fetchNews();
+        // خبروں کو ہر 15 منٹ بعد اپ ڈیٹ کریں
         setInterval(fetchNews, 15 * 60 * 1000);
     </script>
 </body>
