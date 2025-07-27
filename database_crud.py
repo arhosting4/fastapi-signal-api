@@ -5,10 +5,91 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
 
-from models import CompletedTrade, FeedbackEntry, CachedNews
+from models import CompletedTrade, FeedbackEntry, CachedNews, ActiveSignal # ActiveSignal کو امپورٹ کریں
 
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+# ★★★ فعال سگنل کے لیے CRUD آپریشنز ★★★
+# ==============================================================================
+
+def add_active_signal_to_db(db: Session, signal_data: Dict[str, Any]) -> Optional[ActiveSignal]:
+    """ایک فعال سگنل کو ڈیٹا بیس میں شامل کرتا ہے۔"""
+    try:
+        # signal_id کو پہلے سے ہی hunter میں بنایا جانا چاہیے
+        db_signal = ActiveSignal(
+            signal_id=signal_data['signal_id'],
+            symbol=signal_data['symbol'],
+            timeframe=signal_data['timeframe'],
+            signal_type=signal_data['signal'],
+            entry_price=signal_data['price'],
+            tp_price=signal_data['tp'],
+            sl_price=signal_data['sl'],
+            confidence=signal_data.get('confidence'),
+            reason=signal_data.get('reason')
+        )
+        db.add(db_signal)
+        db.commit()
+        db.refresh(db_signal)
+        return db_signal
+    except Exception as e:
+        logger.error(f"فعال سگنل شامل کرنے میں خرابی: {e}", exc_info=True)
+        db.rollback()
+        return None
+
+def get_all_active_signals_from_db(db: Session) -> List[ActiveSignal]:
+    """ڈیٹا بیس سے تمام فعال سگنلز حاصل کرتا ہے۔"""
+    return db.query(ActiveSignal).all()
+
+def get_active_signals_count_from_db(db: Session) -> int:
+    """ڈیٹا بیس میں فعال سگنلز کی تعداد واپس کرتا ہے۔"""
+    return db.query(func.count(ActiveSignal.id)).scalar() or 0
+
+def remove_active_signal_from_db(db: Session, signal_id: str) -> bool:
+    """ڈیٹا بیس سے ایک فعال سگنل کو ہٹاتا ہے۔"""
+    try:
+        signal = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
+        if signal:
+            db.delete(signal)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"فعال سگنل {signal_id} کو ہٹانے میں خرابی: {e}", exc_info=True)
+        db.rollback()
+        return False
+
+# ==============================================================================
+
+def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str) -> Optional[CompletedTrade]:
+    """ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔"""
+    try:
+        # signal_data اب ایک ActiveSignal آبجیکٹ یا ڈکشنری ہو سکتا ہے
+        signal_dict = signal_data if isinstance(signal_data, dict) else signal_data.as_dict()
+
+        db_trade = CompletedTrade(
+            signal_id=signal_dict['signal_id'],
+            symbol=signal_dict['symbol'],
+            timeframe=signal_dict.get('timeframe'),
+            signal_type=signal_dict.get('signal_type') or signal_dict.get('signal'), # دونوں کلیدوں کو سنبھالیں
+            entry_price=signal_dict.get('entry_price') or signal_dict.get('price'),
+            tp_price=signal_dict.get('tp_price') or signal_dict.get('tp'),
+            sl_price=signal_dict.get('sl_price') or signal_dict.get('sl'),
+            outcome=outcome,
+            confidence=signal_dict.get('confidence'),
+            reason=signal_dict.get('reason'),
+            closed_at=datetime.utcnow()
+        )
+        db.add(db_trade)
+        db.commit()
+        db.refresh(db_trade)
+        return db_trade
+    except Exception as e:
+        logger.error(f"مکمل ٹریڈ شامل کرنے میں خرابی: {e}", exc_info=True)
+        db.rollback()
+        return None
+
+# ... باقی فنکشنز (get_feedback_stats_from_db, add_feedback_entry, وغیرہ) ویسے ہی رہیں گے ...
 def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
     """کسی علامت کے لیے فیڈ بیک کے اعداد و شمار کا حساب لگاتا ہے۔"""
     correct_count = db.query(func.count(FeedbackEntry.id)).filter(
@@ -28,36 +109,6 @@ def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
         "correct": correct_count,
         "incorrect": incorrect_count
     }
-
-def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str) -> Optional[CompletedTrade]:
-    """ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔"""
-    try:
-        required_keys = ['signal_id', 'symbol', 'timeframe', 'signal', 'price', 'tp', 'sl']
-        if not all(key in signal_data for key in required_keys):
-            logger.warning(f"مکمل ٹریڈ شامل کرنے کے لیے سگنل ڈیٹا میں مطلوبہ کلیدیں غائب ہیں: {signal_data}")
-            return None
-
-        db_trade = CompletedTrade(
-            signal_id=signal_data['signal_id'],
-            symbol=signal_data['symbol'],
-            timeframe=signal_data['timeframe'],
-            signal_type=signal_data['signal'],
-            entry_price=signal_data['price'],
-            tp_price=signal_data['tp'],
-            sl_price=signal_data['sl'],
-            outcome=outcome,
-            closed_at=datetime.utcnow()
-        )
-
-        db.add(db_trade)
-        db.commit()
-        db.refresh(db_trade)
-        return db_trade
-
-    except Exception as e:
-        logger.error(f"مکمل ٹریڈ شامل کرنے میں خرابی: {e}", exc_info=True)
-        db.rollback()
-        return None
 
 def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str) -> Optional[FeedbackEntry]:
     """دی گئی علامت اور ٹائم فریم کے لیے DB میں فیڈ بیک اندراج شامل کرتا ہے۔"""
@@ -101,4 +152,4 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
-        
+    
