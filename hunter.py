@@ -16,9 +16,12 @@ from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
-# کنفیگریشن
+# ==============================================================================
+# ★★★ کنفیگریشن کو اپ ڈیٹ کیا گیا ★★★
+# ==============================================================================
 MAX_ACTIVE_SIGNALS = 5
-FINAL_CONFIDENCE_THRESHOLD = 60.0
+# ★★★ آپ کی ہدایت کے مطابق، کم از کم اعتماد کی حد 70 مقرر کی گئی ہے ★★★
+FINAL_CONFIDENCE_THRESHOLD = 70.0
 
 async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
     """ایک تجارتی جوڑے کا تجزیہ کرتا ہے اور اگر کوئی سگنل ملے تو اسے واپس کرتا ہے۔"""
@@ -58,18 +61,15 @@ async def hunt_for_signals_job():
         logger.info(f"🏹 سگنل کی تلاش شروع: ان جوڑوں کا تجزیہ کیا جائے گا: {pairs}")
         
         for pair in pairs:
-            # ہر جوڑے کے لیے دوبارہ چیک کریں تاکہ لوپ کے دوران حد سے تجاوز نہ ہو
             if crud.get_active_signals_count_from_db(db) >= MAX_ACTIVE_SIGNALS:
                 logger.info("سگنل کی حد تک پہنچ گئے۔ شکار روکا جا رہا ہے۔")
                 break
             
             analysis_result = await analyze_pair(db, pair)
             
+            # ★★★ یہاں 70 کے اعتماد اسکور کی شرط کو سختی سے نافذ کیا گیا ہے ★★★
             if analysis_result and analysis_result.get("confidence", 0) >= FINAL_CONFIDENCE_THRESHOLD:
                 
-                # ==============================================================================
-                # ★★★ بنیادی غلطی کا ازالہ: updated_at کی دلیل ہٹا دی گئی ★★★
-                # ==============================================================================
                 new_signal = crud.add_or_update_active_signal(db, analysis_result)
                 
                 if new_signal:
@@ -86,10 +86,15 @@ async def hunt_for_signals_job():
                             "type": "signal_updated",
                             "data": new_signal.signal.as_dict()
                         })
+            elif analysis_result:
+                # یہ لاگ اس وقت دکھایا جائے گا جب سگنل بنے گا لیکن اس کا اعتماد 70 سے کم ہوگا
+                confidence = analysis_result.get('confidence', 0)
+                logger.info(f"📊 [{pair}] سگنل کو نظر انداز کیا گیا: اعتماد ({confidence:.2f}%) حد ({FINAL_CONFIDENCE_THRESHOLD}%) سے کم ہے۔")
+
 
     except Exception as e:
         logger.error(f"سگنل کی تلاش کے کام میں مہلک خرابی: {e}", exc_info=True)
     finally:
         db.close()
         logger.info("🏹 سگنل کی تلاش مکمل ہوئی۔")
-                            
+                
