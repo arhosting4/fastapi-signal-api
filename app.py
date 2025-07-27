@@ -15,21 +15,15 @@ from datetime import datetime
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables
 from hunter import hunt_for_signals_job
-from feedback_checker import check_active_signals_job, price_stream_logic
+from feedback_checker import check_active_signals_job # price_stream_logic کو یہاں سے ہٹا دیا گیا ہے
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 
 # ==============================================================================
 # ★★★ لاگنگ کا حتمی اور مکمل کنٹرول ★★★
 # ==============================================================================
-# بنیادی لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
-
-# APScheduler کے اپنے لاگر کو پکڑیں اور اسے خاموش کریں
-# یہ صرف WARNING یا اس سے اوپر کی سطح کے پیغامات دکھائے گا
 logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
-
-# ہمارے اپنے لاگر کو حاصل کریں
 logger = logging.getLogger(__name__)
 # ==============================================================================
 
@@ -74,9 +68,8 @@ async def start_background_tasks():
     app.state.scheduler = scheduler
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
 
-    logger.info("ریئل ٹائم پرائس سٹریم کو پس منظر میں شروع کیا جا رہا ہے...")
-    asyncio.create_task(price_stream_logic())
-    logger.info("ریئل ٹائم پرائس سٹریم کامیابی سے شروع ہو گئی۔")
+    # WebSocket پرائس سٹریم کو غیر فعال کر دیا گیا ہے
+    logger.info("پرائس سٹریم غیر فعال ہے۔ قیمتیں ہر منٹ REST API کے ذریعے حاصل کی جائیں گی۔")
 
 @app.on_event("startup")
 async def startup_event():
