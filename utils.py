@@ -61,7 +61,7 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         return None
 
 # ==============================================================================
-# ★★★ بنیادی غلطی کا ازالہ: یہ فنکشن غائب تھا ★★★
+# ★★★ یہ فنکشن غائب تھا اور تمام مسائل کی جڑ تھا ★★★
 # ==============================================================================
 async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, float]]:
     """
@@ -75,7 +75,6 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         logger.warning("قیمتیں حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
 
-    # علامتوں کو کوما سے الگ کی گئی سٹرنگ میں تبدیل کریں
     symbol_str = ",".join(symbols)
     url = f"https://api.twelvedata.com/price?symbol={symbol_str}&apikey={api_key}"
     
@@ -92,11 +91,10 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         response.raise_for_status()
         data = response.json()
 
-        # جواب کی ساخت کو ہینڈل کریں (ایک علامت یا متعدد)
         prices = {}
-        if "price" in data and isinstance(data['price'], (int, float, str)): # اگر صرف ایک علامت کی درخواست کی گئی ہو
+        if "price" in data and isinstance(data['price'], (int, float, str)):
             prices[symbols[0]] = float(data["price"])
-        else: # اگر متعدد علامتوں کی درخواست کی گئی ہو
+        else:
             for symbol, details in data.items():
                 if isinstance(details, dict) and "price" in details:
                     prices[symbol] = float(details["price"])
@@ -111,4 +109,4 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
     except Exception as e:
         logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
-    
+        
