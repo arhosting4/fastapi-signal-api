@@ -3,20 +3,21 @@
 import asyncio
 import json
 import logging
+import websockets  # ★★★ یہ لائن غائب تھی ★★★
 from typing import Dict, List
 
 import database_crud as crud
 from models import SessionLocal
 from key_manager import key_manager
 from websocket_manager import manager
-from utils import get_multiple_prices_twelve_data # ★★★ نیا امپورٹ ★★★
+from utils import get_multiple_prices_twelve_data
 
 logger = logging.getLogger(__name__)
 
 # یہ ڈکشنری اب بھی WebSocket سے آنے والی قیمتوں کو رکھے گی
 live_prices_ws: Dict[str, float] = {}
 
-# ★★★ WebSocket پر سبسکرائب کیے جانے والے جوڑے ★★★
+# WebSocket پر سبسکرائب کیے جانے والے جوڑے
 WEBSOCKET_SYMBOLS = ["BTC/USD"]
 
 async def price_stream_logic():
@@ -69,23 +70,19 @@ async def check_active_signals_job():
         if not active_signals:
             return
 
-        # 1. REST API سے قیمتیں حاصل کرنے کے لیے جوڑوں کی فہرست بنائیں
         symbols_for_rest_api = [
             signal.symbol for signal in active_signals 
             if signal.symbol not in WEBSOCKET_SYMBOLS
         ]
         
-        # 2. REST API سے قیمتیں حاصل کریں (اگر ضرورت ہو)
         prices_from_rest = {}
         if symbols_for_rest_api:
             unique_symbols = list(set(symbols_for_rest_api))
             prices_from_rest = await get_multiple_prices_twelve_data(unique_symbols)
 
-        # 3. تمام قیمتوں کو یکجا کریں (WebSocket کی قیمتوں کو ترجیح دیں)
         all_current_prices = live_prices_ws.copy()
         all_current_prices.update(prices_from_rest)
 
-        # 4. ہر سگنل کو چیک کریں
         for signal in active_signals:
             symbol = signal.symbol
             current_price = all_current_prices.get(symbol)
@@ -94,7 +91,6 @@ async def check_active_signals_job():
                 logger.warning(f"سگنل {signal.signal_id} ({symbol}) کے لیے قیمت حاصل نہیں کی جا سکی۔")
                 continue
 
-            # ... (باقی TP/SL چیک کرنے کی منطق بالکل ویسی ہی رہے گی) ...
             signal_id = signal.signal_id
             signal_type = signal.signal_type
             tp = signal.tp_price
