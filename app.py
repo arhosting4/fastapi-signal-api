@@ -1,6 +1,5 @@
 # filename: app.py
 
-# ... (تمام امپورٹس اور ابتدائی کوڈ ویسا ہی رہے گا) ...
 import asyncio
 import logging
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
@@ -12,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
 
+# مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables, ActiveSignal
 from hunter import hunt_for_signals_job
@@ -19,16 +19,100 @@ from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 
-# ... (لاگنگ، ایپ کی تعریف، CORS، get_db فنکشن ویسے ہی رہیں گے) ...
-# ... (start_background_tasks, startup_event, shutdown_event, websocket_endpoint, health_check ویسے ہی رہیں گے) ...
+# ==============================================================================
+# ★★★ لاگنگ کا حتمی اور مکمل کنٹرول ★★★
+# ==============================================================================
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
+logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+# ==============================================================================
 
-# ★★★ نیا API اینڈ پوائنٹ ★★★
+# ★★★ FastAPI ایپ کی تعریف یہاں ہونی چاہیے ★★★
+app = FastAPI(title="ScalpMaster AI API")
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# DB انحصار
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+async def start_background_tasks():
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        logger.info("پس منظر کے کام پہلے ہی چل رہے ہیں۔")
+        return
+
+    logger.info(">>> پس منظر کے تمام کام شروع ہو رہے ہیں...")
+    
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    
+    def system_heartbeat_job():
+        logger.info("❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے اور پس منظر کے کام فعال ہیں۔")
+
+    scheduler.add_job(system_heartbeat_job, IntervalTrigger(minutes=5), id="system_heartbeat")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+    
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+
+    logger.info("پرائس سٹریم غیر فعال ہے۔ قیمتیں ہر منٹ REST API کے ذریعے حاصل کی جائیں گی۔")
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("FastAPI سرور شروع ہو رہا ہے...")
+    create_db_and_tables()
+    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    try:
+        await update_economic_calendar_cache()
+        logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
+    except Exception as e:
+        logger.error(f"شروع میں خبروں کا کیش اپ ڈیٹ کرنے میں ناکامی: {e}", exc_info=True)
+
+    asyncio.create_task(start_background_tasks())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("FastAPI سرور بند ہو رہا ہے۔")
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        app.state.scheduler.shutdown()
+        logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
+
+@app.websocket("/ws/live-signals")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
+
+# ★★★ تمام API روٹس اب ایپ کی تعریف کے بعد ہیں ★★★
+
+@app.get("/health", status_code=200)
+async def health_check():
+    return {"status": "ok"}
+
 @app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
     """ڈیٹا بیس سے تمام فعال سگنلز کی فہرست واپس کرتا ہے۔"""
     try:
         signals = crud.get_all_active_signals_from_db(db)
-        # SQLAlchemy آبجیکٹس کو ڈکشنری میں تبدیل کریں
         return [signal.as_dict() for signal in signals]
     except Exception as e:
         logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
@@ -52,4 +136,5 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
+# اسٹیٹک فائلوں کو آخر میں ماؤنٹ کریں
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
