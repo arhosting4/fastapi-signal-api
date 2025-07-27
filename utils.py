@@ -68,11 +68,10 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         logger.error(f"[{symbol}] کے لیے نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# ★★★ یہاں غلطی کو درست کیا گیا ہے ★★★
 async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float]:
     """
     ایک ہی API کال میں متعدد جوڑوں کی قیمتیں حاصل کرتا ہے۔
-    یہ فنکشن اب Twelve Data کے مختلف جوابات کو ہینڈل کرنے کے قابل ہے۔
+    یہ فنکشن اب Twelve Data کے تمام ممکنہ جوابات کو ہینڈل کرنے کے قابل ہے۔
     """
     if not symbols:
         return {}
@@ -100,24 +99,28 @@ async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float
 
         response.raise_for_status()
         data = response.json()
-
         prices = {}
-        # اگر جواب ایک واحد آبجیکٹ ہے (ایک علامت کے لیے)
-        if isinstance(data, dict) and 'symbol' in data and 'price' in data:
+
+        # ★★★ یہاں غلطی کو درست کیا گیا ہے ★★★
+        # کیس 1: صرف ایک علامت بھیجی گئی اور جواب میں 'symbol' کلید نہیں ہے
+        if len(symbols) == 1 and 'price' in data and 'symbol' not in data:
+            prices[symbols[0]] = float(data['price'])
+        # کیس 2: جواب ایک واحد آبجیکٹ ہے جس میں 'symbol' ہے
+        elif isinstance(data, dict) and 'symbol' in data and 'price' in data:
             prices[data['symbol']] = float(data['price'])
-        # اگر جواب آبجیکٹس کی فہرست ہے (متعدد علامتوں کے لیے)
+        # کیس 3: جواب آبجیکٹس کی فہرست ہے
         elif isinstance(data, list):
             for item in data:
                 if 'symbol' in item and 'price' in item:
                     prices[item['symbol']] = float(item['price'])
-        # اگر جواب میں ہر علامت کے لیے ایک کلید ہے
+        # کیس 4: جواب ایک ڈکشنری ہے جس میں علامتیں کلید کے طور پر ہیں
         elif isinstance(data, dict):
              for symbol, details in data.items():
                  if isinstance(details, dict) and 'price' in details:
                      prices[symbol] = float(details['price'])
 
         if not prices:
-            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن پارس نہیں کی جا سکیں: {data}")
+            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن انہیں پارس نہیں کیا جا سکا: {data}")
 
         return prices
 
