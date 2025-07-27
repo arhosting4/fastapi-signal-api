@@ -101,30 +101,33 @@ async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float
         data = response.json()
         prices = {}
 
-        # ★★★ یہاں غلطی کو درست کیا گیا ہے ★★★
-        # کیس 1: صرف ایک علامت بھیجی گئی اور جواب میں 'symbol' کلید نہیں ہے
-        if len(symbols) == 1 and 'price' in data and 'symbol' not in data:
-            prices[symbols[0]] = float(data['price'])
-        # کیس 2: جواب ایک واحد آبجیکٹ ہے جس میں 'symbol' ہے
-        elif isinstance(data, dict) and 'symbol' in data and 'price' in data:
-            prices[data['symbol']] = float(data['price'])
-        # کیس 3: جواب آبجیکٹس کی فہرست ہے
+        # ★★★ حتمی اور فول پروف منطق ★★★
+        
+        # اگر جواب ایک ڈکشنری ہے
+        if isinstance(data, dict):
+            # کیس 1: اگر صرف ایک علامت بھیجی گئی تھی اور جواب میں 'symbol' نہیں ہے
+            if len(symbols) == 1 and 'price' in data and 'symbol' not in data:
+                prices[symbols[0]] = float(data['price'])
+            # کیس 2: اگر جواب میں علامتیں کلید کے طور پر ہیں
+            else:
+                for symbol, details in data.items():
+                    if isinstance(details, dict) and 'price' in details:
+                        prices[symbol] = float(details['price'])
+
+        # اگر جواب آبجیکٹس کی فہرست ہے
         elif isinstance(data, list):
             for item in data:
                 if 'symbol' in item and 'price' in item:
                     prices[item['symbol']] = float(item['price'])
-        # کیس 4: جواب ایک ڈکشنری ہے جس میں علامتیں کلید کے طور پر ہیں
-        elif isinstance(data, dict):
-             for symbol, details in data.items():
-                 if isinstance(details, dict) and 'price' in details:
-                     prices[symbol] = float(details['price'])
 
         if not prices:
             logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن انہیں پارس نہیں کیا جا سکا: {data}")
+        else:
+            logger.info(f"کامیابی سے {len(prices)} قیمتیں حاصل اور پارس کی گئیں۔")
 
         return prices
 
     except Exception as e:
         logger.error(f"متعدد قیمتیں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return {}
-            
+                    
