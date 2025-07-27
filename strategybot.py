@@ -20,7 +20,9 @@ WEIGHTS = {
 }
 
 # --- انڈیکیٹر کیلکولیشن فنکشنز ---
+
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
+    """صفر سے تقسیم کے مسئلے سے محفوظ RSI کا حساب لگاتا ہے۔"""
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -28,6 +30,7 @@ def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
+    """صفر سے تقسیم کے مسئلے سے محفوظ Stochastic Oscillator کا حساب لگاتا ہے۔"""
     low_k = low.rolling(window=k).min()
     high_k = high.rolling(window=k).max()
     stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
@@ -35,6 +38,7 @@ def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d
     return pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
 
 def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
+    """ATR کی بنیاد پر TP/SL کا حساب لگاتا ہے۔"""
     if len(candles) < 20: return None
     df = pd.DataFrame(candles)
     df['h-l'] = df['high'] - df['low']
@@ -57,7 +61,9 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
     return tp, sl
 
 # --- بنیادی حکمت عملی کا اسکور پیدا کرنے والا فنکشن ---
+
 def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
+    """مختلف تکنیکی اشاروں کی بنیاد پر ایک وزنی اسکور (-100 سے +100) پیدا کرتا ہے۔"""
     if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
@@ -73,16 +79,20 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     last_ema_slow = ema_slow.iloc[-1]
     last_rsi = rsi.iloc[-1]
     last_stoch_k = stoch['STOCHk'].iloc[-1]
+    last_stoch_d = stoch['STOCHd'].iloc[-1]
     last_close = close.iloc[-1]
     prev_close = close.iloc[-2]
 
-    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
+    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k, last_stoch_d]):
         return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
 
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
     rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
-    stoch_score = 1 if last_stoch_k > last_stoch_k.rolling(window=3).mean().iloc[-1] and last_stoch_k < 80 else \
-                 (-1 if last_stoch_k < last_stoch_k.rolling(window=3).mean().iloc[-1] and last_stoch_k > 20 else 0)
+    
+    # درست شدہ Stochastic اسکور کی منطق
+    stoch_score = 1 if last_stoch_k > last_stoch_d and last_stoch_k < 80 else \
+                 (-1 if last_stoch_k < last_stoch_d and last_stoch_k > 20 else 0)
+                 
     price_action_score = 1 if last_close > prev_close else -1
 
     total_score = (
@@ -97,8 +107,9 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
         "ema_slow": round(last_ema_slow, 5),
         "rsi": round(last_rsi, 2),
         "stoch_k": round(last_stoch_k, 2),
+        "stoch_d": round(last_stoch_d, 2),
         "technical_score": round(total_score, 2)
     }
 
     return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
-    
+        
