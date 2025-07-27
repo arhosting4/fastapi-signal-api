@@ -289,13 +289,41 @@
         });
 
         // ★★★ ڈیلیٹ فنکشن کو گلوبل اسکوپ میں رکھا گیا ہے تاکہ onclick کام کرے ★★★
-        async function requestSignalDeletion(signalId) {
-            const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
-            
-            if (password === null || password.trim() === "") {
-                alert("Deletion cancelled. No password entered.");
-                return;
+        <script>
+    // ... (باقی کا سارا جاوا اسکرپٹ کوڈ ویسے ہی رہے گا) ...
+
+    // اس فنکشن کو اپ ڈیٹ کریں
+    async function requestSignalDeletion(signalId) {
+        const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
+        
+        if (password === null || password.trim() === "") {
+            alert("Deletion cancelled. No password entered.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/delete-signal/${signalId}`, {
+                method: 'POST', // ★★★ یہ لائن سب سے اہم ہے ★★★
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ password: password }),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                alert(result.detail || "Signal closed successfully.");
+            } else {
+                alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
             }
+        } catch (error) {
+            console.error('Error during manual deletion:', error);
+            alert('An unexpected error occurred. Please check the console.');
+        }
+    }
+</script>
+
 
             try {
                 // ★★★ API روٹ کو درست کیا گیا ہے: یہ /api/delete-signal/{signal_id} ہے ★★★
