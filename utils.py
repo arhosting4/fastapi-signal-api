@@ -5,7 +5,7 @@ import httpx
 import asyncio
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
@@ -68,10 +68,11 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         logger.error(f"[{symbol}] کے لیے نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# ★★★ نیا فنکشن: ایک ساتھ متعدد قیمتیں حاصل کرنے کے لیے ★★★
+# ★★★ یہاں غلطی کو درست کیا گیا ہے ★★★
 async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float]:
     """
     ایک ہی API کال میں متعدد جوڑوں کی قیمتیں حاصل کرتا ہے۔
+    یہ فنکشن اب Twelve Data کے مختلف جوابات کو ہینڈل کرنے کے قابل ہے۔
     """
     if not symbols:
         return {}
@@ -89,7 +90,6 @@ async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float
             response = await client.get(url, timeout=15)
 
         if response.status_code == 429:
-            # (وہی ذہین پابندی کی منطق یہاں بھی)
             response_data = response.json()
             message = response_data.get("message", "").lower()
             duration = 65
@@ -102,16 +102,26 @@ async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float
         data = response.json()
 
         prices = {}
-        # جواب یا تو ایک ڈکشنری ہو سکتا ہے (ایک علامت کے لیے) یا ڈکشنری کی فہرست (متعدد علامتوں کے لیے)
-        if isinstance(data, list):
-            for item in data:
-                prices[item['symbol']] = float(item['price'])
-        elif 'symbol' in data and 'price' in data:
+        # اگر جواب ایک واحد آبجیکٹ ہے (ایک علامت کے لیے)
+        if isinstance(data, dict) and 'symbol' in data and 'price' in data:
             prices[data['symbol']] = float(data['price'])
-        
+        # اگر جواب آبجیکٹس کی فہرست ہے (متعدد علامتوں کے لیے)
+        elif isinstance(data, list):
+            for item in data:
+                if 'symbol' in item and 'price' in item:
+                    prices[item['symbol']] = float(item['price'])
+        # اگر جواب میں ہر علامت کے لیے ایک کلید ہے
+        elif isinstance(data, dict):
+             for symbol, details in data.items():
+                 if isinstance(details, dict) and 'price' in details:
+                     prices[symbol] = float(details['price'])
+
+        if not prices:
+            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن پارس نہیں کی جا سکیں: {data}")
+
         return prices
 
     except Exception as e:
         logger.error(f"متعدد قیمتیں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return {}
-    
+            
