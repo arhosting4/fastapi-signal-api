@@ -3,7 +3,7 @@
 import os
 import time
 import logging
-from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func)
+from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Text) # Text شامل کیا گیا
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 
@@ -19,7 +19,24 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- ماڈلز ویسے ہی رہیں گے ---
+# ★★★ نیا ماڈل: فعال سگنلز کے لیے ★★★
+class ActiveSignal(Base):
+    __tablename__ = "active_signals"
+    id = Column(Integer, primary_key=True, index=True)
+    signal_id = Column(String, unique=True, index=True, nullable=False)
+    symbol = Column(String, index=True, nullable=False)
+    timeframe = Column(String)
+    signal_type = Column(String)
+    entry_price = Column(Float)
+    tp_price = Column(Float)
+    sl_price = Column(Float)
+    confidence = Column(Float)
+    reason = Column(Text) # لمبی وجوہات کے لیے Text استعمال کریں
+    created_at = Column(DateTime, default=func.now())
+
+    def as_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
 class CompletedTrade(Base):
     __tablename__ = "completed_trades"
     id = Column(Integer, primary_key=True, index=True)
@@ -31,8 +48,13 @@ class CompletedTrade(Base):
     tp_price = Column(Float)
     sl_price = Column(Float)
     outcome = Column(String, index=True)
+    # ★★★ اضافی معلوماتی کالمز ★★★
+    confidence = Column(Float)
+    reason = Column(Text)
     closed_at = Column(DateTime, default=func.now())
-    def as_dict(self): return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+    def as_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 class FeedbackEntry(Base):
     __tablename__ = "feedback_entries"
@@ -48,36 +70,21 @@ class CachedNews(Base):
     content = Column(JSON)
     updated_at = Column(DateTime, default=func.now())
 
-# --- اپ ڈیٹ شدہ فنکشن ---
 def create_db_and_tables():
-    """
-    ریس کنڈیشن سے بچنے کے لیے فائل لاک کا استعمال کرتے ہوئے ڈیٹا بیس ٹیبلز بناتا ہے۔
-    """
-    lock_file_path = "/tmp/db_lock" # Render.com پر /tmp ڈائرکٹری قابل تحریر ہے
-    
-    # 10 سیکنڈ تک لاک حاصل کرنے کی کوشش کریں
+    lock_file_path = "/tmp/db_lock"
     for _ in range(10):
         try:
-            # O_CREAT | O_EXCL اس بات کو یقینی بناتا ہے کہ فائل صرف اسی صورت میں بنے گی اگر وہ پہلے سے موجود نہ ہو
-            # یہ ایک ایٹمی (atomic) آپریشن ہے
             fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            
-            # --- لاک حاصل ہو گیا، اب ٹیبلز بنائیں ---
             try:
-                logger.info("ڈیٹا بیس لاک حاصل کر لیا۔ ٹیبلز بنائے جا رہے ہیں...")
-                Base.metadata.create_all(bind=engine)
+                logger.info("ڈیٹا بیس لاک حاصل کر لیا۔ تمام ٹیبلز بنائے جا رہے ہیں...")
+                Base.metadata.create_all(bind=engine) # یہ تمام ٹیبلز بنا دے گا بشمول نیا ActiveSignal
                 logger.info("ٹیبلز کامیابی سے بن گئے۔")
             finally:
-                # کام مکمل ہونے پر لاک فائل کو بند کریں اور ہٹا دیں
                 os.close(fd)
                 os.remove(lock_file_path)
-            return # فنکشن سے باہر نکلیں
-            
+            return
         except FileExistsError:
-            # اگر فائل پہلے سے موجود ہے، تو اس کا مطلب ہے کہ کوئی دوسرا ورکر ٹیبل بنا رہا ہے
             logger.info("کوئی دوسرا ورکر ڈیٹا بیس بنا رہا ہے، 1 سیکنڈ انتظار کر رہا ہے...")
             time.sleep(1)
-            
-    # اگر 10 سیکنڈ کے بعد بھی لاک فائل موجود ہے، تو شاید کوئی مسئلہ ہے
     logger.warning("ڈیٹا بیس لاک حاصل کرنے میں ناکام۔ شاید کوئی دوسرا ورکر پھنس گیا ہے۔")
-    
+
