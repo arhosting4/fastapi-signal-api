@@ -20,17 +20,17 @@ from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 
 # ==============================================================================
-# ★★★ لاگنگ کا حتمی اور مکمل کنٹرول ★★★
+# لاگنگ کی ترتیب
 # ==============================================================================
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 # ==============================================================================
 
-# ★★★ FastAPI ایپ کی تعریف یہاں ہونی چاہیے ★★★
+# FastAPI ایپ کی تعریف
 app = FastAPI(title="ScalpMaster AI API")
 
-# CORS
+# CORS مڈل ویئر
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,8 +39,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# DB انحصار
+# ==============================================================================
+# ہیلپر فنکشنز اور ایونٹس
+# ==============================================================================
+
 def get_db():
+    """ڈیٹا بیس سیشن فراہم کرتا ہے۔"""
     db = SessionLocal()
     try:
         yield db
@@ -48,18 +52,15 @@ def get_db():
         db.close()
 
 async def start_background_tasks():
+    """تمام پس منظر کے کاموں کو شروع کرتا ہے۔"""
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         logger.info("پس منظر کے کام پہلے ہی چل رہے ہیں۔")
         return
 
     logger.info(">>> پس منظر کے تمام کام شروع ہو رہے ہیں...")
-    
     scheduler = AsyncIOScheduler(timezone="UTC")
     
-    def system_heartbeat_job():
-        logger.info("❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے اور پس منظر کے کام فعال ہیں۔")
-
-    scheduler.add_job(system_heartbeat_job, IntervalTrigger(minutes=5), id="system_heartbeat")
+    scheduler.add_job(lambda: logger.info("❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔"), IntervalTrigger(minutes=5), id="system_heartbeat")
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
     scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
@@ -67,11 +68,11 @@ async def start_background_tasks():
     scheduler.start()
     app.state.scheduler = scheduler
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-
     logger.info("پرائس سٹریم غیر فعال ہے۔ قیمتیں ہر منٹ REST API کے ذریعے حاصل کی جائیں گی۔")
 
 @app.on_event("startup")
 async def startup_event():
+    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
     logger.info("FastAPI سرور شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
@@ -87,13 +88,19 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
     logger.info("FastAPI سرور بند ہو رہا ہے۔")
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         app.state.scheduler.shutdown()
         logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
 
+# ==============================================================================
+# API روٹس (اینڈ پوائنٹس)
+# ==============================================================================
+
 @app.websocket("/ws/live-signals")
 async def websocket_endpoint(websocket: WebSocket):
+    """لائیو سگنلز کے لیے WebSocket کنکشن۔"""
     await manager.connect(websocket)
     try:
         while True:
@@ -102,15 +109,14 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
         logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
 
-# ★★★ تمام API روٹس اب ایپ کی تعریف کے بعد ہیں ★★★
-
 @app.get("/health", status_code=200)
 async def health_check():
+    """سروس کی صحت کی جانچ کے لیے۔"""
     return {"status": "ok"}
 
 @app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
-    """ڈیٹا بیس سے تمام فعال سگنلز کی فہرست واپس کرتا ہے۔"""
+    """تمام فعال سگنلز کی فہرست واپس کرتا ہے۔"""
     try:
         signals = crud.get_all_active_signals_from_db(db)
         return [signal.as_dict() for signal in signals]
@@ -120,6 +126,7 @@ async def get_active_signals(db: Session = Depends(get_db)):
 
 @app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
+    """مکمل شدہ ٹریڈز کی تاریخ واپس کرتا ہے۔"""
     try:
         trades = crud.get_completed_trades(db)
         return trades
@@ -129,6 +136,7 @@ async def get_history(db: Session = Depends(get_db)):
 
 @app.get("/api/news", response_class=JSONResponse)
 async def get_news(db: Session = Depends(get_db)):
+    """کیش شدہ خبریں واپس کرتا ہے۔"""
     try:
         news = crud.get_cached_news(db)
         return news
@@ -136,5 +144,7 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-# اسٹیٹک فائلوں کو آخر میں ماؤنٹ کریں
+# ==============================================================================
+# ★★★ اسٹیٹک فائلوں کو ہمیشہ آخر میں ماؤنٹ کریں ★★★
+# ==============================================================================
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
