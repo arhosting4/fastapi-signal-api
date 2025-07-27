@@ -3,9 +3,10 @@
 import os
 import time
 import logging
-from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Text) # Text شامل کیا گیا
+from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Boolean)
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -19,20 +20,23 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ★★★ نیا ماڈل: فعال سگنلز کے لیے ★★★
+# ==============================================================================
+# ★★★ بنیادی غلطی کا ازالہ: updated_at کالم شامل کیا گیا ★★★
+# ==============================================================================
 class ActiveSignal(Base):
     __tablename__ = "active_signals"
     id = Column(Integer, primary_key=True, index=True)
     signal_id = Column(String, unique=True, index=True, nullable=False)
     symbol = Column(String, index=True, nullable=False)
-    timeframe = Column(String)
+    timeframe = Column(String, default="15min")
     signal_type = Column(String)
     entry_price = Column(Float)
     tp_price = Column(Float)
     sl_price = Column(Float)
     confidence = Column(Float)
-    reason = Column(Text) # لمبی وجوہات کے لیے Text استعمال کریں
-    created_at = Column(DateTime, default=func.now())
+    reason = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow) # ★★★ یہ لائن شامل کی گئی ہے ★★★
 
     def as_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
@@ -48,13 +52,10 @@ class CompletedTrade(Base):
     tp_price = Column(Float)
     sl_price = Column(Float)
     outcome = Column(String, index=True)
-    # ★★★ اضافی معلوماتی کالمز ★★★
     confidence = Column(Float)
-    reason = Column(Text)
-    closed_at = Column(DateTime, default=func.now())
-
-    def as_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+    reason = Column(String)
+    closed_at = Column(DateTime, default=datetime.utcnow)
+    def as_dict(self): return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 class FeedbackEntry(Base):
     __tablename__ = "feedback_entries"
@@ -62,29 +63,31 @@ class FeedbackEntry(Base):
     symbol = Column(String, index=True)
     timeframe = Column(String)
     feedback = Column(String)
-    created_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class CachedNews(Base):
     __tablename__ = "cached_news"
     id = Column(Integer, primary_key=True, index=True)
     content = Column(JSON)
-    updated_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 def create_db_and_tables():
+    """
+    ڈیٹا بیس ٹیبلز بناتا ہے۔
+    """
     lock_file_path = "/tmp/db_lock"
-    for _ in range(10):
+    try:
+        fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         try:
-            fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            try:
-                logger.info("ڈیٹا بیس لاک حاصل کر لیا۔ تمام ٹیبلز بنائے جا رہے ہیں...")
-                Base.metadata.create_all(bind=engine) # یہ تمام ٹیبلز بنا دے گا بشمول نیا ActiveSignal
-                logger.info("ٹیبلز کامیابی سے بن گئے۔")
-            finally:
-                os.close(fd)
-                os.remove(lock_file_path)
-            return
-        except FileExistsError:
-            logger.info("کوئی دوسرا ورکر ڈیٹا بیس بنا رہا ہے، 1 سیکنڈ انتظار کر رہا ہے...")
-            time.sleep(1)
-    logger.warning("ڈیٹا بیس لاک حاصل کرنے میں ناکام۔ شاید کوئی دوسرا ورکر پھنس گیا ہے۔")
-
+            logger.info("ڈیٹا بیس لاک حاصل کر لیا۔ تمام ٹیبلز بنائے جا رہے ہیں...")
+            Base.metadata.create_all(bind=engine)
+            logger.info("ٹیبلز کامیابی سے بن گئے۔")
+        finally:
+            os.close(fd)
+            os.remove(lock_file_path)
+    except FileExistsError:
+        logger.info("کوئی دوسرا ورکر ڈیٹا بیس بنا رہا ہے، انتظار کیا جا رہا ہے۔")
+        time.sleep(2)
+    except Exception as e:
+        logger.error(f"ڈیٹا بیس بنانے میں خرابی: {e}", exc_info=True)
+        
