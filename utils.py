@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import List, Optional, Dict
 
-from key_manager import key_manager # اپ ڈیٹ شدہ key_manager امپورٹ کریں
+from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
 
 logger = logging.getLogger(__name__)
@@ -25,12 +25,11 @@ def get_available_pairs() -> List[str]:
 
 async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
     """
-    TwelveData API سے OHLC کینڈلز لاتا ہے اور انہیں Pydantic ماڈلز کی فہرست کے طور پر واپس کرتا ہے۔
-    ★★★ اب یہ ذہین کی مینیجر کا استعمال کرتا ہے۔ ★★★
+    TwelveData API سے OHLC کینڈلز لاتا ہے۔
     """
     api_key = key_manager.get_api_key()
     if not api_key:
-        logger.warning(f"[{symbol}] کے لیے کوئی بھی Twelve Data API کلید دستیاب نہیں۔ ڈیٹا حاصل نہیں کیا جا سکتا۔")
+        logger.warning(f"[{symbol}] کے لیے کوئی بھی Twelve Data API کلید دستیاب نہیں۔")
         return None
     
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
@@ -41,19 +40,15 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
             response = await client.get(url, timeout=15)
         
         if response.status_code == 429:
-            # ★★★ ذہین پابندی کی منطق ★★★
             response_data = response.json()
             message = response_data.get("message", "").lower()
-            
-            duration = 65  # ڈیفالٹ 65 سیکنڈ (تھوڑا اضافی بفر کے ساتھ)
+            duration = 65
             if "daily limit" in message:
-                duration = 24 * 60 * 60  # 24 گھنٹے
+                duration = 24 * 60 * 60
                 logger.critical(f"API کلید {api_key[:8]}... اپنی یومیہ حد تک پہنچ گئی ہے!")
             
             logger.warning(f"API کلید {api_key[:8]}... کی حد ختم ہو گئی۔ اسے {duration} سیکنڈ کے لیے محدود کیا جا رہا ہے۔")
             key_manager.mark_key_as_limited(api_key, duration_seconds=duration)
-            
-            # 1 سیکنڈ انتظار کریں اور دوسری کلید کے ساتھ دوبارہ کوشش کریں
             await asyncio.sleep(1)
             return await fetch_twelve_data_ohlc(symbol)
 
@@ -73,24 +68,50 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         logger.error(f"[{symbol}] کے لیے نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# get_current_price_twelve_data فنکشن کو بھی اسی طرح اپ ڈیٹ کیا جا سکتا ہے اگر ضرورت ہو
-async def get_current_price_twelve_data(symbol: str, client: httpx.AsyncClient) -> Optional[float]:
+# ★★★ نیا فنکشن: ایک ساتھ متعدد قیمتیں حاصل کرنے کے لیے ★★★
+async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float]:
     """
-    کسی جوڑے کی موجودہ قیمت حاصل کرتا ہے۔
+    ایک ہی API کال میں متعدد جوڑوں کی قیمتیں حاصل کرتا ہے۔
     """
+    if not symbols:
+        return {}
+
     api_key = key_manager.get_api_key()
     if not api_key:
-        return None
-    url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={api_key}"
+        logger.warning("قیمتیں حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
+        return {}
+
+    symbol_str = ",".join(symbols)
+    url = f"https://api.twelvedata.com/price?symbol={symbol_str}&apikey={api_key}"
+    
     try:
-        response = await client.get(url, timeout=10)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=15)
+
         if response.status_code == 429:
-            key_manager.mark_key_as_limited(api_key, duration_seconds=65) # یہاں بھی سادہ پابندی
+            # (وہی ذہین پابندی کی منطق یہاں بھی)
+            response_data = response.json()
+            message = response_data.get("message", "").lower()
+            duration = 65
+            if "daily limit" in message: duration = 24 * 60 * 60
+            key_manager.mark_key_as_limited(api_key, duration_seconds=duration)
             await asyncio.sleep(1)
-            return await get_current_price_twelve_data(symbol, client)
+            return await get_multiple_prices_twelve_data(symbols)
+
         response.raise_for_status()
         data = response.json()
-        return float(data.get("price")) if data.get("price") else None
-    except Exception:
-        return None
+
+        prices = {}
+        # جواب یا تو ایک ڈکشنری ہو سکتا ہے (ایک علامت کے لیے) یا ڈکشنری کی فہرست (متعدد علامتوں کے لیے)
+        if isinstance(data, list):
+            for item in data:
+                prices[item['symbol']] = float(item['price'])
+        elif 'symbol' in data and 'price' in data:
+            prices[data['symbol']] = float(data['price'])
         
+        return prices
+
+    except Exception as e:
+        logger.error(f"متعدد قیمتیں حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return {}
+    
