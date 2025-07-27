@@ -160,3 +160,4 @@ async def get_news(db: Session = Depends(get_db)):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+    
