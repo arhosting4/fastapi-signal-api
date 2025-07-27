@@ -42,60 +42,15 @@
         .signal-details p { display: flex; justify-content: space-between; margin: 0.5rem 0; color: var(--text-secondary); }
         .signal-details span { color: var(--text-primary); font-weight: 500; }
         .no-signals { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
-        
-        /* ★★★ نیا اور بہتر اسٹائل ★★★ */
-        .ai-reason-section {
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border);
-            flex-grow: 1;
-        }
-        .ai-reason-title {
-            font-weight: 600;
-            color: var(--accent-gold);
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .ai-reason-text {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-        .signal-card-footer {
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .delete-btn {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 1rem;
-            transition: color 0.3s;
-        }
-        .delete-btn:hover {
-            color: var(--signal-sell);
-        }
-        .signal-timestamp {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-        .card-flash {
-            animation: flash-animation 1s ease-out;
-        }
-        @keyframes flash-animation {
-            0% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); }
-            50% { box-shadow: 0 0 15px 5px rgba(255, 171, 0, 0.5); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); }
-        }
-        /* ★★★ ختم ★★★ */
-
+        .ai-reason-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); flex-grow: 1; }
+        .ai-reason-title { font-weight: 600; color: var(--accent-gold); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px; }
+        .ai-reason-text { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; }
+        .signal-card-footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .delete-btn { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1rem; transition: color 0.3s; }
+        .delete-btn:hover { color: var(--signal-sell); }
+        .signal-timestamp { font-size: 0.8rem; color: var(--text-secondary); }
+        .card-flash { animation: flash-animation 1s ease-out; }
+        @keyframes flash-animation { 0% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); } 50% { box-shadow: 0 0 15px 5px rgba(255, 171, 0, 0.5); } 100% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); } }
         .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
         .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
         .mobile-nav a.active { color: var(--accent-gold); }
@@ -138,7 +93,6 @@
         <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
     
-    <!-- ★★★ ساؤنڈ الرٹ کے لیے آڈیو عنصر ★★★ -->
     <audio id="notification-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
 
     <script>
@@ -199,7 +153,6 @@
                             <p>Stop Loss: <span>${slPrice.toFixed(5)}</span></p>
                         </div>
                     </div>
-                    <!-- ★★★ نیا AI وجہ سیکشن ★★★ -->
                     <div class="ai-reason-section">
                         <p class="ai-reason-title"><i class="fas fa-brain"></i> AI Analysis</p>
                         <p class="ai-reason-text">${signal.reason}</p>
@@ -288,51 +241,21 @@
             connectWebSocket();
         });
 
-        // ★★★ ڈیلیٹ فنکشن کو گلوبل اسکوپ میں رکھا گیا ہے تاکہ onclick کام کرے ★★★
-        <script>
-    // ... (باقی کا سارا جاوا اسکرپٹ کوڈ ویسے ہی رہے گا) ...
-
-    // اس فنکشن کو اپ ڈیٹ کریں
-    async function requestSignalDeletion(signalId) {
-        const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
-        
-        if (password === null || password.trim() === "") {
-            alert("Deletion cancelled. No password entered.");
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/delete-signal/${signalId}`, {
-                method: 'POST', // ★★★ یہ لائن سب سے اہم ہے ★★★
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ password: password }),
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                alert(result.detail || "Signal closed successfully.");
-            } else {
-                alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
+        // ★★★ اپ ڈیٹ شدہ ڈیلیٹ فنکشن ★★★
+        async function requestSignalDeletion(signalId) {
+            const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
+            
+            if (password === null || password.trim() === "") {
+                alert("Deletion cancelled. No password entered.");
+                return;
             }
-        } catch (error) {
-            console.error('Error during manual deletion:', error);
-            alert('An unexpected error occurred. Please check the console.');
-        }
-    }
-</script>
-
 
             try {
-                // ★★★ API روٹ کو درست کیا گیا ہے: یہ /api/delete-signal/{signal_id} ہے ★★★
                 const response = await fetch(`/api/delete-signal/${signalId}`, {
-                    method: 'POST',
+                    method: 'POST', // ★★★ یہ تبدیلی سب سے اہم ہے ★★★
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    // ★★★ پاس ورڈ کو باڈی میں بھیجا جا رہا ہے ★★★
                     body: JSON.stringify({ password: password }),
                 });
 
@@ -340,9 +263,7 @@
 
                 if (response.ok) {
                     alert(result.detail || "Signal closed successfully.");
-                    // سگنل بند ہونے کا پیغام WebSocket سے آئے گا، جو کارڈ کو خود ہٹا دے گا۔
                 } else {
-                    // FastAPI سے آنے والے خرابی کے پیغام کو دکھائیں
                     alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
                 }
             } catch (error) {
