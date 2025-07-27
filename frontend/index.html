@@ -28,33 +28,48 @@
         .status-dot.connected { background-color: var(--signal-buy); animation: pulse-green 2s infinite; }
         @keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(35, 134, 54, 0); } 100% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0); } }
         @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(218, 54, 51, 0); } 100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0); } }
-        .signals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
-        .signal-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s; animation: fadeIn 0.5s ease-out; }
+        .signals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; }
+        .signal-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s; animation: fadeIn 0.5s ease-out; display: flex; flex-direction: column; }
         .signal-card.closing { opacity: 0; transform: scale(0.9); }
         .signal-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
         .signal-pair { font-size: 1.5rem; font-weight: 600; }
         .signal-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; }
         .tag-buy { background-color: var(--signal-buy); }
         .tag-sell { background-color: var(--signal-sell); }
-        .confidence-circle { position: relative; width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent-gold) 0deg, var(--secondary) 0deg); margin-bottom: 1rem; }
+        .confidence-circle { position: relative; width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent-gold) 0deg, var(--secondary) 0deg); margin-bottom: 1rem; flex-shrink: 0; }
         .confidence-value { position: relative; font-size: 1.5rem; font-weight: 700; }
         .signal-details { border-top: 1px solid var(--border); padding-top: 1rem; }
         .signal-details p { display: flex; justify-content: space-between; margin: 0.5rem 0; color: var(--text-secondary); }
         .signal-details span { color: var(--text-primary); font-weight: 500; }
         .no-signals { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
-        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
-        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
-        .mobile-nav a.active { color: var(--accent-gold); }
-        .mobile-nav i { font-size: 1.2rem; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* ★★★ نئے اسٹائل ★★★ */
+        /* ★★★ نیا اور بہتر اسٹائل ★★★ */
+        .ai-reason-section {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            flex-grow: 1;
+        }
+        .ai-reason-title {
+            font-weight: 600;
+            color: var(--accent-gold);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ai-reason-text {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
         .signal-card-footer {
             margin-top: 1rem;
             padding-top: 1rem;
             border-top: 1px solid var(--border);
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
         }
         .delete-btn {
             background: none;
@@ -67,7 +82,25 @@
         .delete-btn:hover {
             color: var(--signal-sell);
         }
+        .signal-timestamp {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .card-flash {
+            animation: flash-animation 1s ease-out;
+        }
+        @keyframes flash-animation {
+            0% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); }
+            50% { box-shadow: 0 0 15px 5px rgba(255, 171, 0, 0.5); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); }
+        }
+        /* ★★★ ختم ★★★ */
 
+        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
+        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @media (max-width: 768px) { .navbar-desktop { display: none; } .mobile-nav { display: flex; } body { padding-bottom: 70px; } }
     </style>
 </head>
@@ -104,6 +137,9 @@
         <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
         <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
+    
+    <!-- ★★★ ساؤنڈ الرٹ کے لیے آڈیو عنصر ★★★ -->
+    <audio id="notification-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -111,6 +147,7 @@
             const noSignalsMessage = document.getElementById('no-signals-message');
             const statusDot = document.getElementById('status-dot');
             const statusText = document.getElementById('status-text');
+            const notificationSound = document.getElementById('notification-sound');
             
             let signals = new Map();
 
@@ -123,7 +160,7 @@
                     signalsGrid.style.display = 'grid';
                     noSignalsMessage.style.display = 'none';
                     
-                    const sortedSignals = Array.from(signals.values()).sort((a, b) => new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at));
+                    const sortedSignals = Array.from(signals.values()).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
                     sortedSignals.forEach(signal => {
                         const card = createSignalCard(signal);
                         signalsGrid.appendChild(card);
@@ -142,6 +179,7 @@
                 const slPrice = signal.sl_price || signal.sl;
                 const confidence = parseFloat(signal.confidence);
                 const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
+                const timestamp = new Date(signal.updated_at || signal.created_at).toLocaleString();
 
                 card.innerHTML = `
                     <div class="signal-card-header">
@@ -151,16 +189,23 @@
                         </div>
                         <div class="signal-tag ${tagClass}">${signalType.toUpperCase()}</div>
                     </div>
-                    <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary) 0deg);">
-                        <div class="confidence-value">${confidence.toFixed(0)}%</div>
+                    <div style="display: flex; align-items: center; gap: 1.5rem;">
+                        <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary) 0deg);">
+                            <div class="confidence-value">${confidence.toFixed(0)}%</div>
+                        </div>
+                        <div class="signal-details" style="flex-grow: 1; border-top: none; padding-top: 0;">
+                            <p>Entry Price: <span>${entryPrice.toFixed(5)}</span></p>
+                            <p>Take Profit: <span>${tpPrice.toFixed(5)}</span></p>
+                            <p>Stop Loss: <span>${slPrice.toFixed(5)}</span></p>
+                        </div>
                     </div>
-                    <div class="signal-details">
-                        <p>Entry Price: <span>${entryPrice.toFixed(5)}</span></p>
-                        <p>Take Profit: <span>${tpPrice.toFixed(5)}</span></p>
-                        <p>Stop Loss: <span>${slPrice.toFixed(5)}</span></p>
+                    <!-- ★★★ نیا AI وجہ سیکشن ★★★ -->
+                    <div class="ai-reason-section">
+                        <p class="ai-reason-title"><i class="fas fa-brain"></i> AI Analysis</p>
+                        <p class="ai-reason-text">${signal.reason}</p>
                     </div>
-                    <!-- ★★★ نیا ڈیلیٹ بٹن ★★★ -->
                     <div class="signal-card-footer">
+                        <span class="signal-timestamp">Last update: ${timestamp}</span>
                         <button class="delete-btn" onclick="requestSignalDeletion('${signal.signal_id}')" title="Manually Close Signal">
                             <i class="fas fa-trash-alt"></i>
                         </button>
@@ -187,9 +232,7 @@
                     const activeSignals = await response.json();
                     
                     activeSignals.forEach(signal => {
-                        if (!signals.has(signal.signal_id)) {
-                            signals.set(signal.signal_id, signal);
-                        }
+                        signals.set(signal.signal_id, signal);
                     });
                     renderSignals();
                 } catch (error) {
@@ -211,9 +254,17 @@
                     const message = JSON.parse(event.data);
                     const signalData = message.data;
 
-                    if (message.type === 'new_signal' || message.type === 'signal_updated') {
+                    if (message.type === 'new_signal') {
                         signals.set(signalData.signal_id, signalData);
                         renderSignals();
+                        const card = document.getElementById(`signal-${signalData.signal_id}`);
+                        if(card) card.classList.add('card-flash');
+                        notificationSound.play().catch(e => console.log("Audio play failed:", e));
+                    } else if (message.type === 'signal_updated') {
+                        signals.set(signalData.signal_id, signalData);
+                        renderSignals();
+                        const card = document.getElementById(`signal-${signalData.signal_id}`);
+                        if(card) card.classList.add('card-flash');
                     } else if (message.type === 'signal_closed') {
                         if (signals.has(signalData.signal_id)) {
                             removeSignalCard(signalData.signal_id);
@@ -236,35 +287,34 @@
             fetchActiveSignals();
             connectWebSocket();
         });
-    </script>
-    
-    <!-- ★★★ نیا ڈیلیٹ فنکشن جو گلوبل اسکوپ میں ہے ★★★ -->
-    <script>
+
+        // ★★★ ڈیلیٹ فنکشن کو گلوبل اسکوپ میں رکھا گیا ہے تاکہ onclick کام کرے ★★★
         async function requestSignalDeletion(signalId) {
-            const password = prompt("This is a protected action.\nPlease enter the manual deletion password:");
+            const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
             
-            if (password === null || password === "") {
-                // صارف نے کینسل کر دیا یا کچھ نہیں لکھا
+            if (password === null || password.trim() === "") {
+                alert("Deletion cancelled. No password entered.");
                 return;
             }
 
             try {
-                const response = await fetch('/api/delete-signal', {
+                // ★★★ API روٹ کو درست کیا گیا ہے: یہ /api/delete-signal/{signal_id} ہے ★★★
+                const response = await fetch(`/api/delete-signal/${signalId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        signal_id: signalId,
-                        password: password,
-                    }),
+                    // ★★★ پاس ورڈ کو باڈی میں بھیجا جا رہا ہے ★★★
+                    body: JSON.stringify({ password: password }),
                 });
 
                 const result = await response.json();
 
                 if (response.ok) {
-                    alert(result.message || "Signal closed successfully.");
+                    alert(result.detail || "Signal closed successfully.");
+                    // سگنل بند ہونے کا پیغام WebSocket سے آئے گا، جو کارڈ کو خود ہٹا دے گا۔
                 } else {
+                    // FastAPI سے آنے والے خرابی کے پیغام کو دکھائیں
                     alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
                 }
             } catch (error) {
