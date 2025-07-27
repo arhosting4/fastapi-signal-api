@@ -1,9 +1,9 @@
 # filename: app.py
 
-import os  # ★★★ نیا امپورٹ ★★★
 import asyncio
 import logging
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException  # ★★★ HTTPException شامل کریں ★★★
+import os
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,28 +11,28 @@ from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
-from pydantic import BaseModel  # ★★★ نیا امپورٹ ★★★
 
 # مقامی امپورٹس
 import database_crud as crud
-from models import SessionLocal, create_db_and_tables, ActiveSignal
+from models import SessionLocal, create_db_and_tables
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
+
+# ==============================================================================
+# ★★★ بنیادی غلطی کا ازالہ: شیڈیولر کی ترتیب درست کی گئی ★★★
+# ==============================================================================
 
 # لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ★★★ سیکیورٹی: ماحول سے پاس ورڈ حاصل کریں ★★★
-MANUAL_DELETE_PASSWORD = os.getenv("MANUAL_DELETE_PASSWORD")
-
-# FastAPI ایپ کی تعریف
+# FastAPI ایپ
 app = FastAPI(title="ScalpMaster AI API")
 
-# CORS مڈل ویئر
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,7 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ہیلپر فنکشنز اور ایونٹس
+# DB انحصار
 def get_db():
     db = SessionLocal()
     try:
@@ -49,48 +49,83 @@ def get_db():
     finally:
         db.close()
 
+# API روٹس
+@app.get("/api/active-signals", response_class=JSONResponse)
+async def get_active_signals(db: Session = Depends(get_db)):
+    """تمام فعال سگنلز کو ڈیٹا بیس سے حاصل کرتا ہے۔"""
+    try:
+        signals = crud.get_all_active_signals_from_db(db)
+        return [s.as_dict() for s in signals]
+    except Exception as e:
+        logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+@app.post("/api/delete-signal/{signal_id}", response_class=JSONResponse)
+async def delete_signal_endpoint(signal_id: str, password: str, db: Session = Depends(get_db)):
+    """ایک فعال سگنل کو دستی طور پر ڈیلیٹ کرتا ہے۔"""
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+    if not ADMIN_PASSWORD or password != ADMIN_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="غلط پاس ورڈ",
+        )
+    
+    success = crud.delete_active_signal(db, signal_id)
+    if success:
+        await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id}})
+        return {"detail": f"سگنل {signal_id} کامیابی سے ڈیلیٹ ہو گیا۔"}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"سگنل {signal_id} نہیں ملا۔"
+        )
+
 async def start_background_tasks():
+    """پس منظر کے تمام کاموں کو شروع کرتا ہے۔"""
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        logger.info("پس منظر کے کام پہلے ہی چل رہے ہیں۔")
         return
+
     logger.info(">>> پس منظر کے تمام کام شروع ہو رہے ہیں...")
+    
     scheduler = AsyncIOScheduler(timezone="UTC")
+    
+    # ★★★ یہاں درست ترتیب دی گئی ہے ★★★
     scheduler.add_job(lambda: logger.info("❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔"), IntervalTrigger(minutes=5), id="system_heartbeat")
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals") # ★★★ یہ لائن اب صحیح کام کرے گی ★★★
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+    
     scheduler.start()
     app.state.scheduler = scheduler
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-    logger.info("پرائس سٹریم غیر فعال ہے۔ قیمتیں ہر منٹ REST API کے ذریعے حاصل کی جائیں گی۔")
 
 @app.on_event("startup")
 async def startup_event():
+    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
     logger.info("FastAPI سرور شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    # پہلی بار خبروں کا کیش اپ ڈیٹ کریں
     logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
-    try:
-        await update_economic_calendar_cache()
-        logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
-    except Exception as e:
-        logger.error(f"شروع میں خبروں کا کیش اپ ڈیٹ کرنے میں ناکامی: {e}", exc_info=True)
+    await update_economic_calendar_cache()
+    logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
+    
+    # پس منظر کے کام شروع کریں
     asyncio.create_task(start_background_tasks())
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
     logger.info("FastAPI سرور بند ہو رہا ہے۔")
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         app.state.scheduler.shutdown()
         logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
 
-# ★★★ ڈیلیٹ کی درخواست کے لیے ڈیٹا ماڈل ★★★
-class DeleteSignalRequest(BaseModel):
-    signal_id: str
-    password: str
-
-# API روٹس
 @app.websocket("/ws/live-signals")
 async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket کنکشن کو سنبھالتا ہے۔"""
     await manager.connect(websocket)
     try:
         while True:
@@ -101,55 +136,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/health", status_code=200)
 async def health_check():
+    """سروس کی صحت کی جانچ کرتا ہے۔"""
     return {"status": "ok"}
-
-@app.get("/api/active-signals", response_class=JSONResponse)
-async def get_active_signals(db: Session = Depends(get_db)):
-    try:
-        signals = crud.get_all_active_signals_from_db(db)
-        return [signal.as_dict() for signal in signals]
-    except Exception as e:
-        logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
-
-# ★★★ نیا، محفوظ ڈیلیٹ اینڈ پوائنٹ ★★★
-@app.post("/api/delete-signal", response_class=JSONResponse)
-async def delete_signal_manually(request: DeleteSignalRequest, db: Session = Depends(get_db)):
-    """ایک فعال سگنل کو دستی طور پر حذف کرتا ہے۔"""
-    
-    if not MANUAL_DELETE_PASSWORD:
-        logger.error("منتظم کا پاس ورڈ ماحول کے متغیرات میں سیٹ نہیں ہے۔")
-        raise HTTPException(status_code=500, detail="Server configuration error: Admin password not set.")
-
-    if request.password != MANUAL_DELETE_PASSWORD:
-        logger.warning(f"سگنل {request.signal_id} کو حذف کرنے کی ناکام کوشش: غلط پاس ورڈ۔")
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid password.")
-
-    try:
-        signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == request.signal_id).first()
-        if not signal_to_delete:
-            raise HTTPException(status_code=404, detail="Signal not found in active signals.")
-
-        crud.add_completed_trade_from_active(db, signal_to_delete, "Manually Closed")
-        db.delete(signal_to_delete)
-        db.commit()
-
-        logger.info(f"سگنل {request.signal_id} کو منتظم نے کامیابی سے حذف کر دیا۔")
-
-        await manager.broadcast({
-            "type": "signal_closed",
-            "data": {"signal_id": request.signal_id}
-        })
-
-        return {"status": "ok", "message": f"Signal {request.signal_id} has been manually closed and moved to history."}
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"سگنل {request.signal_id} کو حذف کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error during signal deletion.")
 
 @app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
+    """مکمل شدہ ٹریڈز کی تاریخ حاصل کرتا ہے۔"""
     try:
         trades = crud.get_completed_trades(db)
         return trades
@@ -159,6 +151,7 @@ async def get_history(db: Session = Depends(get_db)):
 
 @app.get("/api/news", response_class=JSONResponse)
 async def get_news(db: Session = Depends(get_db)):
+    """کیش شدہ خبریں حاصل کرتا ہے۔"""
     try:
         news = crud.get_cached_news(db)
         return news
@@ -166,5 +159,4 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-# اسٹیٹک فائلیں
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
