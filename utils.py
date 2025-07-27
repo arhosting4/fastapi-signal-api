@@ -12,7 +12,7 @@ from schemas import TwelveDataTimeSeries, Candle
 
 logger = logging.getLogger(__name__)
 
-# کنفیگریشن پیرامیٹرز
+# کنفیگریشن
 AVAILABLE_PAIRS_WEEKDAY = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
 AVAILABLE_PAIRS_WEEKEND = ["BTC/USD"]
 CANDLE_COUNT = 100
@@ -21,15 +21,15 @@ PRIMARY_TIMEFRAME = "15min"
 def get_available_pairs() -> List[str]:
     """ہفتے کے دن کی بنیاد پر دستیاب جوڑے واپس کرتا ہے۔"""
     today = datetime.utcnow().weekday()
-    return AVAILABLE_PAIRS_WEEKEND if today >= 5 else AVAILABLE_PAIRS_WEEKDAY
+    if today >= 5: 
+        return AVAILABLE_PAIRS_WEEKEND
+    return AVAILABLE_PAIRS_WEEKDAY
 
 async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
-    """
-    TwelveData API سے OHLC کینڈلز لاتا ہے۔
-    """
+    """TwelveData API سے OHLC کینڈلز لاتا ہے۔"""
     api_key = key_manager.get_api_key()
     if not api_key:
-        logger.warning(f"[{symbol}] کے لیے کوئی بھی Twelve Data API کلید دستیاب نہیں۔")
+        logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
     
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
@@ -40,15 +40,8 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
             response = await client.get(url, timeout=15)
         
         if response.status_code == 429:
-            response_data = response.json()
-            message = response_data.get("message", "").lower()
-            duration = 65
-            if "daily limit" in message:
-                duration = 24 * 60 * 60
-                logger.critical(f"API کلید {api_key[:8]}... اپنی یومیہ حد تک پہنچ گئی ہے!")
-            
-            logger.warning(f"API کلید {api_key[:8]}... کی حد ختم ہو گئی۔ اسے {duration} سیکنڈ کے لیے محدود کیا جا رہا ہے۔")
-            key_manager.mark_key_as_limited(api_key, duration_seconds=duration)
+            logger.warning(f"API کلید کی حد ختم ہو گئی۔ کلید کو گھمایا جا رہا ہے۔")
+            key_manager.mark_key_as_limited(api_key)
             await asyncio.sleep(1)
             return await fetch_twelve_data_ohlc(symbol)
 
@@ -56,8 +49,7 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         data = response.json()
         
         if "values" not in data or data.get("status") != "ok":
-            error_message = data.get("message", "کوئی خرابی کا پیغام نہیں")
-            logger.warning(f"[{symbol}] کے لیے Twelve Data API نے خرابی واپس کی: {error_message}")
+            logger.warning(f"[{symbol}] کے لیے Twelve Data API نے خرابی واپس کی: {data.get('message', 'نامعلوم')}")
             return None
 
         validated_data = TwelveDataTimeSeries.model_validate(data)
@@ -65,13 +57,15 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         return validated_data.values[::-1]
             
     except Exception as e:
-        logger.error(f"[{symbol}] کے لیے نامعلوم خرابی: {e}", exc_info=True)
+        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float]:
+# ==============================================================================
+# ★★★ بنیادی غلطی کا ازالہ: یہ فنکشن غائب تھا ★★★
+# ==============================================================================
+async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, float]]:
     """
-    ایک ہی API کال میں متعدد جوڑوں کی قیمتیں حاصل کرتا ہے۔
-    یہ فنکشن اب Twelve Data کے تمام ممکنہ جوابات کو ہینڈل کرنے کے قابل ہے۔
+    دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین قیمتیں حاصل کرتا ہے۔
     """
     if not symbols:
         return {}
@@ -79,55 +73,42 @@ async def get_multiple_prices_twelve_data(symbols: List[str]) -> Dict[str, float
     api_key = key_manager.get_api_key()
     if not api_key:
         logger.warning("قیمتیں حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
-        return {}
+        return None
 
+    # علامتوں کو کوما سے الگ کی گئی سٹرنگ میں تبدیل کریں
     symbol_str = ",".join(symbols)
     url = f"https://api.twelvedata.com/price?symbol={symbol_str}&apikey={api_key}"
     
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=15)
+            response = await client.get(url, timeout=10)
 
         if response.status_code == 429:
-            response_data = response.json()
-            message = response_data.get("message", "").lower()
-            duration = 65
-            if "daily limit" in message: duration = 24 * 60 * 60
-            key_manager.mark_key_as_limited(api_key, duration_seconds=duration)
+            logger.warning(f"API کلید کی حد ختم ہو گئی۔ کلید کو گھمایا جا رہا ہے۔")
+            key_manager.mark_key_as_limited(api_key)
             await asyncio.sleep(1)
-            return await get_multiple_prices_twelve_data(symbols)
+            return await get_current_prices_from_api(symbols)
 
         response.raise_for_status()
         data = response.json()
+
+        # جواب کی ساخت کو ہینڈل کریں (ایک علامت یا متعدد)
         prices = {}
-
-        # ★★★ حتمی اور فول پروف منطق ★★★
+        if "price" in data and isinstance(data['price'], (int, float, str)): # اگر صرف ایک علامت کی درخواست کی گئی ہو
+            prices[symbols[0]] = float(data["price"])
+        else: # اگر متعدد علامتوں کی درخواست کی گئی ہو
+            for symbol, details in data.items():
+                if isinstance(details, dict) and "price" in details:
+                    prices[symbol] = float(details["price"])
         
-        # اگر جواب ایک ڈکشنری ہے
-        if isinstance(data, dict):
-            # کیس 1: اگر صرف ایک علامت بھیجی گئی تھی اور جواب میں 'symbol' نہیں ہے
-            if len(symbols) == 1 and 'price' in data and 'symbol' not in data:
-                prices[symbols[0]] = float(data['price'])
-            # کیس 2: اگر جواب میں علامتیں کلید کے طور پر ہیں
-            else:
-                for symbol, details in data.items():
-                    if isinstance(details, dict) and 'price' in details:
-                        prices[symbol] = float(details['price'])
-
-        # اگر جواب آبجیکٹس کی فہرست ہے
-        elif isinstance(data, list):
-            for item in data:
-                if 'symbol' in item and 'price' in item:
-                    prices[item['symbol']] = float(item['price'])
-
-        if not prices:
-            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن انہیں پارس نہیں کیا جا سکا: {data}")
-        else:
+        if prices:
             logger.info(f"کامیابی سے {len(prices)} قیمتیں حاصل اور پارس کی گئیں۔")
-
-        return prices
+            return prices
+        else:
+            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن پارس نہیں کی جا سکیں: {data}")
+            return None
 
     except Exception as e:
-        logger.error(f"متعدد قیمتیں حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return {}
-                    
+        logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+        return None
+    
