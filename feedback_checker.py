@@ -3,26 +3,20 @@
 import asyncio
 import json
 import logging
-import httpx
 import websockets
-from datetime import datetime
+from typing import Dict
 
-from signal_tracker import get_all_signals, remove_active_signal, add_active_signal # ★★★ add_active_signal کو بھی امپورٹ کریں
-from database_crud import add_completed_trade, add_feedback_entry
+# ★★★ database_crud سے تمام ضروری فنکشنز امپورٹ کریں ★★★
+import database_crud as crud
 from models import SessionLocal
-from key_manager import key_manager # ★★★ key_manager کو امپورٹ کریں
+from key_manager import key_manager
+from websocket_manager import manager # ★★★ websocket_manager کو امپورٹ کریں
 
 logger = logging.getLogger(__name__)
 
-# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-# ★★★ تمام WebSocket اور قیمت کی منطق اب اس فائل میں واپس آ گئی ہے ★★★
-# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-
-# قیمتوں کو ذخیرہ کرنے کے لیے ایک عالمی ڈکشنری
-live_prices = {}
+live_prices: Dict[str, float] = {}
 
 def get_current_price_for_symbol(symbol: str):
-    """کسی علامت کے لیے تازہ ترین قیمت حاصل کرتا ہے۔"""
     return live_prices.get(symbol)
 
 async def price_stream_logic():
@@ -39,10 +33,11 @@ async def price_stream_logic():
             async with websockets.connect(uri) as websocket:
                 logger.info("Twelve Data WebSocket سے کامیابی سے منسلک ہو گئے۔")
                 
-                # صرف BTC/USD کو سبسکرائب کریں
+                # BTC/USD اور دیگر اہم جوڑوں کو سبسکرائب کریں
+                # نوٹ: آپ کو اپنے Twelve Data پلان کے مطابق جوڑوں کی تعداد کو ایڈجسٹ کرنا ہوگا
                 await websocket.send(json.dumps({
                     "action": "subscribe",
-                    "params": {"symbols": ["BTC/USD"]}
+                    "params": {"symbols": ["BTC/USD", "EUR/USD", "XAU/USD", "GBP/USD"]}
                 }))
 
                 async for message in websocket:
@@ -60,28 +55,29 @@ async def price_stream_logic():
             logger.error(f"WebSocket میں نامعلوم خرابی: {e}", exc_info=True)
             await asyncio.sleep(10)
 
-
 async def check_active_signals_job():
     """
-    یہ جاب تمام فعال سگنلز کی جانچ کرتی ہے اور ان کے نتیجے کا اندازہ لگاتی ہے۔
+    یہ جاب ڈیٹا بیس سے تمام فعال سگنلز کی جانچ کرتی ہے اور ان کے نتیجے کا اندازہ لگاتی ہے۔
     """
-    active_signals = get_all_signals()
-    if not active_signals:
-        return
-
     db = SessionLocal()
     try:
+        # ★★★ RAM کی بجائے ڈیٹا بیس سے فعال سگنلز حاصل کریں ★★★
+        active_signals = crud.get_all_active_signals_from_db(db)
+        if not active_signals:
+            return
+
         for signal in active_signals:
             try:
-                symbol = signal.get("symbol")
+                symbol = signal.symbol
                 current_price = get_current_price_for_symbol(symbol)
                 if current_price is None:
+                    logger.warning(f"سگنل {signal.signal_id} کے لیے قیمت دستیاب نہیں ہے۔")
                     continue
 
-                signal_id = signal.get("signal_id")
-                signal_type = signal.get("signal")
-                tp = signal.get("tp")
-                sl = signal.get("sl")
+                signal_id = signal.signal_id
+                signal_type = signal.signal_type
+                tp = signal.tp_price
+                sl = signal.sl_price
 
                 outcome = None
                 feedback = None
@@ -103,12 +99,21 @@ async def check_active_signals_job():
 
                 if outcome:
                     logger.info(f"★★★ سگنل کا نتیجہ: {signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
-                    add_completed_trade(db, signal, outcome)
-                    add_feedback_entry(db, symbol, signal.get("timeframe", "15min"), feedback)
-                    remove_active_signal(signal_id)
+                    # 1. مکمل شدہ ٹریڈ شامل کریں
+                    crud.add_completed_trade(db, signal, outcome)
+                    # 2. فیڈ بیک شامل کریں
+                    crud.add_feedback_entry(db, symbol, signal.timeframe, feedback)
+                    # 3. فعال سگنل کو ڈیٹا بیس سے ہٹائیں
+                    crud.remove_active_signal_from_db(db, signal_id)
+                    
+                    # ★★★ فرنٹ اینڈ کو سگنل بند ہونے کا نوٹیفکیشن بھیجیں ★★★
+                    await manager.broadcast({
+                        "type": "signal_closed",
+                        "data": {"signal_id": signal_id}
+                    })
                     
             except Exception as e:
-                logger.error(f"سگنل {signal.get('signal_id')} پر کارروائی کے دوران خرابی: {e}", exc_info=True)
+                logger.error(f"سگنل {signal.signal_id} پر کارروائی کے دوران خرابی: {e}", exc_info=True)
     finally:
         db.close()
-                
+        
