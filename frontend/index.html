@@ -47,6 +47,27 @@
         .mobile-nav a.active { color: var(--accent-gold); }
         .mobile-nav i { font-size: 1.2rem; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* ★★★ نئے اسٹائل ★★★ */
+        .signal-card-footer {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+        }
+        .delete-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            transition: color 0.3s;
+        }
+        .delete-btn:hover {
+            color: var(--signal-sell);
+        }
+
         @media (max-width: 768px) { .navbar-desktop { display: none; } .mobile-nav { display: flex; } body { padding-bottom: 70px; } }
     </style>
 </head>
@@ -115,15 +136,12 @@
                 card.className = 'signal-card';
                 card.id = `signal-${signal.signal_id}`;
                 
-                // ★★★ حتمی اور فول پروف منطق ★★★
-                // یہ چیک کرے گا کہ آیا 'signal_type' موجود ہے (API سے) یا 'signal' (WebSocket سے)
                 const signalType = (signal.signal_type || signal.signal).toLowerCase();
                 const entryPrice = signal.entry_price || signal.price;
                 const tpPrice = signal.tp_price || signal.tp;
                 const slPrice = signal.sl_price || signal.sl;
-
-                const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
                 const confidence = parseFloat(signal.confidence);
+                const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
 
                 card.innerHTML = `
                     <div class="signal-card-header">
@@ -140,6 +158,12 @@
                         <p>Entry Price: <span>${entryPrice.toFixed(5)}</span></p>
                         <p>Take Profit: <span>${tpPrice.toFixed(5)}</span></p>
                         <p>Stop Loss: <span>${slPrice.toFixed(5)}</span></p>
+                    </div>
+                    <!-- ★★★ نیا ڈیلیٹ بٹن ★★★ -->
+                    <div class="signal-card-footer">
+                        <button class="delete-btn" onclick="requestSignalDeletion('${signal.signal_id}')" title="Manually Close Signal">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
                     </div>
                 `;
                 return card;
@@ -212,6 +236,42 @@
             fetchActiveSignals();
             connectWebSocket();
         });
+    </script>
+    
+    <!-- ★★★ نیا ڈیلیٹ فنکشن جو گلوبل اسکوپ میں ہے ★★★ -->
+    <script>
+        async function requestSignalDeletion(signalId) {
+            const password = prompt("This is a protected action.\nPlease enter the manual deletion password:");
+            
+            if (password === null || password === "") {
+                // صارف نے کینسل کر دیا یا کچھ نہیں لکھا
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/delete-signal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        signal_id: signalId,
+                        password: password,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(result.message || "Signal closed successfully.");
+                } else {
+                    alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
+                }
+            } catch (error) {
+                console.error('Error during manual deletion:', error);
+                alert('An unexpected error occurred. Please check the console.');
+            }
+        }
     </script>
 
 </body>
