@@ -4,9 +4,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any
 
-# ==============================================================================
-# حکمت عملی کے پیرامیٹرز اور وزن
-# ==============================================================================
+# --- حکمت عملی کے پیرامیٹرز اور وزن ---
 EMA_SHORT_PERIOD = 10
 EMA_LONG_PERIOD = 30
 RSI_PERIOD = 14
@@ -14,16 +12,14 @@ STOCH_K = 14
 STOCH_D = 3
 ATR_LENGTH = 14
 
-# ★★★ اسکورنگ کے لیے وزن ★★★
 WEIGHTS = {
-    "ema_cross": 0.35,      # 35%
-    "rsi_position": 0.25,   # 25%
-    "stoch_position": 0.25, # 25%
-    "price_action": 0.15    # 15%
+    "ema_cross": 0.35,
+    "rsi_position": 0.25,
+    "stoch_position": 0.25,
+    "price_action": 0.15
 }
-# ==============================================================================
 
-# (انڈیکیٹر کیلکولیشن فنکشنز ویسے ہی رہیں گے)
+# --- انڈیکیٹر کیلکولیشن فنکشنز ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -60,26 +56,19 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
     else: return None
     return tp, sl
 
-# ★★★ نیا فنکشن: بنیادی حکمت عملی کا اسکور پیدا کرنے والا ★★★
+# --- بنیادی حکمت عملی کا اسکور پیدا کرنے والا فنکشن ---
 def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
-    """
-    مختلف تکنیکی اشاروں کی بنیاد پر ایک وزنی اسکور (-100 سے +100) پیدا کرتا ہے۔
-    +100: انتہائی تیزی (Strongly Bullish)
-    -100: انتہائی مندی (Strongly Bearish)
-    """
     if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
     df = pd.DataFrame(candles)
     close = df['close']
     
-    # انڈیکیٹرز کا حساب لگائیں
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     rsi = calculate_rsi(close, RSI_PERIOD)
     stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
 
-    # آخری قدریں حاصل کریں
     last_ema_fast = ema_fast.iloc[-1]
     last_ema_slow = ema_slow.iloc[-1]
     last_rsi = rsi.iloc[-1]
@@ -90,14 +79,12 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
         return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
 
-    # ہر جزو کے لیے اسکور کا حساب لگائیں (-1 سے +1 تک)
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
-    rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0) # 48-52 نیوٹرل زون
+    rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
     stoch_score = 1 if last_stoch_k > last_stoch_k.rolling(window=3).mean().iloc[-1] and last_stoch_k < 80 else \
                  (-1 if last_stoch_k < last_stoch_k.rolling(window=3).mean().iloc[-1] and last_stoch_k > 20 else 0)
     price_action_score = 1 if last_close > prev_close else -1
 
-    # وزنی کل اسکور کا حساب لگائیں
     total_score = (
         (ema_score * WEIGHTS["ema_cross"]) +
         (rsi_score * WEIGHTS["rsi_position"]) +
