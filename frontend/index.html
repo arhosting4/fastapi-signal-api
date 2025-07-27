@@ -241,7 +241,7 @@
             connectWebSocket();
         });
 
-        // ★★★ اپ ڈیٹ شدہ ڈیلیٹ فنکشن ★★★
+        // ★★★ حتمی اور درست ڈیلیٹ فنکشن ★★★
         async function requestSignalDeletion(signalId) {
             const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
             
@@ -252,7 +252,7 @@
 
             try {
                 const response = await fetch(`/api/delete-signal/${signalId}`, {
-                    method: 'POST', // ★★★ یہ تبدیلی سب سے اہم ہے ★★★
+                    method: 'POST', // ★★★ یہ لائن اب درست طریقے سے شامل ہے ★★★
                     headers: {
                         'Content-Type': 'application/json',
                     },
