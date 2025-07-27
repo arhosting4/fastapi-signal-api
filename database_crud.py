@@ -1,22 +1,20 @@
 # filename: database_crud.py
+
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
 
-from models import CompletedTrade, FeedbackEntry, CachedNews, ActiveSignal # ActiveSignal کو امپورٹ کریں
+from models import CompletedTrade, FeedbackEntry, CachedNews, ActiveSignal
 
 logger = logging.getLogger(__name__)
 
-# ==============================================================================
-# ★★★ فعال سگنل کے لیے CRUD آپریشنز ★★★
-# ==============================================================================
+# ... (باقی تمام فنکشنز ویسے ہی رہیں گے) ...
 
 def add_active_signal_to_db(db: Session, signal_data: Dict[str, Any]) -> Optional[ActiveSignal]:
     """ایک فعال سگنل کو ڈیٹا بیس میں شامل کرتا ہے۔"""
     try:
-        # signal_id کو پہلے سے ہی hunter میں بنایا جانا چاہیے
         db_signal = ActiveSignal(
             signal_id=signal_data['signal_id'],
             symbol=signal_data['symbol'],
@@ -59,37 +57,38 @@ def remove_active_signal_from_db(db: Session, signal_id: str) -> bool:
         db.rollback()
         return False
 
-# ==============================================================================
-
-def add_completed_trade(db: Session, signal_data: Dict[str, Any], outcome: str) -> Optional[CompletedTrade]:
-    """ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔"""
+# ★★★ یہاں غلطی کو درست کیا گیا ہے ★★★
+def add_completed_trade(db: Session, signal_data: ActiveSignal, outcome: str) -> Optional[CompletedTrade]:
+    """
+    ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔
+    یہ فنکشن اب ایک ActiveSignal آبجیکٹ لیتا ہے تاکہ تمام ڈیٹا صحیح منتقل ہو۔
+    """
     try:
-        # signal_data اب ایک ActiveSignal آبجیکٹ یا ڈکشنری ہو سکتا ہے
-        signal_dict = signal_data if isinstance(signal_data, dict) else signal_data.as_dict()
-
         db_trade = CompletedTrade(
-            signal_id=signal_dict['signal_id'],
-            symbol=signal_dict['symbol'],
-            timeframe=signal_dict.get('timeframe'),
-            signal_type=signal_dict.get('signal_type') or signal_dict.get('signal'), # دونوں کلیدوں کو سنبھالیں
-            entry_price=signal_dict.get('entry_price') or signal_dict.get('price'),
-            tp_price=signal_dict.get('tp_price') or signal_dict.get('tp'),
-            sl_price=signal_dict.get('sl_price') or signal_dict.get('sl'),
+            signal_id=signal_data.signal_id,
+            symbol=signal_data.symbol,
+            timeframe=signal_data.timeframe,
+            signal_type=signal_data.signal_type,
+            entry_price=signal_data.entry_price,
+            tp_price=signal_data.tp_price,
+            sl_price=signal_data.sl_price,
             outcome=outcome,
-            confidence=signal_dict.get('confidence'),
-            reason=signal_dict.get('reason'),
+            # یہ دو فیلڈز اب صحیح طریقے سے منتقل کی جا رہی ہیں
+            confidence=signal_data.confidence,
+            reason=signal_data.reason,
             closed_at=datetime.utcnow()
         )
+
         db.add(db_trade)
         db.commit()
         db.refresh(db_trade)
         return db_trade
+
     except Exception as e:
         logger.error(f"مکمل ٹریڈ شامل کرنے میں خرابی: {e}", exc_info=True)
         db.rollback()
         return None
 
-# ... باقی فنکشنز (get_feedback_stats_from_db, add_feedback_entry, وغیرہ) ویسے ہی رہیں گے ...
 def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
     """کسی علامت کے لیے فیڈ بیک کے اعداد و شمار کا حساب لگاتا ہے۔"""
     correct_count = db.query(func.count(FeedbackEntry.id)).filter(
