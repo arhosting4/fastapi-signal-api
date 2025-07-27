@@ -4,6 +4,7 @@ from fastapi import WebSocket
 from typing import List, Dict, Any
 import logging
 import json
+import asyncio  # ★★★ یہ لائن سب سے اہم ہے اور اسے شامل کیا گیا ہے ★★★
 
 logger = logging.getLogger(__name__)
 
@@ -22,23 +23,31 @@ class ConnectionManager:
 
     def disconnect(self, websocket: WebSocket):
         """ایک WebSocket کنکشن کو منقطع کرتا ہے۔"""
-        self.active_connections.remove(websocket)
-        logger.info(f"WebSocket کنکشن منقطع ہوا۔ کل کنکشنز: {len(self.active_connections)}")
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket کنکشن منقطع ہوا۔ کل کنکشنز: {len(self.active_connections)}")
 
     async def broadcast(self, message: Dict[str, Any]):
         """تمام فعال کنکشنز کو ایک پیغام بھیجتا ہے۔"""
+        # datetime آبجیکٹس کو ہینڈل کرنے کے لیے ایک کسٹم JSON انکوڈر
+        def json_default(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+        # ہم نے models.py میں تبدیلی کر دی ہے، لیکن یہ ایک اضافی حفاظتی تہہ ہے
         message_str = json.dumps(message, ensure_ascii=False)
+        
         if not self.active_connections:
             logger.info("کوئی فعال WebSocket کنکشن نہیں، پیغام نہیں بھیجا گیا۔")
             return
 
         logger.info(f"{len(self.active_connections)} فعال کنکشنز کو پیغام بھیجا جا رہا ہے...")
-        # تمام کنکشنز کو ایک ساتھ پیغام بھیجنے کے لیے ایک فہرست بناتے ہیں
         tasks = [connection.send_text(message_str) for connection in self.active_connections]
         
-        # ناکام کنکشنز کو ہٹانے کے لیے ایک فہرست بناتے ہیں
         failed_connections = []
         
+        # ★★★ اب asyncio.gather کام کرے گا کیونکہ asyncio امپورٹ ہو چکا ہے ★★★
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for i, result in enumerate(results):
@@ -47,11 +56,8 @@ class ConnectionManager:
                 failed_connections.append(connection)
                 logger.warning(f"ایک کنکشن کو پیغام بھیجنے میں ناکامی: {result}")
 
-        # ناکام کنکشنز کو فعال فہرست سے ہٹا دیں
         for connection in failed_connections:
-            if connection in self.active_connections:
-                self.active_connections.remove(connection)
-                logger.info("ایک ناکام کنکشن کو فہرست سے ہٹا دیا گیا۔")
+            self.disconnect(connection) # منقطع کرنے کے لیے مرکزی فنکشن کا استعمال کریں
 
-# مینیجر کا ایک عالمی نمونه (Global Instance) بناتے ہیں تاکہ اسے پورے پروجیکٹ میں استعمال کیا جا سکے
+# مینیجر کا ایک عالمی نمونه (Global Instance) بناتے ہیں
 manager = ConnectionManager()
