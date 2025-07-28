@@ -16,11 +16,16 @@ async def send_telegram_alert(signal_data: Dict[str, Any]):
         logger.warning("ٹیلیگرام بوٹ ٹوکن یا چیٹ آئی ڈی سیٹ نہیں ہے۔ الرٹ نہیں بھیجا جا رہا۔")
         return
 
-    signal = signal_data.get('signal', 'N/A').upper()
+    # ★★★ ذہین کلیدی نام کا انتخاب ★★★
+    # یہ چیک کرے گا کہ آیا 'signal' موجود ہے، اگر نہیں تو 'signal_type' استعمال کرے گا۔
+    signal = (signal_data.get('signal') or signal_data.get('signal_type', 'N/A')).upper()
     symbol = signal_data.get('symbol', 'N/A')
-    price = signal_data.get('price', 0.0)
-    tp = signal_data.get('tp', 0.0)
-    sl = signal_data.get('sl', 0.0)
+    
+    # یہ قیمت، ٹی پی، اور ایس ایل کے لیے دونوں ممکنہ ناموں کو چیک کرے گا۔
+    price = signal_data.get('price') or signal_data.get('entry_price', 0.0)
+    tp = signal_data.get('tp') or signal_data.get('tp_price', 0.0)
+    sl = signal_data.get('sl') or signal_data.get('sl_price', 0.0)
+    
     confidence = signal_data.get('confidence', 0.0)
     tier = signal_data.get('tier', 'N/A')
     reason = signal_data.get('reason', 'کوئی وجہ فراہم نہیں کی گئی۔')
@@ -48,7 +53,6 @@ async def send_telegram_alert(signal_data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"نیا ٹیلیگرام الرٹ بھیجنے میں ناکام: {e}", exc_info=True)
 
-# ★★★ نیا فنکشن ★★★
 async def send_signal_update_alert(updated_signal: Dict[str, Any]):
     """ایک اپ ڈیٹ شدہ سگنل کے لیے فارمیٹ شدہ ٹیلیگرام الرٹ بھیجتا ہے۔"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -57,7 +61,7 @@ async def send_signal_update_alert(updated_signal: Dict[str, Any]):
     symbol = updated_signal.get('symbol', 'N/A')
     confidence = updated_signal.get('confidence', 0.0)
     reason = updated_signal.get('reason', 'کوئی وجہ فراہم نہیں کی گئی۔')
-    signal_type = updated_signal.get('signal_type', 'N/A').upper()
+    signal_type = (updated_signal.get('signal') or updated_signal.get('signal_type', 'N/A')).upper()
 
     icon = "📈"
     message = (
@@ -77,4 +81,4 @@ async def send_signal_update_alert(updated_signal: Dict[str, Any]):
         logger.info(f"{symbol} کے لیے ٹیلیگرام سگنل اپ ڈیٹ الرٹ کامیابی سے بھیجا گیا۔")
     except Exception as e:
         logger.error(f"ٹیلیگرام سگنل اپ ڈیٹ الرٹ بھیجنے میں ناکام: {e}", exc_info=True)
-    
+        
