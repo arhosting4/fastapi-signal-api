@@ -2,12 +2,16 @@
 
 import pandas as pd
 import numpy as np
+import json
+import logging
 from typing import List, Tuple, Optional, Dict, Any
 
-# ★★★ ہمارے نئے، ذہین لیول اینالائزر کو امپورٹ کریں ★★★
 from level_analyzer import find_optimal_tp_sl
 
-# --- حکمت عملی کے پیرامیٹرز اور وزن ---
+logger = logging.getLogger(__name__)
+WEIGHTS_FILE = "strategy_weights.json"
+
+# --- حکمت عملی کے پیرامیٹرز ---
 EMA_SHORT_PERIOD = 10
 EMA_LONG_PERIOD = 30
 RSI_PERIOD = 14
@@ -16,15 +20,19 @@ STOCH_D = 3
 SUPERTREND_ATR = 10
 SUPERTREND_FACTOR = 3.0
 
-WEIGHTS = {
-    "ema_cross": 0.30,
-    "rsi_position": 0.20,
-    "stoch_position": 0.20,
-    "price_action": 0.10,
-    "supertrend_confirm": 0.20, # Supertrend کا وزن
-}
+def _load_weights() -> Dict[str, float]:
+    """JSON فائل سے حکمت عملی کے وزن کو لوڈ کرتا ہے۔"""
+    try:
+        with open(WEIGHTS_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        logger.warning(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ وزن استعمال کیا جا رہا ہے۔")
+        return {
+            "ema_cross": 0.30, "rsi_position": 0.20, "stoch_position": 0.20,
+            "price_action": 0.10, "supertrend_confirm": 0.20
+        }
 
-# --- انڈیکیٹر کیلکولیشن فنکشنز ---
+# --- انڈیکیٹر کیلکولیشن فنکشنز (کوئی تبدیلی نہیں) ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -59,13 +67,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
                 df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
     return df
 
-# ==============================================================================
-# ★★★ TP/SL کا حساب کتاب اب level_analyzer کے سپرد ہے ★★★
-# ==============================================================================
 def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
-    """
-    TP/SL کا حساب لگانے کے لیے level_analyzer کو کال کرتا ہے۔
-    """
     try:
         return find_optimal_tp_sl(candles, signal_type)
     except Exception as e:
@@ -80,14 +82,15 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     df = pd.DataFrame(candles)
     close = df['close']
     
-    # انڈیکیٹرز کا حساب لگائیں
+    # ★★★ متحرک وزن لوڈ کریں ★★★
+    WEIGHTS = _load_weights()
+    
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     rsi = calculate_rsi(close, RSI_PERIOD)
     stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
     df = calculate_supertrend(df, SUPERTREND_ATR, SUPERTREND_FACTOR)
     
-    # آخری قدریں حاصل کریں
     last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
     last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
     last_close, prev_close = close.iloc[-1], close.iloc[-2]
@@ -96,7 +99,6 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
         return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
 
-    # اسکورنگ کی منطق
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
     rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
     stoch_score = 1 if last_stoch_k > 50 else -1
@@ -115,8 +117,14 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
         "ema_fast": round(last_ema_fast, 5), "ema_slow": round(last_ema_slow, 5),
         "rsi": round(last_rsi, 2), "stoch_k": round(last_stoch_k, 2),
         "supertrend_direction": "Up" if in_uptrend else "Down",
-        "technical_score": round(total_score, 2)
+        "technical_score": round(total_score, 2),
+        # سیکھنے کے لیے اسکور بھیجیں
+        "component_scores": {
+            "ema_cross": ema_score, "rsi_position": rsi_score,
+            "stoch_position": stoch_score, "price_action": price_action_score,
+            "supertrend_confirm": supertrend_score
+        }
     }
 
     return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
-        
+    
