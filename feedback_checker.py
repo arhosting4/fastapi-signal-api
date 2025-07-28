@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from typing import List, Dict, Any
+from datetime import datetime # ★★★ datetime کو امپورٹ کریں ★★★
 
 import httpx
 from sqlalchemy.orm import Session
@@ -11,41 +12,53 @@ from sqlalchemy.orm import Session
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-# ★★★ صرف ضروری فنکشنز امپورٹ کریں ★★★
-from utils import get_current_prices_from_api, get_essential_pairs
+# ★★★ utils سے صرف ضروری فنکشن امپورٹ کریں ★★★
+from utils import get_current_prices_from_api
 from websocket_manager import manager
 import trainerai
 
 logger = logging.getLogger(__name__)
 MARKET_STATE_FILE = "market_state.json"
-# ★★★ فی کال زیادہ سے زیادہ جوڑوں کی حد ★★★
 MAX_PAIRS_PER_CALL = 8
+
+# ★★★ ضروری منطق اب اسی فائل میں موجود ہے ★★★
+def get_feedback_essential_pairs() -> List[str]:
+    """
+    نگرانی کے لیے بنیادی جوڑوں کی فہرست واپس کرتا ہے۔
+    یہ فنکشن اب utils.py پر منحصر نہیں ہے۔
+    """
+    # بنیادی جوڑے جو عام دنوں میں چیک ہوں گے
+    primary_pairs = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
+    # ویک اینڈ پر چیک ہونے والے جوڑے
+    weekend_pairs = ["BTC/USD", "ETH/USD"]
+    
+    # ہفتے کا دن چیک کریں (0=پیر, 6=اتوار)
+    is_weekend = datetime.utcnow().weekday() >= 5
+    return weekend_pairs if is_weekend else primary_pairs
 
 async def check_active_signals_job():
     """
     یہ جاب ہر منٹ چلتی ہے اور ایک ہی API کال میں صرف ضروری جوڑوں کی قیمتوں کو چیک کرتی ہے۔
-    (حتمی اور انتہائی موثر ورژن)
+    (حتمی اور خود مختار ورژن)
     """
     db = SessionLocal()
     try:
         active_signals: List[ActiveSignal] = crud.get_all_active_signals_from_db(db)
         
-        # ★★★ نئی، ذہین اور موثر فہرست سازی (آپ کے وژن کے مطابق) ★★★
+        # ★★★ نئی، ذہین اور موثر فہرست سازی (اب مکمل طور پر خود مختار) ★★★
         # 1. فعال سگنلز کے جوڑے حاصل کریں
         pairs_to_check = set(s.symbol for s in active_signals)
-        # 2. ہمارے 4 بنیادی جوڑوں کو بھی شامل کریں
-        pairs_to_check.update(get_essential_pairs())
+        # 2. ہمارے بنیادی جوڑوں کو بھی شامل کریں (اسی فائل کے فنکشن سے)
+        pairs_to_check.update(get_feedback_essential_pairs())
         
         # 3. حتمی فہرست کو 8 کی حد تک محدود کریں
         final_list_to_check = sorted(list(pairs_to_check))[:MAX_PAIRS_PER_CALL]
         
         if not final_list_to_check:
-            # اگر چیک کرنے کے لیے کوئی جوڑا نہیں ہے تو خاموشی سے باہر نکل جائیں
             return
 
         logger.info(f"قیمت کی جانچ شروع: ان {len(final_list_to_check)} ضروری جوڑوں کے لیے ایک ہی کال کی جا رہی ہے: {final_list_to_check}")
         
-        # ★★★ ایک ہی API کال ★★★
         live_prices = await get_current_prices_from_api(final_list_to_check)
 
         if not live_prices:
@@ -70,11 +83,10 @@ async def check_active_signals_job():
         if not active_signals:
             return
             
-        # TP/SL کی جانچ (اس میں کوئی تبدیلی نہیں)
+        # TP/SL کی جانچ
         for signal in active_signals:
             current_price = live_prices.get(signal.symbol)
             if current_price is None:
-                # اگر کسی وجہ سے اس سگنل کی قیمت نہیں ملی تو اسے نظر انداز کریں
                 continue
 
             outcome = None
@@ -108,4 +120,4 @@ async def check_active_signals_job():
     finally:
         if db.is_active:
             db.close()
-
+                
