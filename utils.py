@@ -32,6 +32,10 @@ MARKET_STATE_FILE = "market_state.json"
 # شکار کی فہرست میں کتنے جوڑے ہونے چاہئیں
 HUNT_LIST_SIZE = 4 
 
+# ★★★ یہ دو لائنیں غائب تھیں - اب شامل کر دی گئی ہیں ★★★
+PRIMARY_TIMEFRAME = "15min"
+CANDLE_COUNT = 100
+
 def get_all_pairs() -> List[str]:
     """
     ہفتے کے دن کی بنیاد پر تمام ممکنہ جوڑوں کی فہرست واپس کرتا ہے۔
@@ -41,14 +45,12 @@ def get_all_pairs() -> List[str]:
         return CRYPTO_PAIRS_WEEKEND
     return PRIORITY_PAIRS_WEEKDAY + SECONDARY_PAIRS_WEEKDAY
 
-# ★★★ نیا فنکشن: صرف ترجیحی جوڑے حاصل کرنے کے لیے ★★★
 def get_priority_pairs() -> List[str]:
     """
     ہفتے کے دن کی بنیاد پر صرف ترجیحی جوڑوں کی فہرست واپس کرتا ہے۔
     """
     today = datetime.utcnow().weekday()
     if today >= 5: # ہفتہ اور اتوار
-        # ویک اینڈ پر تمام کرپٹو جوڑے ترجیحی ہیں
         return CRYPTO_PAIRS_WEEKEND
     return PRIORITY_PAIRS_WEEKDAY
 
@@ -78,7 +80,6 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     
     hunt_list = []
     
-    # سطح 1: ترجیحی جوڑوں کو چیک کریں جو فارغ ہیں
     priority_pairs = get_priority_pairs()
     for pair in priority_pairs:
         if pair not in active_symbols:
@@ -86,10 +87,8 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     
     logger.info(f"ترجیحی جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
 
-    # سطح 2: اگر فہرست میں جگہ ہے، تو سب سے زیادہ حرکت والے ثانوی جوڑوں کو شامل کریں
     if len(hunt_list) < HUNT_LIST_SIZE:
         secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
-        # حرکت والے جوڑوں کو ترجیحی ترتیب میں شامل کریں
         for pair in sorted_by_volatility:
             if len(hunt_list) >= HUNT_LIST_SIZE: break
             if pair in secondary_pairs and pair not in hunt_list and pair not in active_symbols:
@@ -97,7 +96,6 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     
     logger.info(f"حرکت والے جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
 
-    # سطح 3: اگر فہرست اب بھی خالی ہے، تو باقی تمام فارغ ثانوی جوڑوں میں سے شامل کریں
     if len(hunt_list) < HUNT_LIST_SIZE:
         all_secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
         for pair in all_secondary_pairs:
@@ -190,3 +188,4 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
     except Exception as e:
         logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
+    
