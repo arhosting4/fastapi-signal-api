@@ -1,15 +1,17 @@
 # filename: key_manager.py
+
 import os
 import time
 import logging
 from typing import List, Optional, Dict
+from collections import deque # ★★★ deque کو امپورٹ کریں گے ★★★
 
 logger = logging.getLogger(__name__)
 
 class KeyManager:
     def __init__(self):
-        self.keys: List[str] = []
-        # ★★★ اب یہ ڈکشنری کلید کے ساتھ اس کی پابندی ختم ہونے کا وقت (timestamp) محفوظ کرے گی ★★★
+        # ★★★ اب ہم ایک deque استعمال کریں گے جو گھومنے کے لیے بہترین ہے ★★★
+        self.keys: deque[str] = deque()
         self.limited_keys: Dict[str, float] = {}
         self.load_keys_robustly()
 
@@ -35,34 +37,44 @@ class KeyManager:
                 i += 1
             else:
                 break
-
-        self.keys = list(found_keys)
+        
+        # ★★★ فہرست کو deque میں تبدیل کریں ★★★
+        self.keys = deque(list(found_keys))
         if not self.keys:
-            logger.error("کوئی بھی Twelve Data API کلید لوڈ نہیں ہوئی۔ براہ کرم TWELVE_DATA_API_KEYS ماحول کا متغیر سیٹ کریں۔")
+            logger.error("کوئی بھی Twelve Data API کلید لوڈ نہیں ہوئی۔")
         else:
             logger.info(f"KeyManager شروع کیا گیا: {len(self.keys)} منفرد API کلیدیں ملیں۔")
 
+    # ==============================================================================
+    # ★★★ نیا اور بہتر، حقیقی راؤنڈ روبن والا get_api_key فنکشن ★★★
+    # ==============================================================================
     def get_api_key(self) -> Optional[str]:
         """
-        ایک دستیاب API کلید فراہم کرتا ہے جو محدود نہ ہو۔
+        ایک دستیاب API کلید راؤنڈ روبن طریقے سے فراہم کرتا ہے۔
         یہ محدود کیز کو بھی چیک کرتا ہے کہ آیا ان کی پابندی کا وقت ختم ہو گیا ہے۔
         """
         current_time = time.time()
         
         # پہلے محدود کیز کو صاف کریں جن کا وقت ختم ہو گیا ہے
-        # نوٹ: یہ ایک کاپی پر iterate کرتا ہے تاکہ ڈکشنری کو دوران iteration تبدیل کیا جا سکے
         for key, expiry_time in list(self.limited_keys.items()):
             if current_time > expiry_time:
                 del self.limited_keys[key]
                 logger.info(f"API کلید {key[:8]}... کی پابندی ختم ہو گئی۔ اسے دوبارہ دستیاب کیا جا رہا ہے۔")
 
-        # اب ایک دستیاب کلید تلاش کریں
-        for key in self.keys:
+        if not self.keys:
+            logger.error("کوئی API کلید دستیاب نہیں ہے۔")
+            return None
+
+        # تمام کیز کو چیک کرنے کے لیے ایک چکر لگائیں
+        for _ in range(len(self.keys)):
+            key = self.keys[0] # پہلی کلید حاصل کریں
+            self.keys.rotate(-1) # ★★★ کلیدوں کو گھمائیں تاکہ اگلی بار دوسری کلید آئے ★★★
+
             if key not in self.limited_keys:
+                logger.info(f"راؤنڈ روبن: کلید {key[:8]}... فراہم کی گئی۔")
                 return key
         
         logger.warning(f"تمام {len(self.keys)} API کیز فی الحال محدود ہیں۔")
-        # سب سے جلد دستیاب ہونے والی کلید کا انتظار کا وقت بتائیں
         if self.limited_keys:
             next_available_time = min(self.limited_keys.values())
             wait_seconds = next_available_time - current_time
@@ -74,10 +86,12 @@ class KeyManager:
         """
         ایک کلید کو مخصوص مدت کے لیے محدود کے طور پر نشان زد کرتا ہے۔
         """
-        if key in self.keys:
-            expiry_time = time.time() + duration_seconds
-            self.limited_keys[key] = expiry_time
-            logger.warning(f"API کلید {key[:8]}... کو {duration_seconds} سیکنڈ کے لیے محدود کر دیا گیا ہے۔")
+        if key in self.limited_keys: # اگر پہلے سے محدود ہے تو کچھ نہ کریں
+            return
+            
+        expiry_time = time.time() + duration_seconds
+        self.limited_keys[key] = expiry_time
+        logger.warning(f"API کلید {key[:8]}... کو {duration_seconds} سیکنڈ کے لیے محدود کر دیا گیا ہے۔")
 
 # سنگلٹن مثال
 key_manager = KeyManager()
