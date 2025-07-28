@@ -21,6 +21,7 @@ PRIMARY_TIMEFRAME = "15min"
 def get_available_pairs() -> List[str]:
     """ہفتے کے دن کی بنیاد پر دستیاب جوڑے واپس کرتا ہے۔"""
     today = datetime.utcnow().weekday()
+    # ہفتہ (5) اور اتوار (6) کو صرف کرپٹو
     if today >= 5: 
         return AVAILABLE_PAIRS_WEEKEND
     return AVAILABLE_PAIRS_WEEKDAY
@@ -39,10 +40,14 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=15)
         
+        # ==============================================================================
+        # ★★★ اپ ڈیٹ شدہ خرابی کی ہینڈلنگ ★★★
+        # ==============================================================================
         if response.status_code == 429:
-            logger.warning(f"API کلید کی حد ختم ہو گئی۔ کلید کو گھمایا جا رہا ہے۔")
-            key_manager.mark_key_as_limited(api_key)
-            await asyncio.sleep(1)
+            logger.warning(f"API کلید {api_key[:8]}... کی حد ختم ہو گئی۔ اسے طویل مدت کے لیے محدود کیا جا رہا ہے۔")
+            # key_manager کو بتائیں کہ یہ روزانہ کی حد کا مسئلہ ہے
+            key_manager.mark_key_as_limited(api_key, daily_limit_exceeded=True)
+            await asyncio.sleep(1) # دوبارہ کوشش کرنے سے پہلے تھوڑا انتظار کریں
             return await fetch_twelve_data_ohlc(symbol)
 
         response.raise_for_status()
@@ -54,15 +59,13 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
 
         validated_data = TwelveDataTimeSeries.model_validate(data)
         logger.info(f"[{symbol}] کے لیے کامیابی سے {len(validated_data.values)} کینڈلز حاصل کی گئیں۔")
+        # API سے ڈیٹا سیدھا آتا ہے، اسے الٹا کریں تاکہ تازہ ترین کینڈل آخر میں ہو
         return validated_data.values[::-1]
             
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# ==============================================================================
-# ★★★ یہ فنکشن غائب تھا اور تمام مسائل کی جڑ تھا ★★★
-# ==============================================================================
 async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, float]]:
     """
     دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین قیمتیں حاصل کرتا ہے۔
@@ -82,16 +85,21 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=10)
 
+        # ==============================================================================
+        # ★★★ اپ ڈیٹ شدہ خرابی کی ہینڈلنگ ★★★
+        # =================================-============================================
         if response.status_code == 429:
-            logger.warning(f"API کلید کی حد ختم ہو گئی۔ کلید کو گھمایا جا رہا ہے۔")
-            key_manager.mark_key_as_limited(api_key)
-            await asyncio.sleep(1)
+            logger.warning(f"API کلید {api_key[:8]}... کی حد ختم ہو گئی۔ اسے طویل مدت کے لیے محدود کیا جا رہا ہے۔")
+            # key_manager کو بتائیں کہ یہ روزانہ کی حد کا مسئلہ ہے
+            key_manager.mark_key_as_limited(api_key, daily_limit_exceeded=True)
+            await asyncio.sleep(1) # دوبارہ کوشش کرنے سے پہلے تھوڑا انتظار کریں
             return await get_current_prices_from_api(symbols)
 
         response.raise_for_status()
         data = response.json()
 
         prices = {}
+        # API کبھی ایک قیمت واپس کرتا ہے، کبھی ایک ڈکشنری
         if "price" in data and isinstance(data['price'], (int, float, str)):
             prices[symbols[0]] = float(data["price"])
         else:
