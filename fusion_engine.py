@@ -11,7 +11,10 @@ from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
-from supply_demand import get_market_structure_analysis
+# ★★★ یہ لائن غلط تھی ★★★
+# from supply_demand import get_market_structure_analysis  <-- پرانی، غلط لائن
+# ★★★ یہ نئی اور درست لائن ہے ★★★
+from level_analyzer import find_market_structure # ہم نے level_analyzer میں ایک نیا فنکشن شامل کیا ہے
 from schemas import Candle
 
 logger = logging.getLogger(__name__)
@@ -38,7 +41,8 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         pattern_data = detect_patterns(candle_dicts)
         risk_assessment = check_risk(candle_dicts)
         news_data = await get_news_analysis_for_symbol(symbol)
-        market_structure = get_market_structure_analysis(candle_dicts)
+        # ★★★ یہاں بھی درست فنکشن کو کال کریں ★★★
+        market_structure = find_market_structure(candle_dicts)
 
         final_risk_status = risk_assessment.get("status", "Normal")
         if news_data.get("impact") == "High":
@@ -50,9 +54,10 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         )
         tier = get_tier(confidence, final_risk_status)
         
+        # TP/SL کا حساب کتاب اب strategybot کے ذریعے ہوتا ہے، جو level_analyzer کو کال کرتا ہے
         tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
         if not tp_sl_data:
-            return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
+            return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
         
         tp, sl = tp_sl_data
 
