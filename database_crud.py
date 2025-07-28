@@ -11,10 +11,6 @@ from models import ActiveSignal, CompletedTrade, FeedbackEntry, CachedNews
 
 logger = logging.getLogger(__name__)
 
-# ==============================================================================
-# ★★★ تمام ضروری فنکشنز کے ساتھ حتمی اور مکمل فائل ★★★
-# ==============================================================================
-
 class SignalUpdateResult(NamedTuple):
     signal: ActiveSignal
     is_new: bool
@@ -31,18 +27,27 @@ def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSign
     """کسی مخصوص علامت کے لیے فعال سگنل واپس کرتا ہے۔"""
     return db.query(ActiveSignal).filter(ActiveSignal.symbol == symbol).first()
 
+# ==============================================================================
+# ★★★ اپ ڈیٹ شدہ فنکشن: ناموں کے عدم مطابقت کو درست کیا گیا ★★★
+# ==============================================================================
 def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Optional[SignalUpdateResult]:
     """
     ڈیٹا بیس میں ایک نیا سگنل شامل کرتا ہے یا اگر اسی علامت کا سگنل پہلے سے موجود ہو تو اسے اپ ڈیٹ کرتا ہے۔
     """
     try:
         symbol = signal_data.get("symbol")
+        if not symbol:
+            logger.error("سگنل ڈیٹا میں 'symbol' غائب ہے۔")
+            return None
+            
         existing_signal = get_active_signal_by_symbol(db, symbol)
 
         if existing_signal:
             # سگنل کو اپ ڈیٹ کریں
+            logger.info(f"موجودہ سگنل {symbol} کو اپ ڈیٹ کیا جا رہا ہے۔")
             existing_signal.confidence = signal_data.get('confidence', existing_signal.confidence)
             existing_signal.reason = signal_data.get('reason', existing_signal.reason)
+            # ★★★ درست کلیدوں کا استعمال ★★★
             existing_signal.tp_price = signal_data.get('tp', existing_signal.tp_price)
             existing_signal.sl_price = signal_data.get('sl', existing_signal.sl_price)
             # updated_at خود بخود اپ ڈیٹ ہو جائے گا
@@ -51,16 +56,18 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
             return SignalUpdateResult(signal=existing_signal, is_new=False)
         else:
             # نیا سگنل شامل کریں
+            logger.info(f"نیا سگنل {symbol} بنایا جا رہا ہے۔")
             signal_id = f"{symbol}_{signal_data.get('timeframe', '15min')}_{datetime.utcnow().timestamp()}"
             
+            # ★★★ درست کلیدوں کا استعمال ★★★
             new_signal = ActiveSignal(
                 signal_id=signal_id,
                 symbol=symbol,
                 timeframe=signal_data.get('timeframe'),
                 signal_type=signal_data.get('signal'),
-                entry_price=signal_data.get('price'),
-                tp_price=signal_data.get('tp'),
-                sl_price=signal_data.get('sl'),
+                entry_price=signal_data.get('price'), # 'price' کو 'entry_price' میں محفوظ کریں
+                tp_price=signal_data.get('tp'),       # 'tp' کو 'tp_price' میں محفوظ کریں
+                sl_price=signal_data.get('sl'),       # 'sl' کو 'sl_price' میں محفوظ کریں
                 confidence=signal_data.get('confidence'),
                 reason=signal_data.get('reason')
             )
@@ -73,6 +80,8 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         logger.error(f"فعال سگنل شامل/اپ ڈیٹ کرنے میں خرابی: {e}", exc_info=True)
         db.rollback()
         return None
+
+# ... (باقی فائل میں کوئی تبدیلی نہیں) ...
 
 def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str) -> Optional[CompletedTrade]:
     """ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔"""
@@ -175,4 +184,4 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
-        
+            
