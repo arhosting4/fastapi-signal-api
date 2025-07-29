@@ -1,6 +1,6 @@
 # filename: feedback_checker.py
 
-import asyncio
+import asyncio  # ★★★ asyncio امپورٹ کریں ★★★
 import json
 import logging
 from typing import List, Dict, Any
@@ -86,17 +86,18 @@ async def check_active_signals_job():
                     reason_for_closure = "sl_hit"
 
             if outcome and close_price is not None:
-                logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
+                logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا۔ پس منظر میں الرٹ بھیجا جا رہا ہے۔ ★★★")
                 
-                # ★★★ اب await کے ساتھ کال کریں ★★★
+                # ★★★ پس منظر میں الرٹ بھیجیں ★★★
+                asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
+
+                # باقی کام معمول کے مطابق چلیں گے
                 await trainerai.learn_from_outcome(db, signal, outcome)
                 
                 feedback = "correct" if outcome == "tp_hit" else "incorrect"
                 crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
                 crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
                 crud.delete_active_signal_only(db, signal.signal_id) 
-                
-                await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}})
                 
     except Exception as e:
         logger.error(f"فعال سگنلز کی جانچ کے دوران مہلک خرابی: {e}", exc_info=True)
