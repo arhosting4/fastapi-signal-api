@@ -67,7 +67,7 @@ def find_market_structure(candles: List[Dict], window: int = 15) -> Dict[str, st
 
     if recent_highs.iloc[-1] > recent_highs.iloc[-2] and recent_lows.iloc[-1] > recent_lows.iloc[-2]:
         return {"trend": "اوپر کا رجحان"}
-    elif recent_highs.iloc[-1] < recent_highs.iloc[-2] and recent_lows.iloc[-1] < recent_lows.iloc[-2]:
+    elif recent_highs.iloc[-1] < recent_lows.iloc[-2] and recent_lows.iloc[-1] < recent_lows.iloc[-2]:
         return {"trend": "نیچے کا رجحان"}
     else:
         return {"trend": "رینجنگ"}
@@ -94,7 +94,6 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
     # --- ہر لیول کا کنفلونس اسکور نکالیں ---
     for level in all_levels:
         score = 0
-        # قیمت کی حد کو متحرک بنائیں
         proximity_threshold = last_close * 0.001 
         if any(abs(level - p) < proximity_threshold for p in pivots): score += 3
         if any(abs(level - s) < proximity_threshold for s in swings['highs'] + swings['lows']): score += 3
@@ -118,9 +117,7 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
         return None
 
     # --- بہترین لیول کا انتخاب ---
-    # TP: سب سے قریبی اعلیٰ اسکور والا لیول
     final_tp = min(strong_tp_levels.keys(), key=lambda k: abs(k - last_close))
-    # SL: سب سے قریبی اعلیٰ اسکور والا لیول
     final_sl = min(strong_sl_levels.keys(), key=lambda k: abs(k - last_close))
 
     # --- حتمی رسک/ریوارڈ کی جانچ ---
@@ -135,4 +132,4 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
 
     logger.info(f"اعلیٰ کنفلونس TP/SL ملا: TP={final_tp:.5f} (اسکور: {strong_tp_levels.get(final_tp, 0)}), SL={final_sl:.5f} (اسکور: {strong_sl_levels.get(final_sl, 0)})")
     return final_tp, final_sl
-                    
+    
