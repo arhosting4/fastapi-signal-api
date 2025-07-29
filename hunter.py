@@ -13,13 +13,9 @@ from fusion_engine import generate_final_signal
 from messenger import send_telegram_alert, send_signal_update_alert
 from models import SessionLocal
 from websocket_manager import manager
+from config import HUNTING_SETTINGS # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
 
 logger = logging.getLogger(__name__)
-
-# ★★★ نئی ذہین حد بندی کی کنفیگریشن ★★★
-MAX_FOREX_SIGNALS = 4
-MAX_CRYPTO_SIGNALS = 2
-FINAL_CONFIDENCE_THRESHOLD = 70.0
 
 async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
     """ایک تجارتی جوڑے کا تجزیہ کرتا ہے اور اگر کوئی سگنل ملے تو اسے واپس کرتا ہے۔"""
@@ -39,10 +35,11 @@ async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
         )
         logger.info(log_message)
         
-        if confidence >= FINAL_CONFIDENCE_THRESHOLD:
+        # ★★★ کنفیگریشن فائل سے تھریشولڈ استعمال کریں ★★★
+        if confidence >= HUNTING_SETTINGS["FINAL_CONFIDENCE_THRESHOLD"]:
             return analysis_result
         else:
-            logger.info(f"📊 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) تھریشولڈ ({FINAL_CONFIDENCE_THRESHOLD}%) سے کم ہے۔")
+            logger.info(f"📊 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) تھریشولڈ ({HUNTING_SETTINGS['FINAL_CONFIDENCE_THRESHOLD']}%) سے کم ہے۔")
             
     elif analysis_result:
         logger.info(f"📊 [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
@@ -57,12 +54,15 @@ async def hunt_for_signals_job():
     try:
         active_signals = crud.get_all_active_signals_from_db(db)
         
-        # ★★★ ذہین حد بندی کا نفاذ ★★★
+        # ★★★ کنفیگریشن فائل سے حدیں استعمال کریں ★★★
+        max_forex = HUNTING_SETTINGS["MAX_FOREX_SIGNALS"]
+        max_crypto = HUNTING_SETTINGS["MAX_CRYPTO_SIGNALS"]
+        
         active_forex_count = sum(1 for s in active_signals if "USD" in s.symbol and "BTC" not in s.symbol and "ETH" not in s.symbol)
         active_crypto_count = sum(1 for s in active_signals if "BTC" in s.symbol or "ETH" in s.symbol)
 
-        if active_forex_count >= MAX_FOREX_SIGNALS and active_crypto_count >= MAX_CRYPTO_SIGNALS:
-            logger.info(f"تمام سگنلز کی حد پوری ہو گئی (فاریکس: {active_forex_count}/{MAX_FOREX_SIGNALS}, کرپٹو: {active_crypto_count}/{MAX_CRYPTO_SIGNALS})۔ شکار روکا جا رہا ہے۔")
+        if active_forex_count >= max_forex and active_crypto_count >= max_crypto:
+            logger.info(f"تمام سگنلز کی حد پوری ہو گئی (فاریکس: {active_forex_count}/{max_forex}, کرپٹو: {active_crypto_count}/{max_crypto})۔ شکار روکا جا رہا ہے۔")
             return
 
         pairs_to_hunt = get_pairs_to_hunt([s.symbol for s in active_signals])
@@ -71,12 +71,11 @@ async def hunt_for_signals_job():
         for pair in pairs_to_hunt:
             is_crypto = "BTC" in pair or "ETH" in pair or "SOL" in pair
             
-            # ہر قسم کی حد کو انفرادی طور پر چیک کریں
-            if is_crypto and active_crypto_count >= MAX_CRYPTO_SIGNALS:
-                logger.info(f"کرپٹو سگنلز کی حد ({active_crypto_count}/{MAX_CRYPTO_SIGNALS}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
+            if is_crypto and active_crypto_count >= max_crypto:
+                logger.info(f"کرپٹو سگنلز کی حد ({active_crypto_count}/{max_crypto}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
                 continue
-            if not is_crypto and active_forex_count >= MAX_FOREX_SIGNALS:
-                logger.info(f"فاریکس سگنلز کی حد ({active_forex_count}/{MAX_FOREX_SIGNALS}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
+            if not is_crypto and active_forex_count >= max_forex:
+                logger.info(f"فاریکس سگنلز کی حد ({active_forex_count}/{max_forex}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
                 continue
 
             analysis_result = await analyze_pair(db, pair)
@@ -89,7 +88,6 @@ async def hunt_for_signals_job():
                     
                     if update_result.is_new:
                         logger.info(f"🎯 ★★★ نیا سگنل ملا اور ڈیٹا بیس میں محفوظ کیا گیا: {signal_obj['symbol']} ★★★")
-                        # نئے سگنل ملنے پر کاؤنٹ کو اپ ڈیٹ کریں
                         if is_crypto: active_crypto_count += 1
                         else: active_forex_count += 1
                         
@@ -106,4 +104,4 @@ async def hunt_for_signals_job():
         if db.is_active:
             db.close()
         logger.info("🏹 ذہین سگنل کی تلاش مکمل ہوئی۔")
-        
+            
