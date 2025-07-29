@@ -11,10 +11,7 @@ from sentinel import get_news_analysis_for_symbol
 from reasonbot import generate_reason
 from trainerai import get_confidence
 from tierbot import get_tier
-# ★★★ یہ لائن غلط تھی ★★★
-# from supply_demand import get_market_structure_analysis  <-- پرانی، غلط لائن
-# ★★★ یہ نئی اور درست لائن ہے ★★★
-from level_analyzer import find_market_structure # ہم نے level_analyzer میں ایک نیا فنکشن شامل کیا ہے
+from level_analyzer import find_market_structure
 from schemas import Candle
 
 logger = logging.getLogger(__name__)
@@ -22,6 +19,9 @@ logger = logging.getLogger(__name__)
 SIGNAL_SCORE_THRESHOLD = 40.0
 
 async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
+    """
+    تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
+    """
     try:
         candle_dicts = [c.model_dump() for c in candles]
 
@@ -41,7 +41,6 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         pattern_data = detect_patterns(candle_dicts)
         risk_assessment = check_risk(candle_dicts)
         news_data = await get_news_analysis_for_symbol(symbol)
-        # ★★★ یہاں بھی درست فنکشن کو کال کریں ★★★
         market_structure = find_market_structure(candle_dicts)
 
         final_risk_status = risk_assessment.get("status", "Normal")
@@ -54,7 +53,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         )
         tier = get_tier(confidence, final_risk_status)
         
-        # TP/SL کا حساب کتاب اب strategybot کے ذریعے ہوتا ہے، جو level_analyzer کو کال کرتا ہے
+        # TP/SL کا حساب کتاب اب strategybot کے ذریعے ہوتا ہے، جس میں متبادل حکمت عملی بھی شامل ہے
         tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
         if not tp_sl_data:
             return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
@@ -80,6 +79,8 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             "price": candle_dicts[-1]['close'],
             "tp": round(tp, 5),
             "sl": round(sl, 5),
+            # ★★★ AI کی یادداشت کے لیے نیا ڈیٹا ★★★
+            "component_scores": indicators.get("component_scores", {})
         }
 
     except Exception as e:
