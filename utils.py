@@ -10,31 +10,11 @@ from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
+from config import TRADING_PAIRS, API_CONFIG # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
 
 logger = logging.getLogger(__name__)
 
-# ==============================================================================
-# ★★★ اپ ڈیٹ شدہ اسٹریٹجک پیئر مینجمنٹ سسٹم ★★★
-# ==============================================================================
-
-# بنیادی جوڑے جنہیں ہمیشہ ترجیح دی جائے گی
-PRIORITY_PAIRS_WEEKDAY = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
-# دیگر جوڑے جو بیک اپ کے طور پر کام کریں گے
-SECONDARY_PAIRS_WEEKDAY = [
-    "AUD/USD", "USD/JPY", "USD/CAD", "NZD/USD", "USD/CHF", 
-    "EUR/JPY", "GBP/JPY", "ETH/USD"
-]
-# ہفتے کے آخر کے لیے جوڑے
-CRYPTO_PAIRS_WEEKEND = ["BTC/USD", "ETH/USD", "SOL/USD"]
-
-# مارکیٹ کی حالت کو پڑھنے کے لیے فائل کا نام
 MARKET_STATE_FILE = "market_state.json"
-# شکار کی فہرست میں کتنے جوڑے ہونے چاہئیں
-HUNT_LIST_SIZE = 4 
-
-# ★★★ یہ دو لائنیں غائب تھیں - اب شامل کر دی گئی ہیں ★★★
-PRIMARY_TIMEFRAME = "15min"
-CANDLE_COUNT = 100
 
 def get_all_pairs() -> List[str]:
     """
@@ -42,8 +22,8 @@ def get_all_pairs() -> List[str]:
     """
     today = datetime.utcnow().weekday()
     if today >= 5: # ہفتہ (5) اور اتوار (6)
-        return CRYPTO_PAIRS_WEEKEND
-    return PRIORITY_PAIRS_WEEKDAY + SECONDARY_PAIRS_WEEKDAY
+        return TRADING_PAIRS["CRYPTO_PAIRS_WEEKEND"]
+    return TRADING_PAIRS["PRIORITY_PAIRS_WEEKDAY"] + TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"]
 
 def get_priority_pairs() -> List[str]:
     """
@@ -51,8 +31,8 @@ def get_priority_pairs() -> List[str]:
     """
     today = datetime.utcnow().weekday()
     if today >= 5: # ہفتہ اور اتوار
-        return CRYPTO_PAIRS_WEEKEND
-    return PRIORITY_PAIRS_WEEKDAY
+        return TRADING_PAIRS["CRYPTO_PAIRS_WEEKEND"]
+    return TRADING_PAIRS["PRIORITY_PAIRS_WEEKDAY"]
 
 def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     """
@@ -86,24 +66,26 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
             hunt_list.append(pair)
     
     logger.info(f"ترجیحی جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
+    
+    hunt_list_size = TRADING_PAIRS["HUNT_LIST_SIZE"]
 
-    if len(hunt_list) < HUNT_LIST_SIZE:
-        secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
+    if len(hunt_list) < hunt_list_size:
+        secondary_pairs = TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"] if datetime.utcnow().weekday() < 5 else []
         for pair in sorted_by_volatility:
-            if len(hunt_list) >= HUNT_LIST_SIZE: break
+            if len(hunt_list) >= hunt_list_size: break
             if pair in secondary_pairs and pair not in hunt_list and pair not in active_symbols:
                 hunt_list.append(pair)
     
     logger.info(f"حرکت والے جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
 
-    if len(hunt_list) < HUNT_LIST_SIZE:
-        all_secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
+    if len(hunt_list) < hunt_list_size:
+        all_secondary_pairs = TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"] if datetime.utcnow().weekday() < 5 else []
         for pair in all_secondary_pairs:
-            if len(hunt_list) >= HUNT_LIST_SIZE: break
+            if len(hunt_list) >= hunt_list_size: break
             if pair not in hunt_list and pair not in active_symbols:
                 hunt_list.append(pair)
 
-    final_hunt_list = hunt_list[:HUNT_LIST_SIZE]
+    final_hunt_list = hunt_list[:hunt_list_size]
     logger.info(f"حتمی شکار کی فہرست ({len(final_hunt_list)} جوڑے): {final_hunt_list}")
     return final_hunt_list
 
@@ -114,7 +96,11 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
     
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
+    # ★★★ کنفیگریشن فائل سے پیرامیٹرز استعمال کریں ★★★
+    timeframe = API_CONFIG["PRIMARY_TIMEFRAME"]
+    candle_count = API_CONFIG["CANDLE_COUNT"]
+    
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&outputsize={candle_count}&apikey={api_key}"
     logger.info(f"[{symbol}] کے لیے Twelve Data API سے ڈیٹا حاصل کیا جا رہا ہے (کلید: {api_key[:8]}...)")
     
     try:
@@ -171,21 +157,4 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         data = response.json()
 
         prices = {}
-        if "price" in data and isinstance(data['price'], (int, float, str)):
-            prices[symbols[0]] = float(data["price"])
-        else:
-            for symbol, details in data.items():
-                if isinstance(details, dict) and "price" in details:
-                    prices[symbol] = float(details["price"])
-        
-        if prices:
-            logger.info(f"کامیابی سے {len(prices)} قیمتیں حاصل اور پارس کی گئیں۔")
-            return prices
-        else:
-            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن پارس نہیں کی جا سکیں: {data}")
-            return None
-
-    except Exception as e:
-        logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
-        return None
     
