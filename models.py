@@ -32,13 +32,13 @@ class ActiveSignal(Base):
     sl_price = Column(Float)
     confidence = Column(Float)
     reason = Column(String)
+    # ★★★ نیا کالم ★★★
+    component_scores = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # ★★★ اپ ڈیٹ شدہ فنکشن ★★★
     def as_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        # datetime آبجیکٹس کو ISO اسٹرنگ میں تبدیل کریں
         if isinstance(d.get('created_at'), datetime):
             d['created_at'] = d['created_at'].isoformat()
         if isinstance(d.get('updated_at'), datetime):
@@ -55,18 +55,18 @@ class CompletedTrade(Base):
     entry_price = Column(Float)
     tp_price = Column(Float)
     sl_price = Column(Float)
-    outcome = Column(String, index=True)
+    # ★★★ نئے کالمز ★★★
+    close_price = Column(Float, nullable=True)
+    reason_for_closure = Column(String, nullable=True) # e.g., "tp_hit", "sl_hit", "manual_close"
+    outcome = Column(String, index=True) # outcome اب بھی رکھا گیا ہے تاکہ فلٹرنگ آسان ہو
     confidence = Column(Float)
     reason = Column(String)
     closed_at = Column(DateTime, default=datetime.utcnow)
     
-    # ★★★ اپ ڈیٹ شدہ فنکشن ★★★
     def as_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        # datetime آبجیکٹ کو ISO اسٹرنگ میں تبدیل کریں
         if isinstance(d.get('closed_at'), datetime):
             d['closed_at'] = d['closed_at'].isoformat()
-        # احتیاط کے طور پر created_at/updated_at بھی شامل کر سکتے ہیں اگر وہ مستقبل میں شامل کیے جائیں
         if isinstance(d.get('created_at'), datetime):
             d['created_at'] = d['created_at'].isoformat()
         if isinstance(d.get('updated_at'), datetime):
@@ -103,4 +103,4 @@ def create_db_and_tables():
         time.sleep(2)
     except Exception as e:
         logger.error(f"ڈیٹا بیس بنانے میں خرابی: {e}", exc_info=True)
-        
+                            
