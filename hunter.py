@@ -1,6 +1,6 @@
 # filename: hunter.py
 
-import asyncio  # ★★★ asyncio امپورٹ کریں ★★★
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -13,13 +13,11 @@ from fusion_engine import generate_final_signal
 from messenger import send_telegram_alert, send_signal_update_alert
 from models import SessionLocal
 from websocket_manager import manager
-from config import SIGNAL_LIMITS, STRATEGY
+from config import STRATEGY
 
 logger = logging.getLogger(__name__)
 
-# کنفیگریشن سے متغیرات حاصل کریں
-MAX_FOREX_SIGNALS = SIGNAL_LIMITS["MAX_FOREX_SIGNALS"]
-MAX_CRYPTO_SIGNALS = SIGNAL_LIMITS["MAX_CRYPTO_SIGNALS"]
+# --- کنفیگریشن سے متغیرات ---
 FINAL_CONFIDENCE_THRESHOLD = STRATEGY["FINAL_CONFIDENCE_THRESHOLD"]
 
 async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
@@ -52,32 +50,20 @@ async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
 
 async def hunt_for_signals_job():
     """
-    سگنل کی تلاش کا مرکزی کام جو اب فاریکس اور کرپٹو کے لیے الگ الگ حدیں استعمال کرتا ہے۔
+    سگنل کی تلاش کا مرکزی کام جو اب سگنلز کی تعداد پر کوئی حد نہیں لگاتا۔
     """
     db = SessionLocal()
     try:
         active_signals = crud.get_all_active_signals_from_db(db)
         
-        active_forex_count = sum(1 for s in active_signals if "USD" in s.symbol and "BTC" not in s.symbol and "ETH" not in s.symbol)
-        active_crypto_count = sum(1 for s in active_signals if "BTC" in s.symbol or "ETH" in s.symbol)
-
-        if active_forex_count >= MAX_FOREX_SIGNALS and active_crypto_count >= MAX_CRYPTO_SIGNALS:
-            logger.info(f"تمام سگنلز کی حد پوری ہو گئی (فاریکس: {active_forex_count}/{MAX_FOREX_SIGNALS}, کرپٹو: {active_crypto_count}/{MAX_CRYPTO_SIGNALS})۔ شکار روکا جا رہا ہے۔")
+        pairs_to_hunt = get_pairs_to_hunt([s.symbol for s in active_signals])
+        if not pairs_to_hunt:
+            logger.info("شکار کے لیے کوئی نئے جوڑے دستیاب نہیں۔ تلاش روکی جا رہی ہے۔")
             return
 
-        pairs_to_hunt = get_pairs_to_hunt([s.symbol for s in active_signals])
         logger.info(f"🏹 ذہین سگنل کی تلاش شروع: ان جوڑوں کا تجزیہ کیا جائے گا: {pairs_to_hunt}")
         
         for pair in pairs_to_hunt:
-            is_crypto = "BTC" in pair or "ETH" in pair or "SOL" in pair
-            
-            if is_crypto and active_crypto_count >= MAX_CRYPTO_SIGNALS:
-                logger.info(f"کرپٹو سگنلز کی حد ({active_crypto_count}/{MAX_CRYPTO_SIGNALS}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
-                continue
-            if not is_crypto and active_forex_count >= MAX_FOREX_SIGNALS:
-                logger.info(f"فاریکس سگنلز کی حد ({active_forex_count}/{MAX_FOREX_SIGNALS}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
-                continue
-
             analysis_result = await analyze_pair(db, pair)
             
             if analysis_result:
@@ -88,15 +74,10 @@ async def hunt_for_signals_job():
                     
                     if update_result.is_new:
                         logger.info(f"🎯 ★★★ نیا سگنل ملا۔ پس منظر میں الرٹ بھیجا جا رہا ہے: {signal_obj['symbol']} ★★★")
-                        # ★★★ پس منظر میں الرٹ بھیجیں ★★★
                         asyncio.create_task(send_telegram_alert(signal_obj))
                         asyncio.create_task(manager.broadcast({"type": "new_signal", "data": signal_obj}))
-                        
-                        if is_crypto: active_crypto_count += 1
-                        else: active_forex_count += 1
                     else:
                         logger.info(f"🔄 ★★★ موجودہ سگنل اپ ڈیٹ ہوا۔ پس منظر میں الرٹ بھیجا جا رہا ہے: {signal_obj['symbol']} ★★★")
-                        # ★★★ پس منظر میں الرٹ بھیجیں ★★★
                         asyncio.create_task(send_signal_update_alert(signal_obj))
                         asyncio.create_task(manager.broadcast({"type": "signal_updated", "data": signal_obj}))
 
