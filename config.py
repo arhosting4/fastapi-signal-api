@@ -11,7 +11,7 @@ API_CONFIG = {
     "CANDLE_COUNT": 100,
 }
 
-# --- ٹریڈنگ پیرامیٹرز (★★★ اپ ڈیٹ شدہ ★★★) ---
+# --- ٹریڈنگ پیرامیٹرز ---
 # اب ہم صرف 14 منتخب جوڑوں پر توجہ مرکوز کریں گے۔
 TRADING_PAIRS = {
     "PRIMARY_PAIRS": [
@@ -21,14 +21,16 @@ TRADING_PAIRS = {
     "CRYPTO_PAIRS": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
 }
 
-# --- سگنل جنریشن کی حکمت عملی (★★★ اپ ڈیٹ شدہ ★★★) ---
+# --- سگنل جنریشن کی حکمت عملی ---
 STRATEGY = {
     "SIGNAL_SCORE_THRESHOLD": 40.0,
     "FINAL_CONFIDENCE_THRESHOLD": 70.0,
     "MIN_RISK_REWARD_RATIO": 1.5,
     # نیا پیرامیٹر: کم از کم اتنی فیصد حرکت پر گہرا تجزیہ کیا جائے گا۔
-    # اس سے ہم غیر ضروری API کالز سے بچیں گے۔
     "MIN_CHANGE_PERCENT_FOR_ANALYSIS": 0.10, # مثال: 0.10%
+    
+    # ★★★ خرابی کو ٹھیک کرنے کے لیے یہ لائن واپس شامل کی گئی ہے ★★★
+    "MIN_CONFLUENCE_SCORE": 4,
 }
 
 # --- فیڈ بیک چیکر ---
