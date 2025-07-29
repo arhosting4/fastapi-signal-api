@@ -13,10 +13,9 @@ from trainerai import get_confidence
 from tierbot import get_tier
 from level_analyzer import find_market_structure
 from schemas import Candle
+from config import TECHNICAL_ANALYSIS, HUNTING_SETTINGS # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
 
 logger = logging.getLogger(__name__)
-
-SIGNAL_SCORE_THRESHOLD = 40.0
 
 async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
     """
@@ -30,13 +29,15 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         indicators = tech_analysis.get("indicators", {})
 
         core_signal = "wait"
-        if technical_score >= SIGNAL_SCORE_THRESHOLD:
+        # ★★★ کنفیگریشن فائل سے تھریشولڈ استعمال کریں ★★★
+        signal_threshold = TECHNICAL_ANALYSIS["SIGNAL_SCORE_THRESHOLD"]
+        if technical_score >= signal_threshold:
             core_signal = "buy"
-        elif technical_score <= -SIGNAL_SCORE_THRESHOLD:
+        elif technical_score <= -signal_threshold:
             core_signal = "sell"
         
         if core_signal == "wait":
-            return {"status": "no-signal", "reason": f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ ({SIGNAL_SCORE_THRESHOLD}) سے کم ہے۔"}
+            return {"status": "no-signal", "reason": f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ ({signal_threshold}) سے کم ہے۔"}
 
         pattern_data = detect_patterns(candle_dicts)
         risk_assessment = check_risk(candle_dicts)
@@ -53,12 +54,24 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         )
         tier = get_tier(confidence, final_risk_status)
         
-        # TP/SL کا حساب کتاب اب strategybot کے ذریعے ہوتا ہے، جس میں متبادل حکمت عملی بھی شامل ہے
         tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
         if not tp_sl_data:
             return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
         
         tp, sl = tp_sl_data
+
+        # ★★★ رسک/ریوارڈ تناسب کی جانچ (اصلاح 2) ★★★
+        try:
+            last_close = candle_dicts[-1]['close']
+            reward = abs(tp - last_close)
+            risk = abs(last_close - sl)
+            risk_reward_ratio = reward / risk if risk > 0 else 0
+            
+            min_ratio = HUNTING_SETTINGS["MIN_RISK_REWARD_RATIO"]
+            if risk_reward_ratio < min_ratio:
+                return {"status": "no-signal", "reason": f"رسک/ریوارڈ تناسب ({risk_reward_ratio:.2f}) کم از کم حد ({min_ratio}) سے کم ہے۔"}
+        except (ZeroDivisionError, IndexError):
+            pass # اگر حساب نہ ہو سکے تو آگے بڑھیں
 
         reason = generate_reason(
             core_signal, pattern_data, final_risk_status,
@@ -79,7 +92,6 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             "price": candle_dicts[-1]['close'],
             "tp": round(tp, 5),
             "sl": round(sl, 5),
-            # ★★★ AI کی یادداشت کے لیے نیا ڈیٹا ★★★
             "component_scores": indicators.get("component_scores", {})
         }
 
