@@ -22,11 +22,16 @@ TRADING_PAIRS = {
     "HUNT_LIST_SIZE": 4,
 }
 
-# --- سگنل جنریشن کی حکمت عملی ---
+# --- سگنل جنریشن کی حکمت عملی (اپ ڈیٹ شدہ) ---
 STRATEGY = {
-    "SIGNAL_SCORE_THRESHOLD": 40.0,
-    "FINAL_CONFIDENCE_THRESHOLD": 70.0,
-    "MIN_RISK_REWARD_RATIO": 1.5,
+    # --- بنیادی سگنل فلٹر ---
+    "SIGNAL_SCORE_THRESHOLD": 50.0,  # تکنیکی اسکور کی حد کو 40 سے بڑھا کر 50 کر دیا گیا
+    "FINAL_CONFIDENCE_THRESHOLD": 75.0, # اعتماد کی حد کو 70 سے بڑھا کر 75 کر دیا گیا
+
+    # --- "A-Grade" ٹریڈ کے لیے سخت قوانین ---
+    "MIN_RISK_REWARD_RATIO": 2.5,  # رسک/ریوارڈ تناسب کو 2.0 سے بڑھا کر 2.5 کر دیا گیا
+    "MIN_CONFLUENCE_SCORE": 7,     # ★★★ نیا قانون: TP/SL لیول کا کم از کم کنفلونس اسکور 7 ہونا چاہیے
+    "REQUIRE_PATTERN_CONFIRMATION": True, # ★★★ نیا قانون: ٹریڈ کے لیے ایک موافق کینڈل اسٹک پیٹرن لازمی ہے
 }
 
 # --- فیڈ بیک چیکر ---
