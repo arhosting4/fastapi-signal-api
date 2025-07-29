@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_current_prices_from_api, update_market_state # ★★★ نیا فنکشن امپورٹ کریں ★★★
+from utils import get_current_prices_from_api, update_market_state
 from websocket_manager import manager
 import trainerai
 from config import FEEDBACK_CHECKER
@@ -52,7 +52,6 @@ async def check_active_signals_job():
             logger.warning("API سے کوئی قیمت حاصل نہیں ہوئی۔ جانچ روکی جا رہی ہے۔")
             return
 
-        # ★★★ مارکیٹ کی حالت کو اپ ڈیٹ کرنے کے لیے نئے فنکشن کا استعمال کریں ★★★
         update_market_state(live_prices)
         
         if not active_signals:
@@ -97,10 +96,15 @@ async def check_active_signals_job():
                 
                 trainerai.learn_from_outcome(db, signal, outcome)
                 
+                # 1. پہلے تاریخ میں شامل کریں
                 crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
                 
+                # 2. فیڈ بیک شامل کریں
                 crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
-                crud.delete_active_signal(db, signal.signal_id) 
+                
+                # 3. ★★★ اب صرف فعال سگنل کو حذف کریں ★★★
+                crud.delete_active_signal_only(db, signal.signal_id) 
+                
                 await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}})
                 
     except Exception as e:
