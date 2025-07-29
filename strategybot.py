@@ -12,6 +12,15 @@ from config import TECHNICAL_ANALYSIS # ★★★ مرکزی کنفیگریشن 
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
 
+# --- حکمت عملی کے پیرامیٹرز (اب config سے حاصل کیے گئے) ---
+EMA_SHORT_PERIOD = TECHNICAL_ANALYSIS["EMA_SHORT_PERIOD"]
+EMA_LONG_PERIOD = TECHNICAL_ANALYSIS["EMA_LONG_PERIOD"]
+RSI_PERIOD = TECHNICAL_ANALYSIS["RSI_PERIOD"]
+STOCH_K = TECHNICAL_ANALYSIS["STOCH_K"]
+STOCH_D = TECHNICAL_ANALYSIS["STOCH_D"]
+SUPERTREND_ATR = TECHNICAL_ANALYSIS["SUPERTREND_ATR"]
+SUPERTREND_FACTOR = TECHNICAL_ANALYSIS["SUPERTREND_FACTOR"]
+
 def _load_weights() -> Dict[str, float]:
     """JSON فائل سے حکمت عملی کے وزن کو لوڈ کرتا ہے۔"""
     try:
@@ -115,9 +124,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     return df
 
 def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
-    # ★★★ کنفیگریشن فائل سے پیرامیٹرز استعمال کریں ★★★
-    params = TECHNICAL_ANALYSIS
-    if len(candles) < max(params["EMA_LONG_PERIOD"], params["RSI_PERIOD"], 34):
+    if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
     df = pd.DataFrame(candles)
@@ -125,11 +132,11 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     
     WEIGHTS = _load_weights()
     
-    ema_fast = close.ewm(span=params["EMA_SHORT_PERIOD"], adjust=False).mean()
-    ema_slow = close.ewm(span=params["EMA_LONG_PERIOD"], adjust=False).mean()
-    rsi = calculate_rsi(close, params["RSI_PERIOD"])
-    stoch = calculate_stoch(df['high'], df['low'], close, params["STOCH_K"], params["STOCH_D"])
-    df = calculate_supertrend(df, params["SUPERTREND_ATR"], params["SUPERTREND_FACTOR"])
+    ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
+    ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
+    rsi = calculate_rsi(close, RSI_PERIOD)
+    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
+    df = calculate_supertrend(df, SUPERTREND_ATR, SUPERTREND_FACTOR)
     
     last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
     last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
