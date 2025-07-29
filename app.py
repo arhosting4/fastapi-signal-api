@@ -21,7 +21,7 @@ from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
-from key_manager import key_manager
+from key_manager import key_manager # ★★★ ہمارا نیا ملٹی پول مینیجر ★★★
 
 # لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
@@ -64,7 +64,10 @@ class PasswordData(BaseModel):
 
 @app.post("/api/delete-signal/{signal_id}", response_class=JSONResponse)
 async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db: Session = Depends(get_db)):
-    """ایک فعال سگنل کو دستی طور پر بند کرتا ہے اور اسے ہسٹری میں محفوظ کرتا ہے۔"""
+    """
+    ایک فعال سگنل کو دستی طور پر بند کرتا ہے۔
+    نوٹ: اس کو بہتر بنانے کی ضرورت ہے تاکہ بند ہونے کی وجہ اور قیمت بھی شامل کی جا سکے۔
+    """
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
     
     if not ADMIN_PASSWORD:
@@ -72,12 +75,20 @@ async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db
     if not password_data.password or password_data.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
     
-    # ★★★ نیا فنکشن استعمال کریں ★★★
-    success = crud.close_and_archive_signal(db, signal_id)
+    # ★★★ یہاں بہتری کی گنجائش ہے ★★★
+    # فی الحال، ہم ایک ڈیفالٹ وجہ اور قیمت کے ساتھ بند کر رہے ہیں۔
+    # اسے فرنٹ اینڈ سے بھیجا جا سکتا ہے۔
+    success = crud.close_and_archive_signal(
+        db=db, 
+        signal_id=signal_id,
+        outcome="manual_close",
+        close_price=0, # یہاں لائیو قیمت ہونی چاہیے
+        reason_for_closure="Manually closed by admin"
+    )
     
     if success:
         await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id}})
-        return {"detail": f"سگنل {signal_id} کامیابی سے بند کر دیا گیا اور ہسٹری میں محفوظ ہو گیا۔"}
+        return {"detail": f"سگنل {signal_id} کامیابی سے بند کر دیا گیا۔"}
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"فعال سگنل {signal_id} نہیں ملا۔")
 
@@ -96,13 +107,16 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔ آخری دھڑکن: {app.state.last_heartbeat.isoformat()}")
     
+    # ★★★ نیا، تیز رفتار اور ذہین شیڈول ★★★
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=5), id="system_heartbeat")
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunt_for_signals")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
+    # ہنٹر اب ہر 60 سیکنڈ بعد چلے گا تاکہ کسی موقع کو ضائع نہ کرے
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=60), id="hunt_for_signals")
+    # فیڈ بیک چیکر بھی زیادہ تیزی سے چلے گا
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=45), id="check_active_signals")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
     
     scheduler.start()
-    heartbeat_job()
+    heartbeat_job() # پہلی بار فوراً چلائیں
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
 
 @app.on_event("startup")
@@ -142,6 +156,9 @@ async def health_check():
     """ایک سادہ ہیلتھ چیک جو صرف سروس کے چلنے کی تصدیق کرتا ہے۔"""
     return {"status": "ok"}
 
+# ... (باقی کے API روٹس جیسے /api/system-status, /api/history, /api/news میں کوئی تبدیلی نہیں)
+# وہ ویسے ہی کام کرتے رہیں گے۔
+
 @app.get("/api/system-status", response_class=JSONResponse)
 async def get_system_status():
     """سسٹم کی صحت اور کارکردگی کے بارے میں تفصیلی معلومات فراہم کرتا ہے۔"""
@@ -157,8 +174,8 @@ async def get_system_status():
         logger.error(f"ڈیٹا بیس کنکشن چیک کرنے میں خرابی: {e}")
         db_status = "Connection Error"
 
-    total_keys = len(key_manager.keys) + len(key_manager.limited_keys)
-    available_keys = len(key_manager.keys) - len(key_manager.limited_keys)
+    # ★★★ کی مینیجر کی حیثیت کو مزید تفصیلی بنایا جا سکتا ہے ★★★
+    # لیکن فی الحال اسے سادہ رکھتے ہیں
     
     return {
         "server_status": "Online",
@@ -166,11 +183,6 @@ async def get_system_status():
         "scheduler_status": "Running" if scheduler_running else "Stopped",
         "last_heartbeat": last_heartbeat.isoformat() if last_heartbeat else "N/A",
         "database_status": db_status,
-        "api_key_status": {
-            "total_keys": total_keys,
-            "available_keys": available_keys,
-            "limited_keys": len(key_manager.limited_keys)
-        }
     }
 
 @app.get("/api/history", response_class=JSONResponse)
@@ -194,4 +206,3 @@ async def get_news(db: Session = Depends(get_db)):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-        
