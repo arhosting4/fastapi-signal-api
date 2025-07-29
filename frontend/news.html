@@ -78,18 +78,32 @@
                 const response = await fetch('/api/news');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 
-                // ★★★ تبدیلی: خالی جواب کو ہینڈل کریں ★★★
                 const newsData = await response.json();
-                
                 newsGrid.innerHTML = '';
-                
-                // چیک کریں کہ آیا newsData null نہیں ہے اور اس میں articles ہیں
-                const articles = newsData ? newsData.articles : [];
 
-                if (articles && articles.length > 0) {
+                // ★★★ یہاں تبدیلی کی گئی ہے ★★★
+                // 1. تمام علامتوں سے خبروں کو اکٹھا کرکے ایک فہرست بنائیں
+                let allArticles = [];
+                if (newsData && newsData.articles_by_symbol) {
+                    for (const symbol in newsData.articles_by_symbol) {
+                        allArticles = allArticles.concat(newsData.articles_by_symbol[symbol]);
+                    }
+                }
+
+                // 2. خبروں کو تازہ ترین کے مطابق ترتیب دیں
+                allArticles.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+
+                // 3. ڈپلیکیٹ خبروں کو ہٹائیں (اگر کوئی ہو)
+                const uniqueArticles = Array.from(new Set(allArticles.map(a => a.url)))
+                    .map(url => {
+                        return allArticles.find(a => a.url === url)
+                    });
+                // ★★★ تبدیلی ختم ★★★
+
+                if (uniqueArticles && uniqueArticles.length > 0) {
                     noNewsMessage.style.display = 'none';
                     newsGrid.style.display = 'grid';
-                    articles.forEach(item => {
+                    uniqueArticles.forEach(item => {
                         const card = document.createElement('div');
                         card.className = 'news-card';
                         const snippet = item.snippet || item.title || 'No summary available.';
@@ -104,7 +118,6 @@
                         newsGrid.appendChild(card);
                     });
                 } else {
-                    // معلوماتی پیغام دکھائیں
                     noNewsMessage.innerHTML = '<h3><i class="fas fa-search"></i> No News Found</h3><p>Could not retrieve market news at this time. Please check back later.</p>';
                 }
             } catch (error) {
@@ -114,7 +127,6 @@
         }
         
         fetchNews();
-        // خبروں کو ہر 15 منٹ بعد اپ ڈیٹ کریں
         setInterval(fetchNews, 15 * 60 * 1000);
     </script>
 </body>
