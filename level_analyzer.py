@@ -1,16 +1,13 @@
 # filename: level_analyzer.py
-# (A powerful, dedicated level analysis module - Final Version 2.1 - Corrected)
 
 import logging
 import pandas as pd
 from typing import List, Dict, Optional, Tuple
+from config import STRATEGY
 
 logger = logging.getLogger(__name__)
 
-# ==============================================================================
-# ★★★ لیول اینالائزر ماڈیول (حتمی ورژن) ★★★
-# مقصد: کنفلونس کی بنیاد پر بہترین TP/SL لیولز کی شناخت کرنا
-# ==============================================================================
+MIN_RISK_REWARD_RATIO = STRATEGY["MIN_RISK_REWARD_RATIO"]
 
 def _calculate_pivot_points(df: pd.DataFrame) -> Dict[str, float]:
     """یومیہ کینڈل کی بنیاد پر معیاری پیوٹ پوائنٹس کا حساب لگاتا ہے۔"""
@@ -50,11 +47,9 @@ def _get_psychological_levels(price: float) -> Dict[str, float]:
     base = round(price / unit) * unit
     return {'upper_psy': base + unit, 'lower_psy': base - unit}
 
-# ★★★ یہ فنکشن غائب تھا - اب شامل کر دیا گیا ہے ★★★
 def find_market_structure(candles: List[Dict], window: int = 10) -> Dict[str, str]:
     """
     مارکیٹ کی ساخت اور سپلائی/ڈیمانڈ زونز کا تجزیہ کرتا ہے۔
-    (یہ پرانے supply_demand.py کی فعالیت کو برقرار رکھتا ہے)
     """
     if len(candles) < window * 2:
         return {"trend": "غیر متعین", "zone": "غیر جانبدار", "reason": "ناکافی ڈیٹا۔"}
@@ -81,10 +76,6 @@ def find_market_structure(candles: List[Dict], window: int = 10) -> Dict[str, st
             trend = "نیچے کا رجحان"
 
     return {"trend": trend, "zone": "N/A", "reason": f"موجودہ رجحان {trend} ہے۔"}
-
-# ==============================================================================
-# ★★★ مرکزی فنکشن: بہترین TP/SL تلاش کرنا (اسکورنگ سسٹم کے ساتھ) ★★★
-# ==============================================================================
 
 def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
     """
@@ -133,7 +124,7 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
     try:
         reward = abs(final_tp - last_close)
         risk = abs(last_close - final_sl)
-        if risk == 0 or (reward / risk) < 1.5:
+        if risk == 0 or (reward / risk) < MIN_RISK_REWARD_RATIO:
             logger.warning(f"بہترین لیولز کا رسک/ریوارڈ تناسب ({reward/risk:.2f}) بہت کم ہے۔ سگنل مسترد۔")
             return None
     except ZeroDivisionError:
