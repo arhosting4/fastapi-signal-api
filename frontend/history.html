@@ -13,7 +13,7 @@
             --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
             --text-primary: #c9d1d9; --text-secondary: #8b949e;
             --accent-gold: #ffab00;
-            --status-success: #238636; --status-fail: #da3633; --status-expired: #a37100;
+            --status-tp_hit: #238636; --status-sl_hit: #da3633; --status-manual_close: #a37100;
         }
         html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); }
         body { margin: 0; padding: 0; }
@@ -26,14 +26,14 @@
         .table-container { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
         .table-wrapper { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
         th { background-color: var(--secondary); font-weight: 600; color: var(--text-secondary); }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background-color: var(--secondary); }
         .status-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; text-transform: uppercase; }
-        .status-tp_hit { background-color: var(--status-success); }
-        .status-sl_hit { background-color: var(--status-fail); }
-        .status-expired { background-color: var(--status-expired); }
+        .status-tp_hit { background-color: var(--status-tp_hit); }
+        .status-sl_hit { background-color: var(--status-sl_hit); }
+        .status-manual_close { background-color: var(--status-manual_close); }
         .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
         .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
         .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
@@ -68,7 +68,9 @@
                             <th>Symbol</th>
                             <th>Signal</th>
                             <th>Entry Price</th>
+                            <th>Close Price</th>
                             <th>Outcome</th>
+                            <th>Reason</th>
                             <th>Close Time</th>
                         </tr>
                     </thead>
@@ -107,11 +109,16 @@
                     trades.forEach(trade => {
                         const row = document.createElement('tr');
                         const outcomeClass = `status-${trade.outcome.toLowerCase()}`;
+                        const closePrice = trade.close_price ? trade.close_price.toFixed(5) : 'N/A';
+                        const reason = trade.reason_for_closure ? trade.reason_for_closure.replace('_', ' ') : 'N/A';
+
                         row.innerHTML = `
                             <td><strong>${trade.symbol}</strong><br><small>${trade.timeframe}</small></td>
                             <td>${trade.signal_type.toUpperCase()}</td>
                             <td>${trade.entry_price.toFixed(5)}</td>
+                            <td>${closePrice}</td>
                             <td><span class="status-tag ${outcomeClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</span></td>
+                            <td style="text-transform: capitalize;">${reason}</td>
                             <td>${new Date(trade.closed_at + 'Z').toLocaleString()}</td>
                         `;
                         historyBody.appendChild(row);
