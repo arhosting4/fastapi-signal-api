@@ -97,26 +97,26 @@ async def check_active_signals_job():
             if current_price is None:
                 continue
 
-            outcome, close_price, reason_for_closure = None, None, None
+            outcome, close_price, reason_for_closure, feedback = None, None, None, None
 
             if signal.signal_type == "buy":
                 if current_price >= signal.tp_price:
-                    outcome, close_price, reason_for_closure = "tp_hit", signal.tp_price, "tp_hit"
+                    outcome, close_price, reason_for_closure, feedback = "tp_hit", signal.tp_price, "tp_hit", "correct"
                 elif current_price <= signal.sl_price:
-                    outcome, close_price, reason_for_closure = "sl_hit", signal.sl_price, "sl_hit"
+                    outcome, close_price, reason_for_closure, feedback = "sl_hit", signal.sl_price, "sl_hit", "incorrect"
             elif signal.signal_type == "sell":
                 if current_price <= signal.tp_price:
-                    outcome, close_price, reason_for_closure = "tp_hit", signal.tp_price, "tp_hit"
+                    outcome, close_price, reason_for_closure, feedback = "tp_hit", signal.tp_price, "tp_hit", "correct"
                 elif current_price >= signal.sl_price:
-                    outcome, close_price, reason_for_closure = "sl_hit", signal.sl_price, "sl_hit"
+                    outcome, close_price, reason_for_closure, feedback = "sl_hit", signal.sl_price, "sl_hit", "incorrect"
 
             if outcome and close_price is not None:
                 logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
                 
                 await trainerai.learn_from_outcome(db, signal, outcome)
+                crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
                 
-                # ★★★ یہاں تبدیلی کی گئی ہے ★★★
-                # اب ہم نئے اور درست فنکشن کو کال کر رہے ہیں
+                # ★★★ درست فنکشن کال ★★★
                 crud.close_and_archive_signal(
                     db=db, 
                     signal_id=signal.signal_id, 
@@ -140,4 +140,4 @@ async def check_active_signals_job():
     finally:
         if db.is_active:
             db.close()
-                
+        
