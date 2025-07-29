@@ -157,4 +157,21 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         data = response.json()
 
         prices = {}
-    
+            if "price" in data and isinstance(data['price'], (int, float, str)):
+            prices[symbols[0]] = float(data["price"])
+        else:
+            for symbol, details in data.items():
+                if isinstance(details, dict) and "price" in details:
+                    prices[symbol] = float(details["price"])
+        
+        if prices:
+            logger.info(f"کامیابی سے {len(prices)} قیمتیں حاصل اور پارس کی گئیں۔")
+            return prices
+        else:
+            logger.warning(f"API سے قیمتیں حاصل ہوئیں لیکن پارس نہیں کی جا سکیں: {data}")
+            return None
+
+    except Exception as e:
+        logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+        return None
+        
