@@ -16,9 +16,10 @@ from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
-# کنفیگریشن
-MAX_ACTIVE_SIGNALS = 5
-FINAL_CONFIDENCE_THRESHOLD = 70.0 # ہم نے اسے 70 پر سیٹ کیا تھا
+# ★★★ نئی ذہین حد بندی کی کنفیگریشن ★★★
+MAX_FOREX_SIGNALS = 4
+MAX_CRYPTO_SIGNALS = 2
+FINAL_CONFIDENCE_THRESHOLD = 70.0
 
 async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
     """ایک تجارتی جوڑے کا تجزیہ کرتا ہے اور اگر کوئی سگنل ملے تو اسے واپس کرتا ہے۔"""
@@ -38,7 +39,6 @@ async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
         )
         logger.info(log_message)
         
-        # اعتماد کی حد کو یہاں سختی سے نافذ کریں
         if confidence >= FINAL_CONFIDENCE_THRESHOLD:
             return analysis_result
         else:
@@ -51,26 +51,34 @@ async def analyze_pair(db: Session, pair: str) -> Optional[Dict[str, Any]]:
 
 async def hunt_for_signals_job():
     """
-    سگنل کی تلاش کا مرکزی کام جو شیڈیولر کے ذریعے چلایا جاتا ہے۔
-    (اب یہ ایک ذہین شکار کی حکمت عملی استعمال کرتا ہے)
+    سگنل کی تلاش کا مرکزی کام جو اب فاریکس اور کرپٹو کے لیے الگ الگ حدیں استعمال کرتا ہے۔
     """
     db = SessionLocal()
     try:
         active_signals = crud.get_all_active_signals_from_db(db)
-        active_symbols = [s.symbol for s in active_signals]
+        
+        # ★★★ ذہین حد بندی کا نفاذ ★★★
+        active_forex_count = sum(1 for s in active_signals if "USD" in s.symbol and "BTC" not in s.symbol and "ETH" not in s.symbol)
+        active_crypto_count = sum(1 for s in active_signals if "BTC" in s.symbol or "ETH" in s.symbol)
 
-        if len(active_symbols) >= MAX_ACTIVE_SIGNALS:
-            logger.info(f"فعال سگنلز کی زیادہ سے زیادہ حد ({len(active_symbols)}/{MAX_ACTIVE_SIGNALS}) تک پہنچ گئے ہیں۔ شکار روکا جا رہا ہے۔")
+        if active_forex_count >= MAX_FOREX_SIGNALS and active_crypto_count >= MAX_CRYPTO_SIGNALS:
+            logger.info(f"تمام سگنلز کی حد پوری ہو گئی (فاریکس: {active_forex_count}/{MAX_FOREX_SIGNALS}, کرپٹو: {active_crypto_count}/{MAX_CRYPTO_SIGNALS})۔ شکار روکا جا رہا ہے۔")
             return
 
-        pairs_to_hunt = get_pairs_to_hunt(active_symbols)
+        pairs_to_hunt = get_pairs_to_hunt([s.symbol for s in active_signals])
         logger.info(f"🏹 ذہین سگنل کی تلاش شروع: ان جوڑوں کا تجزیہ کیا جائے گا: {pairs_to_hunt}")
         
         for pair in pairs_to_hunt:
-            if crud.get_active_signals_count_from_db(db) >= MAX_ACTIVE_SIGNALS:
-                logger.info("سگنل کی حد تک پہنچ گئے۔ شکار روکا جا رہا ہے۔")
-                break
+            is_crypto = "BTC" in pair or "ETH" in pair or "SOL" in pair
             
+            # ہر قسم کی حد کو انفرادی طور پر چیک کریں
+            if is_crypto and active_crypto_count >= MAX_CRYPTO_SIGNALS:
+                logger.info(f"کرپٹو سگنلز کی حد ({active_crypto_count}/{MAX_CRYPTO_SIGNALS}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
+                continue
+            if not is_crypto and active_forex_count >= MAX_FOREX_SIGNALS:
+                logger.info(f"فاریکس سگنلز کی حد ({active_forex_count}/{MAX_FOREX_SIGNALS}) پوری ہو گئی۔ {pair} کو چھوڑا جا رہا ہے۔")
+                continue
+
             analysis_result = await analyze_pair(db, pair)
             
             if analysis_result:
@@ -79,23 +87,18 @@ async def hunt_for_signals_job():
                 if update_result:
                     signal_obj = update_result.signal.as_dict()
                     
-                    # ★★★ یہ غیر ضروری لائنیں ہٹا دی گئی ہیں ★★★
-                    # اب کوئی خرابی نہیں آئے گی
-
                     if update_result.is_new:
                         logger.info(f"🎯 ★★★ نیا سگنل ملا اور ڈیٹا بیس میں محفوظ کیا گیا: {signal_obj['symbol']} ★★★")
+                        # نئے سگنل ملنے پر کاؤنٹ کو اپ ڈیٹ کریں
+                        if is_crypto: active_crypto_count += 1
+                        else: active_forex_count += 1
+                        
                         await send_telegram_alert(signal_obj)
-                        await manager.broadcast({
-                            "type": "new_signal",
-                            "data": signal_obj
-                        })
+                        await manager.broadcast({"type": "new_signal", "data": signal_obj})
                     else:
                         logger.info(f"🔄 ★★★ موجودہ سگنل اپ ڈیٹ ہوا: {signal_obj['symbol']}, نیا اعتماد: {signal_obj['confidence']:.2f}% ★★★")
                         await send_signal_update_alert(signal_obj)
-                        await manager.broadcast({
-                            "type": "signal_updated",
-                            "data": signal_obj
-                        })
+                        await manager.broadcast({"type": "signal_updated", "data": signal_obj})
 
     except Exception as e:
         logger.error(f"سگنل کی تلاش کے کام میں مہلک خرابی: {e}", exc_info=True)
@@ -103,4 +106,4 @@ async def hunt_for_signals_job():
         if db.is_active:
             db.close()
         logger.info("🏹 ذہین سگنل کی تلاش مکمل ہوئی۔")
-            
+        
