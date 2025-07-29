@@ -52,7 +52,7 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
             return SignalUpdateResult(signal=existing_signal, is_new=False)
         else:
             logger.info(f"نیا سگنل {symbol} بنایا جا رہا ہے۔")
-            signal_id = f"{symbol.replace('/', '')}_{signal_data.get('timeframe', '15min')}_{datetime.utcnow().timestamp()}"
+            signal_id = f"{symbol}_{signal_data.get('timeframe', '15min')}_{datetime.utcnow().timestamp()}"
             
             new_signal = ActiveSignal(
                 signal_id=signal_id,
@@ -81,11 +81,11 @@ def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str, close_p
     ڈیٹا بیس میں مکمل شدہ ٹریڈ کا تفصیلی ریکارڈ شامل کرتا ہے۔
     """
     try:
-        # ڈپلیکیٹ چیک شامل کریں
+        # چیک کریں کہ آیا یہ سگنل پہلے سے ہی مکمل شدہ ٹریڈز میں موجود ہے
         existing_trade = db.query(CompletedTrade).filter(CompletedTrade.signal_id == signal.signal_id).first()
         if existing_trade:
             logger.warning(f"مکمل شدہ ٹریڈ {signal.signal_id} پہلے سے موجود ہے۔ دوبارہ شامل نہیں کیا جا رہا۔")
-            return None
+            return existing_trade
 
         db_trade = CompletedTrade(
             signal_id=signal.signal_id,
@@ -111,51 +111,36 @@ def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str, close_p
         db.rollback()
         return None
 
-def close_and_archive_signal(db: Session, signal_id: str, current_price: Optional[float] = None) -> bool:
+# ★★★ مکمل طور پر اپ ڈیٹ شدہ اور درست فنکشن ★★★
+def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_price: float, reason_for_closure: str) -> bool:
     """
-    ایک فعال سگنل کو دستی طور پر بند کرتا ہے اور اسے 'manual_close' کے طور پر مکمل شدہ ٹریڈز میں شامل کرتا ہے۔
-    یہ فنکشن اب صرف app.py سے استعمال ہوگا۔
-    """
-    try:
-        signal_to_close = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
-        if signal_to_close:
-            logger.info(f"فعال سگنل {signal_id} کو دستی طور پر بند کیا جا رہا ہے۔")
-            
-            close_price = current_price if current_price is not None else signal_to_close.entry_price
-            
-            add_completed_trade(
-                db=db,
-                signal=signal_to_close,
-                outcome="manual_close",
-                close_price=close_price,
-                reason_for_closure="Manually closed by admin"
-            )
-            
-            db.delete(signal_to_close)
-            db.commit()
-            logger.info(f"سگنل {signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔")
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"فعال سگنل {signal_id} کو بند کرنے میں خرابی: {e}", exc_info=True)
-        db.rollback()
-        return False
-
-def delete_active_signal_only(db: Session, signal_id: str) -> bool:
-    """
-    صرف فعال سگنل کو حذف کرتا ہے بغیر اسے تاریخ میں شامل کیے۔
-    یہ فنکشن اب feedback_checker.py سے استعمال ہوگا۔
+    ایک فعال سگنل کو ڈیلیٹ کرتا ہے اور اسے مکمل شدہ ٹریڈز میں شامل کرتا ہے۔
+    یہ اب تمام ضروری معلومات کو پیرامیٹرز کے طور پر لیتا ہے۔
     """
     try:
         signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
         if signal_to_delete:
+            logger.info(f"فعال سگنل {signal_id} کو بند اور آرکائیو کیا جا رہا ہے۔")
+            
+            # اسے مکمل شدہ ٹریڈ میں شامل کریں
+            add_completed_trade(
+                db=db,
+                signal=signal_to_delete,
+                outcome=outcome,
+                close_price=close_price,
+                reason_for_closure=reason_for_closure
+            )
+            
+            # اب فعال سگنل کو ڈیلیٹ کریں
             db.delete(signal_to_delete)
             db.commit()
-            logger.info(f"فعال سگنل {signal_id} کامیابی سے حذف ہو گیا۔")
+            logger.info(f"سگنل {signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔")
             return True
-        return False
+        else:
+            logger.warning(f"بند کرنے کے لیے فعال سگنل {signal_id} نہیں ملا۔ ہو سکتا ہے یہ پہلے ہی بند ہو چکا ہو۔")
+            return False
     except Exception as e:
-        logger.error(f"فعال سگنل {signal_id} کو حذف کرنے میں خرابی: {e}", exc_info=True)
+        logger.error(f"فعال سگنل {signal_id} کو بند کرنے میں خرابی: {e}", exc_info=True)
         db.rollback()
         return False
 
@@ -221,4 +206,4 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
-        
+    
