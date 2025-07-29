@@ -22,7 +22,6 @@ TRADING_PAIRS = {
     "HUNT_LIST_SIZE": 4,
 }
 
-# ★★★ یہاں تبدیلی کی گئی ہے ★★★
 # --- سگنل جنریشن کی حکمت عملی ---
 STRATEGY = {
     "SIGNAL_SCORE_THRESHOLD": 40.0,
@@ -30,7 +29,6 @@ STRATEGY = {
     "MIN_RISK_REWARD_RATIO": 1.5,
 }
 
-# ★★★ یہاں تبدیلی کی گئی ہے ★★★
 # --- سگنل کی حد بندی ---
 SIGNAL_LIMITS = {
     "MAX_FOREX_SIGNALS": 4,
@@ -40,6 +38,18 @@ SIGNAL_LIMITS = {
 # --- فیڈ بیک چیکر ---
 FEEDBACK_CHECKER = {
     "MAX_PAIRS_PER_CALL": 8,
+}
+
+# ★★★ نیا سیکشن شامل کیا گیا ★★★
+# --- تکنیکی تجزیہ کے پیرامیٹرز ---
+TECHNICAL_ANALYSIS = {
+    "EMA_SHORT_PERIOD": 10,
+    "EMA_LONG_PERIOD": 30,
+    "RSI_PERIOD": 14,
+    "STOCH_K": 14,
+    "STOCH_D": 3,
+    "SUPERTREND_ATR": 10,
+    "SUPERTREND_FACTOR": 3.0,
 }
 
 # --- خبروں کے لیے مطلوبہ الفاظ ---
