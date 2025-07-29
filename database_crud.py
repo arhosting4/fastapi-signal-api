@@ -27,12 +27,10 @@ def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSign
     """کسی مخصوص علامت کے لیے فعال سگنل واپس کرتا ہے۔"""
     return db.query(ActiveSignal).filter(ActiveSignal.symbol == symbol).first()
 
-# ==============================================================================
-# ★★★ اپ ڈیٹ شدہ فنکشن: ناموں کے عدم مطابقت کو درست کیا گیا ★★★
-# ==============================================================================
 def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Optional[SignalUpdateResult]:
     """
     ڈیٹا بیس میں ایک نیا سگنل شامل کرتا ہے یا اگر اسی علامت کا سگنل پہلے سے موجود ہو تو اسے اپ ڈیٹ کرتا ہے۔
+    یہ فنکشن اب AI کی یادداشت (component_scores) کو بھی محفوظ کرتا ہے۔
     """
     try:
         symbol = signal_data.get("symbol")
@@ -43,33 +41,31 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         existing_signal = get_active_signal_by_symbol(db, symbol)
 
         if existing_signal:
-            # سگنل کو اپ ڈیٹ کریں
             logger.info(f"موجودہ سگنل {symbol} کو اپ ڈیٹ کیا جا رہا ہے۔")
-            existing_signal.confidence = signal_data.get('confidence', existing_signal.confidence)
-            existing_signal.reason = signal_data.get('reason', existing_signal.reason)
-            # ★★★ درست کلیدوں کا استعمال ★★★
+            existing_signal.signal_type = signal_data.get('signal', existing_signal.signal_type)
             existing_signal.tp_price = signal_data.get('tp', existing_signal.tp_price)
             existing_signal.sl_price = signal_data.get('sl', existing_signal.sl_price)
-            # updated_at خود بخود اپ ڈیٹ ہو جائے گا
+            existing_signal.confidence = signal_data.get('confidence', existing_signal.confidence)
+            existing_signal.reason = signal_data.get('reason', existing_signal.reason)
+            existing_signal.component_scores = signal_data.get('component_scores', existing_signal.component_scores)
             db.commit()
             db.refresh(existing_signal)
             return SignalUpdateResult(signal=existing_signal, is_new=False)
         else:
-            # نیا سگنل شامل کریں
             logger.info(f"نیا سگنل {symbol} بنایا جا رہا ہے۔")
             signal_id = f"{symbol}_{signal_data.get('timeframe', '15min')}_{datetime.utcnow().timestamp()}"
             
-            # ★★★ درست کلیدوں کا استعمال ★★★
             new_signal = ActiveSignal(
                 signal_id=signal_id,
                 symbol=symbol,
                 timeframe=signal_data.get('timeframe'),
                 signal_type=signal_data.get('signal'),
-                entry_price=signal_data.get('price'), # 'price' کو 'entry_price' میں محفوظ کریں
-                tp_price=signal_data.get('tp'),       # 'tp' کو 'tp_price' میں محفوظ کریں
-                sl_price=signal_data.get('sl'),       # 'sl' کو 'sl_price' میں محفوظ کریں
+                entry_price=signal_data.get('price'),
+                tp_price=signal_data.get('tp'),
+                sl_price=signal_data.get('sl'),
                 confidence=signal_data.get('confidence'),
-                reason=signal_data.get('reason')
+                reason=signal_data.get('reason'),
+                component_scores=signal_data.get('component_scores')
             )
             db.add(new_signal)
             db.commit()
@@ -81,10 +77,10 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         db.rollback()
         return None
 
-# ... (باقی فائل میں کوئی تبدیلی نہیں) ...
-
-def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str) -> Optional[CompletedTrade]:
-    """ڈیٹا بیس میں مکمل شدہ ٹریڈ کا ریکارڈ شامل کرتا ہے۔"""
+def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str, close_price: float, reason_for_closure: str) -> Optional[CompletedTrade]:
+    """
+    ڈیٹا بیس میں مکمل شدہ ٹریڈ کا تفصیلی ریکارڈ شامل کرتا ہے۔
+    """
     try:
         db_trade = CompletedTrade(
             signal_id=signal.signal_id,
@@ -94,6 +90,8 @@ def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str) -> Opti
             entry_price=signal.entry_price,
             tp_price=signal.tp_price,
             sl_price=signal.sl_price,
+            close_price=close_price,
+            reason_for_closure=reason_for_closure,
             outcome=outcome,
             confidence=signal.confidence,
             reason=signal.reason,
@@ -108,13 +106,32 @@ def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str) -> Opti
         db.rollback()
         return None
 
-def delete_active_signal(db: Session, signal_id: str) -> bool:
-    """ڈیٹا بیس سے ایک فعال سگنل کو ڈیلیٹ کرتا ہے۔"""
+# ★★★ مکمل طور پر نیا اور ذہین ڈیلیٹ فنکشن ★★★
+def delete_active_signal(db: Session, signal_id: str, current_price: Optional[float] = None) -> bool:
+    """
+    ایک فعال سگنل کو ڈیلیٹ کرتا ہے اور اسے 'manual_close' کے طور پر مکمل شدہ ٹریڈز میں شامل کرتا ہے۔
+    """
     try:
         signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
         if signal_to_delete:
+            logger.info(f"فعال سگنل {signal_id} کو دستی طور پر بند کیا جا رہا ہے۔")
+            
+            # اگر موجودہ قیمت فراہم کی گئی ہے تو اسے استعمال کریں، ورنہ انٹری قیمت استعمال کریں
+            close_price = current_price if current_price is not None else signal_to_delete.entry_price
+            
+            # اسے 'manual_close' کے طور پر مکمل شدہ ٹریڈ میں شامل کریں
+            add_completed_trade(
+                db=db,
+                signal=signal_to_delete,
+                outcome="manual_close",
+                close_price=close_price,
+                reason_for_closure="Manually closed by admin"
+            )
+            
+            # اب فعال سگنل کو ڈیلیٹ کریں
             db.delete(signal_to_delete)
             db.commit()
+            logger.info(f"سگنل {signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔")
             return True
         return False
     except Exception as e:
@@ -184,4 +201,4 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
-            
+        
