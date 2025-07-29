@@ -11,18 +11,11 @@ from datetime import datetime, timedelta
 # مقامی امپورٹس
 from database_crud import update_news_cache_in_db, get_cached_news
 from models import SessionLocal
+from config import HIGH_IMPACT_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
 MARKETAUX_API_KEY = os.getenv("MARKETAUX_API_KEY")
-
-HIGH_IMPACT_KEYWORDS = {
-    'USD': ['fed', 'fomc', 'cpi', 'nfp', 'unemployment', 'inflation', 'gdp', 'powell'],
-    'EUR': ['ecb', 'inflation', 'gdp', 'unemployment', 'lagarde'],
-    'GBP': ['boe', 'inflation', 'gdp', 'unemployment', 'bailey'],
-    'XAU': ['war', 'crisis', 'geopolitical', 'fed', 'inflation'],
-    'BTC': ['sec', 'regulation', 'etf', 'crypto ban', 'halving']
-}
 
 async def fetch_news_from_marketaux(client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
     """MarketAux سے خبریں حاصل کرتا ہے۔"""
@@ -80,7 +73,6 @@ async def update_economic_calendar_cache():
                 'entities': [entity.get('symbol') for entity in item.get('entities', [])]
             }
             
-            # ★★★ علامت کے لحاظ سے گروپ بندی ★★★
             for entity_symbol in article_data['entities']:
                 if entity_symbol not in categorized_articles:
                     categorized_articles[entity_symbol] = []
@@ -88,7 +80,6 @@ async def update_economic_calendar_cache():
         
         db = SessionLocal()
         try:
-            # اب گروپ شدہ ڈیٹا کو کیش کریں
             update_news_cache_in_db(db, {"articles_by_symbol": categorized_articles})
             logger.info(f"خبروں کا کیش کامیابی سے {len(categorized_articles)} علامتوں کے لیے اپ ڈیٹ ہو گیا۔")
         finally:
@@ -111,7 +102,6 @@ async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
     symbol_parts = [s.strip() for s in symbol.upper().split('/')]
     
     relevant_articles = []
-    # ★★★ صرف متعلقہ علامتوں کی خبریں حاصل کریں ★★★
     for part in symbol_parts:
         relevant_articles.extend(all_news_content['articles_by_symbol'].get(part, []))
     
@@ -127,7 +117,6 @@ async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
         try:
             published_time_str = article.get('published_at')
             if not published_time_str: continue
-            # ٹائم زون کی معلومات شامل کریں اگر موجود نہ ہو
             if 'Z' not in published_time_str and '+' not in published_time_str:
                  published_time_str += 'Z'
             published_time = datetime.fromisoformat(published_time_str.replace('Z', '+00:00'))
@@ -141,7 +130,6 @@ async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
             logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
             
     return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی حالیہ یا آنے والی اعلیٰ اثر والی خبر نہیں ملی۔"}
-      # filename: sentinel.py (آخر میں یہ نیا فنکشن شامل کریں)
 
 async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, trade_end_time: datetime) -> bool:
     """
@@ -151,7 +139,7 @@ async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, t
     try:
         all_news_content = get_cached_news(db)
         if not all_news_content or 'articles_by_symbol' not in all_news_content:
-            return False # اگر خبریں دستیاب نہیں تو فرض کریں کہ کوئی خبر نہیں تھی
+            return False
     finally:
         db.close()
 
@@ -172,12 +160,10 @@ async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, t
             published_time_str = article.get('published_at')
             if not published_time_str: continue
             
-            # ٹائم زون کی معلومات کو ہینڈل کریں
             if 'Z' not in published_time_str and '+' not in published_time_str:
                  published_time_str += 'Z'
             published_time = datetime.fromisoformat(published_time_str.replace('Z', '+00:00')).replace(tzinfo=None)
             
-            # چیک کریں کہ آیا خبر ٹریڈ کے دورانیے میں شائع ہوئی
             if trade_start_time <= published_time <= trade_end_time:
                 logger.info(f"ٹریڈ {symbol} کے دوران ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'")
                 return True
@@ -185,4 +171,4 @@ async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, t
             logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
             
     return False
-                
+    
