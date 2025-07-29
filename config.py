@@ -29,15 +29,10 @@ STRATEGY = {
     "MIN_RISK_REWARD_RATIO": 1.5,
 }
 
-# --- سگنل کی حد بندی ---
-SIGNAL_LIMITS = {
-    "MAX_FOREX_SIGNALS": 4,
-    "MAX_CRYPTO_SIGNALS": 2,
-}
-
 # --- فیڈ بیک چیکر ---
 FEEDBACK_CHECKER = {
-    "MAX_PAIRS_PER_CALL": 8,
+    "MAX_PAIRS_PER_CALL": 7,
+    "PRIORITY_SYMBOLS": ["XAU/USD", "BTC/USD", "ETH/USD", "GBP/JPY"]
 }
 
 # --- تکنیکی تجزیہ کے پیرامیٹرز ---
