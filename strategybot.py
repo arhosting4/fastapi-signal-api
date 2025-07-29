@@ -7,12 +7,12 @@ import logging
 from typing import List, Tuple, Optional, Dict, Any
 
 from level_analyzer import find_optimal_tp_sl
-from config import TECHNICAL_ANALYSIS # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
+from config import TECHNICAL_ANALYSIS
 
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
 
-# --- حکمت عملی کے پیرامیٹرز (اب config سے حاصل کیے گئے) ---
+# --- حکمت عملی کے پیرامیٹرز ---
 EMA_SHORT_PERIOD = TECHNICAL_ANALYSIS["EMA_SHORT_PERIOD"]
 EMA_LONG_PERIOD = TECHNICAL_ANALYSIS["EMA_LONG_PERIOD"]
 RSI_PERIOD = TECHNICAL_ANALYSIS["RSI_PERIOD"]
@@ -33,62 +33,33 @@ def _load_weights() -> Dict[str, float]:
             "price_action": 0.10, "supertrend_confirm": 0.20
         }
 
-def _calculate_atr_fallback_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
-    """ATR کی بنیاد پر ایک محفوظ متبادل TP/SL کا حساب لگاتا ہے۔"""
-    try:
-        df['h-l'] = df['high'] - df['low']
-        df['h-pc'] = np.abs(df['high'] - df['close'].shift())
-        df['l-pc'] = np.abs(df['low'] - df['close'].shift())
-        tr = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
-        atr = tr.rolling(window=14).mean()
-        
-        if atr.empty or pd.isna(atr.iloc[-1]):
-            logger.error("ATR کا حساب نہیں لگایا جا سکا، متبادل TP/SL ناکام۔")
-            return None
-
-        last_close = df['close'].iloc[-1]
-        current_atr = atr.iloc[-1]
-        
-        if signal_type == 'buy':
-            sl = last_close - (1.5 * current_atr)
-            tp = last_close + (3.0 * current_atr)
-        else: # sell
-            sl = last_close + (1.5 * current_atr)
-            tp = last_close - (3.0 * current_atr)
-        
-        logger.info(f"ATR پر مبنی متبادل TP/SL: TP={tp:.5f}, SL={sl:.5f}")
-        return tp, sl
-    except Exception as e:
-        logger.error(f"ATR متبادل TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
-        return None
-
+# ★★★ اپ ڈیٹ شدہ مرکزی فنکشن (صرف کنفلونس پر انحصار) ★★★
 def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
     """
-    بہترین TP/SL لیولز کی شناخت کرتا ہے، جس میں کنفلونس کو ترجیح دی جاتی ہے
-    اور ATR کو متبادل کے طور پر استعمال کیا جاتا ہے۔
+    صرف اور صرف اعلیٰ کنفلونس والے TP/SL لیولز کی شناخت کرتا ہے۔
+    اگر لیولز نہیں ملتے تو کوئی متبادل (fallback) استعمال نہیں کرتا۔
     """
-    if not candles or len(candles) < 34:
+    if not candles or len(candles) < 50:
         logger.warning("TP/SL کیلکولیشن کے لیے ناکافی کینڈل ڈیٹا۔")
         return None
         
     try:
+        # صرف کنفلونس پر مبنی لیولز تلاش کریں
         optimal_levels = find_optimal_tp_sl(candles, signal_type)
-        if optimal_levels:
-            logger.info("بہترین TP/SL کنفلونس کی بنیاد پر ملا۔")
-            return optimal_levels
-
-        logger.warning("کنفلونس لیولز نہیں ملے۔ ATR پر مبنی متبادل TP/SL کا حساب لگایا جا رہا ہے۔")
-        df = pd.DataFrame(candles)
-        for col in ['high', 'low', 'close']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        df.dropna(subset=['high', 'low', 'close'], inplace=True)
         
-        return _calculate_atr_fallback_tp_sl(df, signal_type)
+        if optimal_levels:
+            logger.info("A-Grade TP/SL کنفلونس کی بنیاد پر ملا۔")
+            return optimal_levels
+        else:
+            # اگر کوئی اعلیٰ کنفلونس لیول نہیں ملتا، تو سگنل نہ بنائیں
+            logger.warning("کوئی A-Grade TP/SL لیول نہیں ملا۔ اس سگنل کو مسترد کیا جا رہا ہے۔")
+            return None
 
     except Exception as e:
         logging.error(f"TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
         return None
 
+# --- انڈیکیٹر کیلکولیشن فنکشنز (کوئی تبدیلی نہیں) ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -123,11 +94,18 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
                 df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
     return df
 
+# --- بنیادی حکمت عملی کا اسکور پیدا کرنے والا فنکشن (کوئی تبدیلی نہیں) ---
 def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
-    if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
+    if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD, 50):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
     df = pd.DataFrame(candles)
+    for col in ['open', 'high', 'low', 'close']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    df.dropna(inplace=True)
+    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 50):
+        return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
+        
     close = df['close']
     
     WEIGHTS = _load_weights()
