@@ -42,12 +42,23 @@ def get_priority_pairs() -> List[str]:
         return CRYPTO_PAIRS_WEEKEND
     return PRIORITY_PAIRS_WEEKDAY
 
+# ★★★ مکمل طور پر نیا اور درست فنکشن ★★★
 def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     """
-    ایک ذہین شکار کی فہرست تیار کرتا ہے جو ترجیحات اور مارکیٹ کی حرکت پر مبنی ہوتی ہے۔
+    ایک ذہین شکار کی فہرست تیار کرتا ہے جو فعال سگنلز کو نظر انداز کرتی ہے
+    اور ترجیحات اور مارکیٹ کی حرکت پر مبنی ہوتی ہے۔
     """
     logger.info(f"شکار کی فہرست تیار کی جا رہی ہے۔ فعال سگنلز: {active_symbols}")
     
+    # 1. تمام ممکنہ جوڑوں کی فہرست حاصل کریں جو فعال نہیں ہیں
+    all_possible_pairs = get_all_pairs()
+    available_to_hunt = [p for p in all_possible_pairs if p not in active_symbols]
+    
+    if not available_to_hunt:
+        logger.info("کوئی بھی جوڑا شکار کے لیے دستیاب نہیں کیونکہ سب کے سگنل فعال ہیں۔")
+        return []
+
+    # 2. مارکیٹ کی حرکت کی بنیاد پر دستیاب جوڑوں کو ترتیب دیں
     try:
         with open(MARKET_STATE_FILE, 'r') as f:
             market_state = json.load(f)
@@ -57,7 +68,7 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
 
     volatility_map = {}
     for symbol, data in market_state.items():
-        if 'current_price' in data and 'previous_price' in data:
+        if symbol in available_to_hunt and 'current_price' in data and 'previous_price' in data:
             try:
                 change_pct = (abs(data['current_price'] - data['previous_price']) / data['previous_price']) * 100
                 volatility_map[symbol] = change_pct
@@ -66,33 +77,31 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     
     sorted_by_volatility = sorted(volatility_map.keys(), key=lambda s: volatility_map.get(s, 0), reverse=True)
     
+    # 3. حتمی شکار کی فہرست بنائیں (ترجیحات پہلے)
     hunt_list = []
-    
     priority_pairs = get_priority_pairs()
+    
+    # ترجیحی جوڑوں کو پہلے شامل کریں (اگر دستیاب ہوں)
     for pair in priority_pairs:
-        if pair not in active_symbols:
+        if pair in available_to_hunt:
             hunt_list.append(pair)
-    
-    logger.info(f"ترجیحی جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
-
-    if len(hunt_list) < HUNT_LIST_SIZE:
-        secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
-        for pair in sorted_by_volatility:
-            if len(hunt_list) >= HUNT_LIST_SIZE: break
-            if pair in secondary_pairs and pair not in hunt_list and pair not in active_symbols:
-                hunt_list.append(pair)
-    
-    logger.info(f"حرکت والے جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
-
-    if len(hunt_list) < HUNT_LIST_SIZE:
-        all_secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
-        for pair in all_secondary_pairs:
-            if len(hunt_list) >= HUNT_LIST_SIZE: break
-            if pair not in hunt_list and pair not in active_symbols:
-                hunt_list.append(pair)
+            
+    # اگر فہرست ابھی بھی چھوٹی ہے، تو حرکت کی بنیاد پر دیگر جوڑوں کو شامل کریں
+    for pair in sorted_by_volatility:
+        if len(hunt_list) >= HUNT_LIST_SIZE:
+            break
+        if pair not in hunt_list and pair in available_to_hunt:
+            hunt_list.append(pair)
+            
+    # اگر فہرست اب بھی چھوٹی ہے، تو باقی دستیاب جوڑوں کو شامل کریں
+    for pair in available_to_hunt:
+        if len(hunt_list) >= HUNT_LIST_SIZE:
+            break
+        if pair not in hunt_list:
+            hunt_list.append(pair)
 
     final_hunt_list = hunt_list[:HUNT_LIST_SIZE]
-    logger.info(f"حتمی شکار کی فہرست ({len(final_hunt_list)} جوڑے): {final_hunt_list}")
+    logger.info(f"حتمی اور درست شکار کی فہرست ({len(final_hunt_list)} جوڑے): {final_hunt_list}")
     return final_hunt_list
 
 async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
