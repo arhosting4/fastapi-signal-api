@@ -11,31 +11,29 @@ API_CONFIG = {
     "CANDLE_COUNT": 100,
 }
 
-# --- ٹریڈنگ پیرامیٹرز ---
+# --- ٹریڈنگ پیرامیٹرز (★★★ اپ ڈیٹ شدہ ★★★) ---
+# اب ہم صرف 14 منتخب جوڑوں پر توجہ مرکوز کریں گے۔
 TRADING_PAIRS = {
-    "PRIORITY_PAIRS_WEEKDAY": ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"],
-    "SECONDARY_PAIRS_WEEKDAY": [
-        "AUD/USD", "USD/JPY", "USD/CAD", "NZD/USD", "USD/CHF", 
-        "EUR/JPY", "GBP/JPY", "ETH/USD"
+    "PRIMARY_PAIRS": [
+        "XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", 
+        "AUD/USD", "NZD/USD", "USD/CHF", "EUR/JPY", "GBP/JPY"
     ],
-    "CRYPTO_PAIRS_WEEKEND": ["BTC/USD", "ETH/USD", "SOL/USD"],
-    "HUNT_LIST_SIZE": 4,
+    "CRYPTO_PAIRS": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
 }
 
-# --- سگنل جنریشن کی حکمت عملی (اپ ڈیٹ شدہ) ---
+# --- سگنل جنریشن کی حکمت عملی (★★★ اپ ڈیٹ شدہ ★★★) ---
 STRATEGY = {
-    # --- بنیادی سگنل فلٹر ---
-    "SIGNAL_SCORE_THRESHOLD": 50.0,  # تکنیکی اسکور کی حد کو 40 سے بڑھا کر 50 کر دیا گیا
-    "FINAL_CONFIDENCE_THRESHOLD": 75.0, # اعتماد کی حد کو 70 سے بڑھا کر 75 کر دیا گیا
-
-    # --- "A-Grade" ٹریڈ کے لیے سخت قوانین ---
-    "MIN_RISK_REWARD_RATIO": 2.5,  # رسک/ریوارڈ تناسب کو 2.0 سے بڑھا کر 2.5 کر دیا گیا
-    "MIN_CONFLUENCE_SCORE": 7,     # ★★★ نیا قانون: TP/SL لیول کا کم از کم کنفلونس اسکور 7 ہونا چاہیے
-    "REQUIRE_PATTERN_CONFIRMATION": True, # ★★★ نیا قانون: ٹریڈ کے لیے ایک موافق کینڈل اسٹک پیٹرن لازمی ہے
+    "SIGNAL_SCORE_THRESHOLD": 40.0,
+    "FINAL_CONFIDENCE_THRESHOLD": 70.0,
+    "MIN_RISK_REWARD_RATIO": 1.5,
+    # نیا پیرامیٹر: کم از کم اتنی فیصد حرکت پر گہرا تجزیہ کیا جائے گا۔
+    # اس سے ہم غیر ضروری API کالز سے بچیں گے۔
+    "MIN_CHANGE_PERCENT_FOR_ANALYSIS": 0.10, # مثال: 0.10%
 }
 
 # --- فیڈ بیک چیکر ---
 FEEDBACK_CHECKER = {
+    # ایک کال میں زیادہ سے زیادہ 7 جوڑے بھیجے جا سکتے ہیں (TwelveData کی حد)
     "MAX_PAIRS_PER_CALL": 7,
     "PRIORITY_SYMBOLS": ["XAU/USD", "BTC/USD", "ETH/USD", "GBP/JPY"]
 }
