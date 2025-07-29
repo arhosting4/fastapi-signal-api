@@ -40,7 +40,6 @@ FEEDBACK_CHECKER = {
     "MAX_PAIRS_PER_CALL": 8,
 }
 
-# ★★★ نیا سیکشن شامل کیا گیا ★★★
 # --- تکنیکی تجزیہ کے پیرامیٹرز ---
 TECHNICAL_ANALYSIS = {
     "EMA_SHORT_PERIOD": 10,
