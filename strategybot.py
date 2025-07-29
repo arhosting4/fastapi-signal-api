@@ -7,18 +7,10 @@ import logging
 from typing import List, Tuple, Optional, Dict, Any
 
 from level_analyzer import find_optimal_tp_sl
+from config import TECHNICAL_ANALYSIS # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
 
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
-
-# --- حکمت عملی کے پیرامیٹرز ---
-EMA_SHORT_PERIOD = 10
-EMA_LONG_PERIOD = 30
-RSI_PERIOD = 14
-STOCH_K = 14
-STOCH_D = 3
-SUPERTREND_ATR = 10
-SUPERTREND_FACTOR = 3.0
 
 def _load_weights() -> Dict[str, float]:
     """JSON فائل سے حکمت عملی کے وزن کو لوڈ کرتا ہے۔"""
@@ -32,11 +24,9 @@ def _load_weights() -> Dict[str, float]:
             "price_action": 0.10, "supertrend_confirm": 0.20
         }
 
-# ★★★ نیا: ATR پر مبنی متبادل TP/SL کا حساب لگانے کا فنکشن ★★★
 def _calculate_atr_fallback_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
     """ATR کی بنیاد پر ایک محفوظ متبادل TP/SL کا حساب لگاتا ہے۔"""
     try:
-        # ATR کا حساب (riskguardian.py سے منطق لی گئی)
         df['h-l'] = df['high'] - df['low']
         df['h-pc'] = np.abs(df['high'] - df['close'].shift())
         df['l-pc'] = np.abs(df['low'] - df['close'].shift())
@@ -50,7 +40,6 @@ def _calculate_atr_fallback_tp_sl(df: pd.DataFrame, signal_type: str) -> Optiona
         last_close = df['close'].iloc[-1]
         current_atr = atr.iloc[-1]
         
-        # رسک/ریوارڈ 1:2 کے ساتھ
         if signal_type == 'buy':
             sl = last_close - (1.5 * current_atr)
             tp = last_close + (3.0 * current_atr)
@@ -64,7 +53,6 @@ def _calculate_atr_fallback_tp_sl(df: pd.DataFrame, signal_type: str) -> Optiona
         logger.error(f"ATR متبادل TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
         return None
 
-# ★★★ اپ ڈیٹ شدہ مرکزی فنکشن ★★★
 def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
     """
     بہترین TP/SL لیولز کی شناخت کرتا ہے، جس میں کنفلونس کو ترجیح دی جاتی ہے
@@ -75,16 +63,13 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
         return None
         
     try:
-        # پہلی ترجیح: کنفلونس پر مبنی لیولز
         optimal_levels = find_optimal_tp_sl(candles, signal_type)
         if optimal_levels:
             logger.info("بہترین TP/SL کنفلونس کی بنیاد پر ملا۔")
             return optimal_levels
 
-        # متبادل: ATR پر مبنی TP/SL
         logger.warning("کنفلونس لیولز نہیں ملے۔ ATR پر مبنی متبادل TP/SL کا حساب لگایا جا رہا ہے۔")
         df = pd.DataFrame(candles)
-        # ڈیٹا کی اقسام کو یقینی بنائیں
         for col in ['high', 'low', 'close']:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df.dropna(subset=['high', 'low', 'close'], inplace=True)
@@ -95,7 +80,6 @@ def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[flo
         logging.error(f"TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
         return None
 
-# --- انڈیکیٹر کیلکولیشن فنکشنز (کوئی تبدیلی نہیں) ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -130,9 +114,10 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
                 df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
     return df
 
-# --- بنیادی حکمت عملی کا اسکور پیدا کرنے والا فنکشن (کوئی تبدیلی نہیں) ---
 def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
-    if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
+    # ★★★ کنفیگریشن فائل سے پیرامیٹرز استعمال کریں ★★★
+    params = TECHNICAL_ANALYSIS
+    if len(candles) < max(params["EMA_LONG_PERIOD"], params["RSI_PERIOD"], 34):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
     df = pd.DataFrame(candles)
@@ -140,11 +125,11 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     
     WEIGHTS = _load_weights()
     
-    ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
-    ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
-    rsi = calculate_rsi(close, RSI_PERIOD)
-    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
-    df = calculate_supertrend(df, SUPERTREND_ATR, SUPERTREND_FACTOR)
+    ema_fast = close.ewm(span=params["EMA_SHORT_PERIOD"], adjust=False).mean()
+    ema_slow = close.ewm(span=params["EMA_LONG_PERIOD"], adjust=False).mean()
+    rsi = calculate_rsi(close, params["RSI_PERIOD"])
+    stoch = calculate_stoch(df['high'], df['low'], close, params["STOCH_K"], params["STOCH_D"])
+    df = calculate_supertrend(df, params["SUPERTREND_ATR"], params["SUPERTREND_FACTOR"])
     
     last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
     last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
