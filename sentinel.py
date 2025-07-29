@@ -16,13 +16,11 @@ logger = logging.getLogger(__name__)
 
 MARKETAUX_API_KEY = os.getenv("MARKETAUX_API_KEY")
 
-# ★★★ نیا: اعلیٰ اثر والے اقتصادی واقعات کے لیے مطلوبہ الفاظ ★★★
-# ان الفاظ کو کرنسی کے ناموں کے ساتھ ملا کر تلاش کیا جائے گا
 HIGH_IMPACT_KEYWORDS = {
     'USD': ['fed', 'fomc', 'cpi', 'nfp', 'unemployment', 'inflation', 'gdp', 'powell'],
     'EUR': ['ecb', 'inflation', 'gdp', 'unemployment', 'lagarde'],
     'GBP': ['boe', 'inflation', 'gdp', 'unemployment', 'bailey'],
-    'XAU': ['war', 'crisis', 'geopolitical', 'fed', 'inflation'], # سونا اکثر عالمی واقعات سے متاثر ہوتا ہے
+    'XAU': ['war', 'crisis', 'geopolitical', 'fed', 'inflation'],
     'BTC': ['sec', 'regulation', 'etf', 'crypto ban', 'halving']
 }
 
@@ -32,7 +30,6 @@ async def fetch_news_from_marketaux(client: httpx.AsyncClient) -> Optional[Dict[
         logger.error("MarketAux API کی کلید (MARKETAUX_API_KEY) ماحول کے متغیرات میں سیٹ نہیں ہے۔")
         return None
         
-    # ہم تمام اہم کرنسیوں اور اثاثوں سے متعلق خبریں حاصل کر رہے ہیں
     url = f"https://api.marketaux.com/v1/news/all?symbols=TSLA,AMZN,MSFT,GOOGL,XAU,EUR,GBP,JPY,CHF,CAD,AUD,NZD,BTC,ETH&filter_entities=true&language=en&limit=100&api_token={MARKETAUX_API_KEY}"
     
     try:
@@ -51,41 +48,49 @@ async def fetch_news_from_marketaux(client: httpx.AsyncClient) -> Optional[Dict[
         return None
 
 async def update_economic_calendar_cache():
-    """مارکیٹ کی خبروں کو اپ ڈیٹ کرتا ہے اور انہیں ڈیٹا بیس میں کیش کرتا ہے۔"""
+    """
+    مارکیٹ کی خبروں کو اپ ڈیٹ کرتا ہے اور انہیں علامت کے لحاظ سے گروپ کرکے ڈیٹا بیس میں کیش کرتا ہے۔
+    """
     logger.info(">>> خبروں کا کیش اپ ڈیٹ کرنے کا کام شروع ہو رہا ہے...")
     
     async with httpx.AsyncClient() as client:
         news_data = await fetch_news_from_marketaux(client)
 
     if news_data and 'data' in news_data and news_data['data']:
-        # ★★★ اب ہم خبروں کے ساتھ ان کی اہمیت بھی محفوظ کریں گے ★★★
-        articles = []
+        categorized_articles = {}
+        
         for item in news_data['data']:
             title = item.get('title', '').lower()
             snippet = item.get('snippet', '').lower()
             content = title + " " + snippet
             
             impact = "Low"
-            # چیک کریں کہ آیا کوئی اعلیٰ اثر والا مطلوبہ لفظ موجود ہے
             for currency, keywords in HIGH_IMPACT_KEYWORDS.items():
                 if any(keyword in content for keyword in keywords):
                     impact = "High"
-                    break # جیسے ہی ایک اعلیٰ اثر والا لفظ ملے، لوپ توڑ دیں
+                    break
 
-            articles.append({
+            article_data = {
                 'title': item.get('title'),
                 'url': item.get('url'),
                 'source': item.get('source'),
                 'snippet': item.get('snippet'),
                 'published_at': item.get('published_at'),
-                'impact': impact, # ★★★ اہمیت کو یہاں محفوظ کیا جا رہا ہے ★★★
-                'entities': [entity.get('symbol') for entity in item.get('entities', [])] # متعلقہ علامتیں
-            })
+                'impact': impact,
+                'entities': [entity.get('symbol') for entity in item.get('entities', [])]
+            }
+            
+            # ★★★ علامت کے لحاظ سے گروپ بندی ★★★
+            for entity_symbol in article_data['entities']:
+                if entity_symbol not in categorized_articles:
+                    categorized_articles[entity_symbol] = []
+                categorized_articles[entity_symbol].append(article_data)
         
         db = SessionLocal()
         try:
-            update_news_cache_in_db(db, {"articles": articles})
-            logger.info(f"خبروں کا کیش کامیابی سے {len(articles)} مضامین کے ساتھ اپ ڈیٹ ہو گیا۔")
+            # اب گروپ شدہ ڈیٹا کو کیش کریں
+            update_news_cache_in_db(db, {"articles_by_symbol": categorized_articles})
+            logger.info(f"خبروں کا کیش کامیابی سے {len(categorized_articles)} علامتوں کے لیے اپ ڈیٹ ہو گیا۔")
         finally:
             db.close()
     else:
@@ -93,39 +98,47 @@ async def update_economic_calendar_cache():
 
 async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
     """
-    کیش شدہ خبروں کی بنیاد پر کسی مخصوص علامت کے لیے خبروں کے اثرات کا تجزیہ کرتا ہے۔
-    ★★★ اب یہ آنے والے واقعات پر زیادہ توجہ دیتا ہے۔ ★★★
+    کیش شدہ خبروں کی بنیاد پر کسی مخصوص علامت کے لیے خبروں کے اثرات کا تیزی سے تجزیہ کرتا ہے۔
     """
     db = SessionLocal()
     try:
         all_news_content = get_cached_news(db)
-        if not all_news_content or 'articles' not in all_news_content or not all_news_content['articles']:
-            return {"impact": "Clear", "reason": "خبروں کا کیش خالی ہے۔"}
+        if not all_news_content or 'articles_by_symbol' not in all_news_content:
+            return {"impact": "Clear", "reason": "خبروں کا کیش خالی یا غلط فارمیٹ میں ہے۔"}
     finally:
         db.close()
 
-    # علامت کے بنیادی اور ثانوی حصے الگ کریں (مثلاً, "EUR/USD" -> "EUR", "USD")
-    symbol_parts = symbol.upper().split('/')
+    symbol_parts = [s.strip() for s in symbol.upper().split('/')]
     
+    relevant_articles = []
+    # ★★★ صرف متعلقہ علامتوں کی خبریں حاصل کریں ★★★
+    for part in symbol_parts:
+        relevant_articles.extend(all_news_content['articles_by_symbol'].get(part, []))
+    
+    if not relevant_articles:
+        return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی متعلقہ خبر نہیں ملی۔"}
+
     now = datetime.utcnow()
     
-    for article in all_news_content['articles']:
-        # صرف اعلیٰ اثر والی خبروں پر توجہ دیں
+    for article in relevant_articles:
         if article.get('impact') != "High":
             continue
 
-        # چیک کریں کہ آیا خبر اس علامت سے متعلق ہے
-        is_relevant = any(part in article.get('entities', []) for part in symbol_parts)
-        
-        if is_relevant:
-            published_time = datetime.fromisoformat(article.get('published_at').replace('Z', '+00:00'))
+        try:
+            published_time_str = article.get('published_at')
+            if not published_time_str: continue
+            # ٹائم زون کی معلومات شامل کریں اگر موجود نہ ہو
+            if 'Z' not in published_time_str and '+' not in published_time_str:
+                 published_time_str += 'Z'
+            published_time = datetime.fromisoformat(published_time_str.replace('Z', '+00:00'))
             
-            # اگر خبر حال ہی میں شائع ہوئی ہے یا مستقبل قریب میں متوقع ہے
-            if now - timedelta(hours=1) <= published_time <= now + timedelta(hours=4):
+            if now - timedelta(hours=1) <= published_time.replace(tzinfo=None) <= now + timedelta(hours=4):
                 return {
                     "impact": "High",
                     "reason": f"ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'"
                 }
+        except Exception as e:
+            logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
             
     return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی حالیہ یا آنے والی اعلیٰ اثر والی خبر نہیں ملی۔"}
-                                                             
+            
