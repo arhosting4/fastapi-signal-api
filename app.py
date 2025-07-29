@@ -21,7 +21,7 @@ from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
-from key_manager import key_manager # ★★★ کی مینیجر کو امپورٹ کریں ★★★
+from key_manager import key_manager
 
 # لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
@@ -72,7 +72,8 @@ async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db
     if not password_data.password or password_data.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
     
-    success = crud.delete_active_signal(db, signal_id)
+    # ★★★ نیا فنکشن استعمال کریں ★★★
+    success = crud.close_and_archive_signal(db, signal_id)
     
     if success:
         await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id}})
@@ -91,7 +92,6 @@ async def start_background_tasks():
     scheduler = AsyncIOScheduler(timezone="UTC")
     app.state.scheduler = scheduler
     
-    # ہارٹ بیٹ جاب جو اپنا آخری چلنے کا وقت بھی محفوظ کرے گی
     def heartbeat_job():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔ آخری دھڑکن: {app.state.last_heartbeat.isoformat()}")
@@ -102,7 +102,6 @@ async def start_background_tasks():
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
     
     scheduler.start()
-    # پہلی ہارٹ بیٹ کو فوری طور پر سیٹ کریں
     heartbeat_job()
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
 
@@ -143,15 +142,12 @@ async def health_check():
     """ایک سادہ ہیلتھ چیک جو صرف سروس کے چلنے کی تصدیق کرتا ہے۔"""
     return {"status": "ok"}
 
-# ★★★ نیا اور تفصیلی سسٹم اسٹیٹس روٹ ★★★
 @app.get("/api/system-status", response_class=JSONResponse)
 async def get_system_status():
     """سسٹم کی صحت اور کارکردگی کے بارے میں تفصیلی معلومات فراہم کرتا ہے۔"""
-    # 1. شیڈیولر کی حالت
     scheduler_running = hasattr(app.state, "scheduler") and app.state.scheduler.running
     last_heartbeat = getattr(app.state, "last_heartbeat", None)
     
-    # 2. ڈیٹا بیس کی حالت
     db_status = "Disconnected"
     try:
         connection = engine.connect()
@@ -161,7 +157,6 @@ async def get_system_status():
         logger.error(f"ڈیٹا بیس کنکشن چیک کرنے میں خرابی: {e}")
         db_status = "Connection Error"
 
-    # 3. API کیز کی حالت
     total_keys = len(key_manager.keys) + len(key_manager.limited_keys)
     available_keys = len(key_manager.keys) - len(key_manager.limited_keys)
     
@@ -199,3 +194,4 @@ async def get_news(db: Session = Depends(get_db)):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+        
