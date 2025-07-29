@@ -10,9 +10,17 @@ from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
-from config import TRADING_PAIRS, API_CONFIG # مرکزی کنفیگریشن امپورٹ کریں
+from config import TRADING_PAIRS, API_CONFIG
 
 logger = logging.getLogger(__name__)
+
+# --- کنفیگریشن سے متغیرات ---
+PRIORITY_PAIRS_WEEKDAY = TRADING_PAIRS["PRIORITY_PAIRS_WEEKDAY"]
+SECONDARY_PAIRS_WEEKDAY = TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"]
+CRYPTO_PAIRS_WEEKEND = TRADING_PAIRS["CRYPTO_PAIRS_WEEKEND"]
+HUNT_LIST_SIZE = TRADING_PAIRS["HUNT_LIST_SIZE"]
+PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
+CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
 
 MARKET_STATE_FILE = "market_state.json"
 
@@ -22,8 +30,8 @@ def get_all_pairs() -> List[str]:
     """
     today = datetime.utcnow().weekday()
     if today >= 5: # ہفتہ (5) اور اتوار (6)
-        return TRADING_PAIRS["CRYPTO_PAIRS_WEEKEND"]
-    return TRADING_PAIRS["PRIORITY_PAIRS_WEEKDAY"] + TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"]
+        return CRYPTO_PAIRS_WEEKEND
+    return PRIORITY_PAIRS_WEEKDAY + SECONDARY_PAIRS_WEEKDAY
 
 def get_priority_pairs() -> List[str]:
     """
@@ -31,8 +39,8 @@ def get_priority_pairs() -> List[str]:
     """
     today = datetime.utcnow().weekday()
     if today >= 5: # ہفتہ اور اتوار
-        return TRADING_PAIRS["CRYPTO_PAIRS_WEEKEND"]
-    return TRADING_PAIRS["PRIORITY_PAIRS_WEEKDAY"]
+        return CRYPTO_PAIRS_WEEKEND
+    return PRIORITY_PAIRS_WEEKDAY
 
 def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
     """
@@ -66,26 +74,24 @@ def get_pairs_to_hunt(active_symbols: List[str]) -> List[str]:
             hunt_list.append(pair)
     
     logger.info(f"ترجیحی جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
-    
-    hunt_list_size = TRADING_PAIRS["HUNT_LIST_SIZE"]
 
-    if len(hunt_list) < hunt_list_size:
-        secondary_pairs = TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"] if datetime.utcnow().weekday() < 5 else []
+    if len(hunt_list) < HUNT_LIST_SIZE:
+        secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
         for pair in sorted_by_volatility:
-            if len(hunt_list) >= hunt_list_size: break
+            if len(hunt_list) >= HUNT_LIST_SIZE: break
             if pair in secondary_pairs and pair not in hunt_list and pair not in active_symbols:
                 hunt_list.append(pair)
     
     logger.info(f"حرکت والے جوڑوں کو شامل کرنے کے بعد شکار کی فہرست: {hunt_list}")
 
-    if len(hunt_list) < hunt_list_size:
-        all_secondary_pairs = TRADING_PAIRS["SECONDARY_PAIRS_WEEKDAY"] if datetime.utcnow().weekday() < 5 else []
+    if len(hunt_list) < HUNT_LIST_SIZE:
+        all_secondary_pairs = SECONDARY_PAIRS_WEEKDAY if datetime.utcnow().weekday() < 5 else []
         for pair in all_secondary_pairs:
-            if len(hunt_list) >= hunt_list_size: break
+            if len(hunt_list) >= HUNT_LIST_SIZE: break
             if pair not in hunt_list and pair not in active_symbols:
                 hunt_list.append(pair)
 
-    final_hunt_list = hunt_list[:hunt_list_size]
+    final_hunt_list = hunt_list[:HUNT_LIST_SIZE]
     logger.info(f"حتمی شکار کی فہرست ({len(final_hunt_list)} جوڑے): {final_hunt_list}")
     return final_hunt_list
 
@@ -96,10 +102,7 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
     
-    timeframe = API_CONFIG["PRIMARY_TIMEFRAME"]
-    candle_count = API_CONFIG["CANDLE_COUNT"]
-    
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={timeframe}&outputsize={candle_count}&apikey={api_key}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
     logger.info(f"[{symbol}] کے لیے Twelve Data API سے ڈیٹا حاصل کیا جا رہا ہے (کلید: {api_key[:8]}...)")
     
     try:
@@ -174,30 +177,25 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# ★★★ نیا شامل کردہ فنکشن ★★★
-def update_market_state(live_prices: Dict[str, float]) -> None:
-    """
-    مارکیٹ کی حالت (موجودہ اور پچھلی قیمتیں) کو market_state.json فائل میں اپ ڈیٹ کرتا ہے۔
-    """
-    if not live_prices:
-        return
-
+def update_market_state(live_prices: Dict[str, float]):
+    """مارکیٹ کی حالت کو اپ ڈیٹ کرتا ہے تاکہ hunter.py اسے استعمال کر سکے۔"""
     try:
-        with open(MARKET_STATE_FILE, 'r') as f:
-            previous_state = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        previous_state = {}
-    
-    current_state = {}
-    for symbol, price in live_prices.items():
-        current_state[symbol] = {
-            "current_price": price,
-            "previous_price": previous_state.get(symbol, {}).get("current_price", price)
-        }
-    
-    try:
+        try:
+            with open(MARKET_STATE_FILE, 'r') as f:
+                previous_state = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            previous_state = {}
+        
+        current_state = {}
+        for symbol, price in live_prices.items():
+            current_state[symbol] = {
+                "current_price": price,
+                "previous_price": previous_state.get(symbol, {}).get("current_price", price)
+            }
+        
         with open(MARKET_STATE_FILE, 'w') as f:
             json.dump(current_state, f)
+        
         logger.info(f"مارکیٹ اسٹیٹ فائل کامیابی سے {len(current_state)} جوڑوں کے لیے اپ ڈیٹ ہو گئی۔")
     except IOError as e:
         logger.error(f"مارکیٹ اسٹیٹ فائل لکھنے میں خرابی: {e}")
