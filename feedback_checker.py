@@ -34,7 +34,6 @@ async def check_active_signals_job():
         if not active_signals:
             signal_check_queue.clear()
             signal_check_set.clear()
-            # مارکیٹ اسٹیٹ کو اپ ڈیٹ کرنے کے لیے بنیادی جوڑوں کی قیمتیں حاصل کریں
             try:
                 essential_prices = await get_current_prices_from_api(list(PRIORITY_SYMBOLS)[:4])
                 if essential_prices:
@@ -46,26 +45,23 @@ async def check_active_signals_job():
         # 2. قطار کو اپ ڈیٹ کریں
         active_symbols_set = {s.symbol for s in active_signals}
         
-        # قطار سے وہ سگنل ہٹا دیں جو اب فعال نہیں ہیں
         current_queue_list = list(signal_check_queue)
         for symbol in current_queue_list:
             if symbol not in active_symbols_set:
                 if symbol in signal_check_queue: signal_check_queue.remove(symbol)
                 if symbol in signal_check_set: signal_check_set.remove(symbol)
 
-        # قطار میں نئے فعال سگنلز شامل کریں (ترجیحی پہلے)
         new_signals_to_add = active_symbols_set - signal_check_set
         
-        # نئے سگنلز کو ترجیح دیں
         priority_new = [s for s in new_signals_to_add if s in PRIORITY_SYMBOLS]
         other_new = [s for s in new_signals_to_add if s not in PRIORITY_SYMBOLS]
 
-        for symbol in reversed(priority_new): # ترجیحی جوڑوں کو قطار کے شروع میں ڈالیں
+        for symbol in reversed(priority_new):
             if symbol not in signal_check_set:
                 signal_check_queue.appendleft(symbol)
                 signal_check_set.add(symbol)
         
-        for symbol in other_new: # باقی کو آخر میں
+        for symbol in other_new:
             if symbol not in signal_check_set:
                 signal_check_queue.append(symbol)
                 signal_check_set.add(symbol)
@@ -118,8 +114,16 @@ async def check_active_signals_job():
                 logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
                 
                 await trainerai.learn_from_outcome(db, signal, outcome)
-                crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
-                crud.delete_active_signal(db, signal.signal_id)
+                
+                # ★★★ یہاں تبدیلی کی گئی ہے ★★★
+                # اب ہم نئے اور درست فنکشن کو کال کر رہے ہیں
+                crud.close_and_archive_signal(
+                    db=db, 
+                    signal_id=signal.signal_id, 
+                    outcome=outcome, 
+                    close_price=close_price, 
+                    reason_for_closure=reason_for_closure
+                )
                 
                 asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
                 
@@ -136,4 +140,4 @@ async def check_active_signals_job():
     finally:
         if db.is_active:
             db.close()
-        
+                
