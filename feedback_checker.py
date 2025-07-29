@@ -15,10 +15,10 @@ from models import SessionLocal, ActiveSignal
 from utils import get_current_prices_from_api
 from websocket_manager import manager
 import trainerai
+from config import FEEDBACK_CHECKER # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
 
 logger = logging.getLogger(__name__)
 MARKET_STATE_FILE = "market_state.json"
-MAX_PAIRS_PER_CALL = 8
 
 def get_feedback_essential_pairs() -> List[str]:
     """
@@ -41,7 +41,9 @@ async def check_active_signals_job():
         pairs_to_check = set(s.symbol for s in active_signals)
         pairs_to_check.update(get_feedback_essential_pairs())
         
-        final_list_to_check = sorted(list(pairs_to_check))[:MAX_PAIRS_PER_CALL]
+        # ★★★ کنفیگریشن فائل سے حد استعمال کریں ★★★
+        max_pairs = FEEDBACK_CHECKER["MAX_PAIRS_PER_CALL"]
+        final_list_to_check = sorted(list(pairs_to_check))[:max_pairs]
         
         if not final_list_to_check:
             return
@@ -107,14 +109,13 @@ async def check_active_signals_job():
             if outcome and close_price is not None:
                 logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
                 
-                # ★★★ AI کے سیکھنے کا عمل شروع کریں ★★★
                 trainerai.learn_from_outcome(db, signal, outcome)
                 
-                # ★★★ تفصیلی معلومات کے ساتھ مکمل شدہ ٹریڈ شامل کریں ★★★
                 crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
                 
                 crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
-                crud.delete_active_signal(db, signal.signal_id)
+                # ★★★ اہم تبدیلی: ڈیلیٹ فنکشن کو اب موجودہ قیمت کی ضرورت نہیں ★★★
+                crud.delete_active_signal(db, signal.signal_id) 
                 await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}})
                 
     except Exception as e:
