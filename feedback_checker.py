@@ -57,52 +57,43 @@ async def check_active_signals_job():
         if not active_signals:
             return
             
-        # TP/SL کی جانچ
         for signal in active_signals:
             current_price = live_prices.get(signal.symbol)
             if current_price is None:
                 continue
 
             outcome = None
-            feedback = None
             close_price = None
             reason_for_closure = None
 
             if signal.signal_type == "buy":
                 if current_price >= signal.tp_price:
                     outcome = "tp_hit"
-                    feedback = "correct"
                     close_price = signal.tp_price
                     reason_for_closure = "tp_hit"
                 elif current_price <= signal.sl_price:
                     outcome = "sl_hit"
-                    feedback = "incorrect"
                     close_price = signal.sl_price
                     reason_for_closure = "sl_hit"
             elif signal.signal_type == "sell":
                 if current_price <= signal.tp_price:
                     outcome = "tp_hit"
-                    feedback = "correct"
                     close_price = signal.tp_price
                     reason_for_closure = "tp_hit"
                 elif current_price >= signal.sl_price:
                     outcome = "sl_hit"
-                    feedback = "incorrect"
                     close_price = signal.sl_price
                     reason_for_closure = "sl_hit"
 
             if outcome and close_price is not None:
                 logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
                 
-                trainerai.learn_from_outcome(db, signal, outcome)
+                # ★★★ اب await کے ساتھ کال کریں ★★★
+                await trainerai.learn_from_outcome(db, signal, outcome)
                 
-                # 1. پہلے تاریخ میں شامل کریں
+                feedback = "correct" if outcome == "tp_hit" else "incorrect"
                 crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
-                
-                # 2. فیڈ بیک شامل کریں
                 crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
-                
-                # 3. ★★★ اب صرف فعال سگنل کو حذف کریں ★★★
                 crud.delete_active_signal_only(db, signal.signal_id) 
                 
                 await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}})
