@@ -1,12 +1,9 @@
 # filename: feedback_checker.py
 
-import asyncio  # ★★★ asyncio امپورٹ کریں ★★★
-import json
+import asyncio
 import logging
-from typing import List, Dict, Any
-from datetime import datetime
-
-import httpx
+from typing import List, Deque
+from collections import deque
 from sqlalchemy.orm import Session
 
 # مقامی امپورٹس
@@ -19,89 +16,124 @@ from config import FEEDBACK_CHECKER
 
 logger = logging.getLogger(__name__)
 
-def get_feedback_essential_pairs() -> List[str]:
-    """
-    نگرانی کے لیے بنیادی جوڑوں کی فہرست واپس کرتا ہے۔
-    """
-    primary_pairs = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
-    weekend_pairs = ["BTC/USD", "ETH/USD"]
-    is_weekend = datetime.utcnow().weekday() >= 5
-    return weekend_pairs if is_weekend else primary_pairs
+# --- ذہین قطار کا نظام ---
+signal_check_queue: Deque[str] = deque()
+signal_check_set = set()
+
+MAX_PAIRS_PER_CALL = FEEDBACK_CHECKER["MAX_PAIRS_PER_CALL"]
+PRIORITY_SYMBOLS = set(FEEDBACK_CHECKER["PRIORITY_SYMBOLS"])
 
 async def check_active_signals_job():
     """
-    یہ جاب ہر منٹ چلتی ہے اور فعال سگنلز کو TP/SL کے لیے چیک کرتی ہے،
-    اور نتیجہ آنے پر AI کو فیڈ بیک بھیجتی ہے۔
+    یہ جاب ہر منٹ چلتی ہے اور ایک ذہین قطار کا استعمال کرتے ہوئے فعال سگنلز کو چیک کرتی ہے۔
     """
     db = SessionLocal()
     try:
+        # 1. ڈیٹا بیس سے تمام فعال سگنلز حاصل کریں
         active_signals: List[ActiveSignal] = crud.get_all_active_signals_from_db(db)
-        
-        pairs_to_check = set(s.symbol for s in active_signals)
-        pairs_to_check.update(get_feedback_essential_pairs())
-        
-        max_pairs = FEEDBACK_CHECKER["MAX_PAIRS_PER_CALL"]
-        final_list_to_check = sorted(list(pairs_to_check))[:max_pairs]
-        
-        if not final_list_to_check:
-            return
-
-        live_prices = await get_current_prices_from_api(final_list_to_check)
-
-        if not live_prices:
-            logger.warning("API سے کوئی قیمت حاصل نہیں ہوئی۔ جانچ روکی جا رہی ہے۔")
-            return
-
-        update_market_state(live_prices)
-        
         if not active_signals:
+            signal_check_queue.clear()
+            signal_check_set.clear()
+            # مارکیٹ اسٹیٹ کو اپ ڈیٹ کرنے کے لیے بنیادی جوڑوں کی قیمتیں حاصل کریں
+            try:
+                essential_prices = await get_current_prices_from_api(list(PRIORITY_SYMBOLS)[:4])
+                if essential_prices:
+                    update_market_state(essential_prices)
+            except Exception as e:
+                logger.error(f"بنیادی جوڑوں کی قیمتیں حاصل کرنے میں خرابی: {e}")
+            return
+
+        # 2. قطار کو اپ ڈیٹ کریں
+        active_symbols_set = {s.symbol for s in active_signals}
+        
+        # قطار سے وہ سگنل ہٹا دیں جو اب فعال نہیں ہیں
+        current_queue_list = list(signal_check_queue)
+        for symbol in current_queue_list:
+            if symbol not in active_symbols_set:
+                if symbol in signal_check_queue: signal_check_queue.remove(symbol)
+                if symbol in signal_check_set: signal_check_set.remove(symbol)
+
+        # قطار میں نئے فعال سگنلز شامل کریں (ترجیحی پہلے)
+        new_signals_to_add = active_symbols_set - signal_check_set
+        
+        # نئے سگنلز کو ترجیح دیں
+        priority_new = [s for s in new_signals_to_add if s in PRIORITY_SYMBOLS]
+        other_new = [s for s in new_signals_to_add if s not in PRIORITY_SYMBOLS]
+
+        for symbol in reversed(priority_new): # ترجیحی جوڑوں کو قطار کے شروع میں ڈالیں
+            if symbol not in signal_check_set:
+                signal_check_queue.appendleft(symbol)
+                signal_check_set.add(symbol)
+        
+        for symbol in other_new: # باقی کو آخر میں
+            if symbol not in signal_check_set:
+                signal_check_queue.append(symbol)
+                signal_check_set.add(symbol)
+
+        # 3. اس منٹ چیک کرنے کے لیے جوڑوں کا بیچ بنائیں
+        if not signal_check_queue:
+            logger.info("اس منٹ چیک کرنے کے لیے قطار میں کوئی جوڑا نہیں۔")
             return
             
-        for signal in active_signals:
+        pairs_to_check_this_minute = []
+        for _ in range(min(len(signal_check_queue), MAX_PAIRS_PER_CALL)):
+            pairs_to_check_this_minute.append(signal_check_queue.popleft())
+
+        if not pairs_to_check_this_minute:
+            logger.info("اس منٹ چیک کرنے کے لیے کوئی جوڑا نہیں ملا۔")
+            return
+
+        logger.info(f"قیمت کی جانچ کا بیچ: {pairs_to_check_this_minute}")
+
+        # 4. قیمتیں حاصل کریں اور مارکیٹ اسٹیٹ اپ ڈیٹ کریں
+        live_prices = await get_current_prices_from_api(pairs_to_check_this_minute)
+        if not live_prices:
+            logger.warning("API سے کوئی قیمت حاصل نہیں ہوئی۔ جانچ روکی جا رہی ہے۔")
+            signal_check_queue.extendleft(reversed(pairs_to_check_this_minute))
+            return
+            
+        update_market_state(live_prices)
+        
+        # 5. TP/SL کی جانچ
+        signals_to_process = [s for s in active_signals if s.symbol in live_prices]
+        for signal in signals_to_process:
             current_price = live_prices.get(signal.symbol)
             if current_price is None:
                 continue
 
-            outcome = None
-            close_price = None
-            reason_for_closure = None
+            outcome, close_price, reason_for_closure = None, None, None
 
             if signal.signal_type == "buy":
                 if current_price >= signal.tp_price:
-                    outcome = "tp_hit"
-                    close_price = signal.tp_price
-                    reason_for_closure = "tp_hit"
+                    outcome, close_price, reason_for_closure = "tp_hit", signal.tp_price, "tp_hit"
                 elif current_price <= signal.sl_price:
-                    outcome = "sl_hit"
-                    close_price = signal.sl_price
-                    reason_for_closure = "sl_hit"
+                    outcome, close_price, reason_for_closure = "sl_hit", signal.sl_price, "sl_hit"
             elif signal.signal_type == "sell":
                 if current_price <= signal.tp_price:
-                    outcome = "tp_hit"
-                    close_price = signal.tp_price
-                    reason_for_closure = "tp_hit"
+                    outcome, close_price, reason_for_closure = "tp_hit", signal.tp_price, "tp_hit"
                 elif current_price >= signal.sl_price:
-                    outcome = "sl_hit"
-                    close_price = signal.sl_price
-                    reason_for_closure = "sl_hit"
+                    outcome, close_price, reason_for_closure = "sl_hit", signal.sl_price, "sl_hit"
 
             if outcome and close_price is not None:
-                logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا۔ پس منظر میں الرٹ بھیجا جا رہا ہے۔ ★★★")
+                logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
                 
-                # ★★★ پس منظر میں الرٹ بھیجیں ★★★
-                asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
-
-                # باقی کام معمول کے مطابق چلیں گے
                 await trainerai.learn_from_outcome(db, signal, outcome)
-                
-                feedback = "correct" if outcome == "tp_hit" else "incorrect"
                 crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
-                crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
-                crud.delete_active_signal_only(db, signal.signal_id) 
+                crud.delete_active_signal(db, signal.signal_id)
                 
+                asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
+                
+                if signal.symbol in signal_check_set:
+                    signal_check_set.remove(signal.symbol)
+        
+        # 6. جن جوڑوں کو چیک کیا گیا، انہیں واپس قطار کے آخر میں ڈال دیں
+        for symbol in pairs_to_check_this_minute:
+            if symbol in signal_check_set:
+                signal_check_queue.append(symbol)
+
     except Exception as e:
         logger.error(f"فعال سگنلز کی جانچ کے دوران مہلک خرابی: {e}", exc_info=True)
     finally:
         if db.is_active:
             db.close()
-            
+        
