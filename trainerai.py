@@ -14,11 +14,6 @@ logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
 weights_lock = threading.Lock() # فائل تک رسائی کو محفوظ بنانے کے لیے
 
-# ==============================================================================
-# ★★★ کمک سیکھنے کا انجن (حتمی ورژن) ★★★
-# ==============================================================================
-
-# ★★★ یہ فنکشن اب مکمل اور درست ہے ★★★
 def get_confidence(
     db: Session, 
     core_signal: str, 
@@ -59,20 +54,25 @@ def get_confidence(
         multiplier *= accuracy_multiplier
 
     confidence = base_confidence * multiplier
-    
     confidence = max(10.0, min(99.0, confidence))
     
     return round(confidence, 2)
 
-
+# ★★★ مکمل طور پر نیا اور ذہین سیکھنے کا فنکشن ★★★
 def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
     """
-    ٹریڈ کے نتیجے سے سیکھتا ہے اور strategy_weights.json کو اپ ڈیٹ کرتا ہے۔
+    ٹریڈ کے نتیجے سے سیکھتا ہے اور strategy_weights.json کو ذہانت سے اپ ڈیٹ کرتا ہے۔
+    یہ فنکشن اب ہر انڈیکیٹر کے انفرادی کردار کی بنیاد پر وزن کو ایڈجسٹ کرتا ہے۔
     """
     try:
         symbol = signal.symbol
         result = "کامیابی (TP Hit)" if outcome == "tp_hit" else "ناکامی (SL Hit)"
         logger.info(f"🧠 ٹرینر نے فیڈ بیک وصول کیا: {symbol} پر نتیجہ {result} تھا۔")
+
+        component_scores = signal.component_scores
+        if not component_scores or not isinstance(component_scores, dict):
+            logger.warning(f"{symbol} کے لیے کوئی کمپوننٹ اسکور نہیں ملا۔ سیکھنے کا عمل روکا جا رہا ہے۔")
+            return
 
         adjustment_factor = 0.05 # 5% ایڈجسٹمنٹ
         
@@ -82,29 +82,36 @@ def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
                 with open(WEIGHTS_FILE, 'r') as f:
                     weights = json.load(f)
             except (FileNotFoundError, json.JSONDecodeError):
-                logger.error(f"{WEIGHTS_FILE} نہیں ملی۔ سیکھنے کا عمل روکا جا رہا ہے۔")
+                logger.error(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ سیکھنے کا عمل روکا جا رہا ہے۔")
                 return
 
-            # ابھی کے لیے، ہم تمام وزن کو یکساں طور پر ایڈجسٹ کرتے ہیں۔
-            # مستقبل میں، ہم سگنل کے ساتھ انفرادی انڈیکیٹر اسکور بھیج سکتے ہیں
-            # تاکہ صرف متعلقہ وزن کو ایڈجسٹ کیا جا سکے۔
-            if outcome == "tp_hit":
-                logger.info(f"✅ {symbol} پر کامیاب ٹریڈ کی بنیاد پر حکمت عملی کو مضبوط کیا جا رہا ہے۔")
-                for key in weights:
-                    weights[key] *= (1 + adjustment_factor)
-            else: # sl_hit
-                logger.info(f"❌ {symbol} پر ناکام ٹریڈ کی بنیاد پر حکمت عملی کو ایڈجسٹ کیا جا رہا ہے۔")
-                for key in weights:
-                    weights[key] *= (1 - adjustment_factor)
+            # ہر کمپوننٹ کا انفرادی طور پر جائزہ لیں
+            for component, score in component_scores.items():
+                weight_key = component # e.g., "ema_cross", "rsi_position"
+                if weight_key not in weights:
+                    continue
+
+                is_correct_prediction = (signal.signal_type == "buy" and score > 0) or \
+                                        (signal.signal_type == "sell" and score < 0)
+
+                # اگر نتیجہ کامیاب تھا اور انڈیکیٹر نے صحیح پیش گوئی کی، تو اس کا وزن بڑھائیں
+                if outcome == "tp_hit" and is_correct_prediction:
+                    weights[weight_key] *= (1 + adjustment_factor)
+                    logger.info(f"✅ [{weight_key}] کا وزن بڑھایا گیا کیونکہ اس نے کامیاب ٹریڈ کی صحیح پیش گوئی کی تھی۔")
+                # اگر نتیجہ ناکام تھا اور انڈیکیٹر نے (غلط) پیش گوئی کی، تو اس کا وزن کم کریں
+                elif outcome == "sl_hit" and is_correct_prediction:
+                    weights[weight_key] *= (1 - adjustment_factor)
+                    logger.info(f"❌ [{weight_key}] کا وزن کم کیا گیا کیونکہ اس نے ناکام ٹریڈ کی غلط پیش گوئی کی تھی۔")
             
             # وزن کو نارملائز کریں تاکہ ان کا مجموعہ 1 کے قریب رہے
             total_weight = sum(weights.values())
             if total_weight > 0:
-                # نارملائزیشن کا فارمولا: ہر وزن کو کل وزن سے تقسیم کریں
-                # اور پھر اسے کل وزن کے حساب سے ایڈجسٹ کریں تاکہ مجموعی اثر برقرار رہے
-                # سادہ رکھنے کے لیے، ہم صرف اس بات کو یقینی بنائیں گے کہ وزن بہت زیادہ یا کم نہ ہو
-                for key, value in weights.items():
-                    weights[key] = round(max(0.05, min(0.5, value)), 4)
+                for key in weights:
+                    weights[key] = weights[key] / total_weight
+            
+            # ہر وزن کو ایک خاص حد کے اندر رکھیں
+            for key, value in weights.items():
+                weights[key] = round(max(0.05, min(0.5, value)), 4)
 
             with open(WEIGHTS_FILE, 'w') as f:
                 json.dump(weights, f, indent=4)
@@ -117,4 +124,4 @@ def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
         if weights_lock.locked():
             weights_lock.release()
             logger.info("وزن کی فائل کو ان لاک کر دیا گیا۔")
-            
+                    
