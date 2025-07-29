@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
-from config import TRADING_PAIRS, API_CONFIG # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
+from config import TRADING_PAIRS, API_CONFIG # مرکزی کنفیگریشن امپورٹ کریں
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,6 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
     
-    # ★★★ کنفیگریشن فائل سے پیرامیٹرز استعمال کریں ★★★
     timeframe = API_CONFIG["PRIMARY_TIMEFRAME"]
     candle_count = API_CONFIG["CANDLE_COUNT"]
     
@@ -157,7 +156,7 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         data = response.json()
 
         prices = {}
-            if "price" in data and isinstance(data['price'], (int, float, str)):
+        if "price" in data and isinstance(data['price'], (int, float, str)):
             prices[symbols[0]] = float(data["price"])
         else:
             for symbol, details in data.items():
@@ -174,4 +173,32 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
     except Exception as e:
         logger.error(f"API سے قیمتیں حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
+
+# ★★★ نیا شامل کردہ فنکشن ★★★
+def update_market_state(live_prices: Dict[str, float]) -> None:
+    """
+    مارکیٹ کی حالت (موجودہ اور پچھلی قیمتیں) کو market_state.json فائل میں اپ ڈیٹ کرتا ہے۔
+    """
+    if not live_prices:
+        return
+
+    try:
+        with open(MARKET_STATE_FILE, 'r') as f:
+            previous_state = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        previous_state = {}
+    
+    current_state = {}
+    for symbol, price in live_prices.items():
+        current_state[symbol] = {
+            "current_price": price,
+            "previous_price": previous_state.get(symbol, {}).get("current_price", price)
+        }
+    
+    try:
+        with open(MARKET_STATE_FILE, 'w') as f:
+            json.dump(current_state, f)
+        logger.info(f"مارکیٹ اسٹیٹ فائل کامیابی سے {len(current_state)} جوڑوں کے لیے اپ ڈیٹ ہو گئی۔")
+    except IOError as e:
+        logger.error(f"مارکیٹ اسٹیٹ فائل لکھنے میں خرابی: {e}")
         
