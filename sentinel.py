@@ -141,4 +141,48 @@ async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
             logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
             
     return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی حالیہ یا آنے والی اعلیٰ اثر والی خبر نہیں ملی۔"}
+      # filename: sentinel.py (آخر میں یہ نیا فنکشن شامل کریں)
+
+async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, trade_end_time: datetime) -> bool:
+    """
+    یہ چیک کرتا ہے کہ آیا کسی ٹریڈ کے دوران کوئی اعلیٰ اثر والی خبر جاری ہوئی تھی۔
+    """
+    db = SessionLocal()
+    try:
+        all_news_content = get_cached_news(db)
+        if not all_news_content or 'articles_by_symbol' not in all_news_content:
+            return False # اگر خبریں دستیاب نہیں تو فرض کریں کہ کوئی خبر نہیں تھی
+    finally:
+        db.close()
+
+    symbol_parts = [s.strip() for s in symbol.upper().split('/')]
+    
+    relevant_articles = []
+    for part in symbol_parts:
+        relevant_articles.extend(all_news_content['articles_by_symbol'].get(part, []))
+    
+    if not relevant_articles:
+        return False
+
+    for article in relevant_articles:
+        if article.get('impact') != "High":
+            continue
+
+        try:
+            published_time_str = article.get('published_at')
+            if not published_time_str: continue
             
+            # ٹائم زون کی معلومات کو ہینڈل کریں
+            if 'Z' not in published_time_str and '+' not in published_time_str:
+                 published_time_str += 'Z'
+            published_time = datetime.fromisoformat(published_time_str.replace('Z', '+00:00')).replace(tzinfo=None)
+            
+            # چیک کریں کہ آیا خبر ٹریڈ کے دورانیے میں شائع ہوئی
+            if trade_start_time <= published_time <= trade_end_time:
+                logger.info(f"ٹریڈ {symbol} کے دوران ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'")
+                return True
+        except Exception as e:
+            logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
+            
+    return False
+                
