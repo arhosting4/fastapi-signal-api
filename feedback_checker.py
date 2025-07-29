@@ -12,13 +12,12 @@ from sqlalchemy.orm import Session
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_current_prices_from_api
+from utils import get_current_prices_from_api, update_market_state # ★★★ نیا فنکشن امپورٹ کریں ★★★
 from websocket_manager import manager
 import trainerai
-from config import FEEDBACK_CHECKER # ★★★ مرکزی کنفیگریشن امپورٹ کریں ★★★
+from config import FEEDBACK_CHECKER
 
 logger = logging.getLogger(__name__)
-MARKET_STATE_FILE = "market_state.json"
 
 def get_feedback_essential_pairs() -> List[str]:
     """
@@ -41,7 +40,6 @@ async def check_active_signals_job():
         pairs_to_check = set(s.symbol for s in active_signals)
         pairs_to_check.update(get_feedback_essential_pairs())
         
-        # ★★★ کنفیگریشن فائل سے حد استعمال کریں ★★★
         max_pairs = FEEDBACK_CHECKER["MAX_PAIRS_PER_CALL"]
         final_list_to_check = sorted(list(pairs_to_check))[:max_pairs]
         
@@ -54,20 +52,8 @@ async def check_active_signals_job():
             logger.warning("API سے کوئی قیمت حاصل نہیں ہوئی۔ جانچ روکی جا رہی ہے۔")
             return
 
-        # مارکیٹ کی حالت کو اپ ڈیٹ کریں (یہ hunter.py کے لیے ہے)
-        try:
-            with open(MARKET_STATE_FILE, 'r') as f:
-                previous_state = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            previous_state = {}
-        current_state = {}
-        for symbol, price in live_prices.items():
-            current_state[symbol] = {
-                "current_price": price,
-                "previous_price": previous_state.get(symbol, {}).get("current_price", price)
-            }
-        with open(MARKET_STATE_FILE, 'w') as f:
-            json.dump(current_state, f)
+        # ★★★ مارکیٹ کی حالت کو اپ ڈیٹ کرنے کے لیے نئے فنکشن کا استعمال کریں ★★★
+        update_market_state(live_prices)
         
         if not active_signals:
             return
@@ -114,7 +100,6 @@ async def check_active_signals_job():
                 crud.add_completed_trade(db, signal, outcome, close_price, reason_for_closure)
                 
                 crud.add_feedback_entry(db, signal.symbol, signal.timeframe, feedback)
-                # ★★★ اہم تبدیلی: ڈیلیٹ فنکشن کو اب موجودہ قیمت کی ضرورت نہیں ★★★
                 crud.delete_active_signal(db, signal.signal_id) 
                 await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}})
                 
