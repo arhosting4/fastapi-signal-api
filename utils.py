@@ -5,7 +5,7 @@ import httpx
 import asyncio
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
@@ -14,110 +14,107 @@ from config import TRADING_PAIRS, API_CONFIG
 
 logger = logging.getLogger(__name__)
 
+# --- کنفیگریشن سے متغیرات ---
+TRADEABLE_PAIRS = TRADING_PAIRS["TRADEABLE_PAIRS"]
 PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
 CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
 
 def get_tradeable_pairs() -> List[str]:
-    """تجارت کے قابل تمام جوڑوں کی فہرست واپس کرتا ہے۔"""
-    today = datetime.utcnow().weekday()
-    # ہفتے کے آخر میں صرف کرپٹو
-    if today >= 5: 
-        return TRADING_PAIRS["CRYPTO_PAIRS"]
-    # ہفتے کے دنوں میں تمام جوڑے
-    return TRADING_PAIRS["PRIMARY_PAIRS"] + TRADING_PAIRS["CRYPTO_PAIRS"]
-
-async def _handle_rate_limit(response: httpx.Response, key: str):
-    """429 ایرر کو ذہانت سے ہینڈل کرنے کے لیے ایک مددگار فنکشن"""
-    try:
-        data = response.json()
-        message = data.get("message", "").lower()
-        is_daily_limit = "for the day" in message
-        key_manager.mark_key_as_limited(key, daily_limit_exceeded=is_daily_limit)
-    except Exception as e:
-        logger.error(f"ریٹ لمٹ ہینڈلر میں خرابی: {e}")
-        key_manager.mark_key_as_limited(key, daily_limit_exceeded=False)
-    await asyncio.sleep(2)
+    """
+    کنفیگریشن سے ٹریڈ کے قابل جوڑوں کی فہرست واپس کرتا ہے۔
+    """
+    return TRADEABLE_PAIRS
 
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
-    """کوٹس (جس میں قیمت اور پرسنٹیج تبدیلی شامل ہے) حاصل کرتا ہے اور انہیں صحیح طریقے سے پارس کرتا ہے۔"""
-    if not symbols: 
+    """
+    دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین کوٹس حاصل کرتا ہے۔
+    یہ فنکشن اب 'گارڈین' کیز استعمال کرتا ہے۔
+    """
+    if not symbols:
         return {}
-        
-    api_key = key_manager.get_api_key()
-    if not api_key: 
-        logger.warning("کوٹس حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
+
+    # ★★★ گارڈین پول سے کلید حاصل کریں ★★★
+    api_key = key_manager.get_guardian_key()
+    if not api_key:
+        logger.warning("نگرانی کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
+
+    symbol_str = ",".join(symbols)
+    url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
     
-    # API کی حد کے اندر رہنے کے لیے بیچز میں تقسیم کریں
-    batch_size = 7
-    symbol_batches = [symbols[i:i + batch_size] for i in range(0, len(symbols), batch_size)]
-    all_quotes = {}
-
-    for batch in symbol_batches:
-        symbol_str = ",".join(batch)
-        url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=15)
-            
-            if response.status_code == 429:
-                await _handle_rate_limit(response, api_key)
-                # اگر ایک کلید محدود ہو جائے تو اگلی کلید کے ساتھ دوبارہ کوشش کریں
-                return await get_real_time_quotes(symbols) 
-
-            response.raise_for_status()
-            data = response.json()
-            
-            quotes_batch = {}
-            if "symbol" in data and isinstance(data, dict):
-                quotes_batch[data["symbol"]] = data
-            elif isinstance(data, list): # کچھ اینڈپوائنٹس فہرست واپس کرتے ہیں
-                 for item in data:
-                    if isinstance(item, dict) and "symbol" in item:
-                        quotes_batch[item["symbol"]] = item
-            elif isinstance(data, dict):
-                for symbol, details in data.items():
-                    if isinstance(details, dict) and "symbol" in details:
-                        quotes_batch[details["symbol"]] = details
-            
-            if not quotes_batch:
-                logger.warning(f"کوٹس API سے کوئی درست ڈیٹا پارس نہیں کیا جا سکا۔ جواب: {data}")
-            
-            all_quotes.update(quotes_batch)
-
-        except Exception as e:
-            logger.error(f"کوٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
-            key_manager.mark_key_as_limited(api_key, daily_limit_exceeded=False)
-            return None # ایک خرابی کی صورت میں، پورا عمل روک دیں
-        
-        # ہر بیچ کے درمیان تھوڑا وقفہ دیں
-        await asyncio.sleep(1)
-
-    return all_quotes
-
-async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
-    """ایک جوڑے کے لیے OHLC کینڈلز لاتا ہے۔"""
-    api_key = key_manager.get_api_key()
-    if not api_key: 
-        logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
-        return None
-        
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=15)
+            response = await client.get(url, timeout=20)
+
         if response.status_code == 429:
-            await _handle_rate_limit(response, api_key)
-            return await fetch_twelve_data_ohlc(symbol)
+            data = response.json()
+            # چیک کریں کہ آیا یہ یومیہ حد ہے یا منٹ کی حد
+            is_daily = "day" in data.get("message", "").lower()
+            key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
+            return None # ناکامی کی صورت میں کچھ واپس نہ کریں
+
         response.raise_for_status()
         data = response.json()
-        if "values" not in data or data.get("status") != "ok": 
+
+        quotes = {}
+        # API کبھی ایک آبجیکٹ واپس کرتی ہے، کبھی ڈکشنری
+        if isinstance(data, list): # اگر جواب ایک فہرست ہے
+            for item in data:
+                if isinstance(item, dict) and "symbol" in item:
+                    quotes[item["symbol"]] = item
+        elif isinstance(data, dict): # اگر جواب ایک ڈکشنری ہے
+             # اگر یہ ایک واحد علامت کا جواب ہے
+            if "symbol" in data:
+                quotes[data["symbol"]] = data
+            else: # اگر یہ علامتوں کی ڈکشنری ہے
+                for symbol, details in data.items():
+                    if isinstance(details, dict):
+                        quotes[symbol] = details
+
+        if not quotes:
+            logger.warning(f"کوٹس API سے کوئی درست ڈیٹا پارس نہیں کیا جا سکا۔ جواب: {data}")
+            return None
+            
+        return quotes
+
+    except Exception as e:
+        logger.error(f"کوٹس حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+        return None
+
+async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
+    """
+    TwelveData API سے OHLC کینڈلز لاتا ہے۔
+    یہ فنکشن اب 'ہنٹر' کیز استعمال کرتا ہے۔
+    """
+    # ★★★ ہنٹر پول سے کلید حاصل کریں ★★★
+    api_key = key_manager.get_hunter_key()
+    if not api_key:
+        logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
+        return None
+    
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=20)
+        
+        if response.status_code == 429:
+            data = response.json()
+            is_daily = "day" in data.get("message", "").lower()
+            key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
+            return None
+
+        response.raise_for_status()
+        data = response.json()
+        
+        if "values" not in data or data.get("status") != "ok":
             logger.warning(f"[{symbol}] کے لیے Twelve Data API نے خرابی واپس کی: {data.get('message', 'نامعلوم')}")
             return None
-        return TwelveDataTimeSeries.model_validate(data).values[::-1]
+
+        validated_data = TwelveDataTimeSeries.model_validate(data)
+        return validated_data.values[::-1]
+            
     except Exception as e:
-        logger.error(f"[{symbol}] OHLC ڈیٹا حاصل کرنے میں خرابی: {e}", exc_info=True)
-        key_manager.mark_key_as_limited(api_key, daily_limit_exceeded=False)
+        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
-                    
+        
