@@ -24,7 +24,9 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
     تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
     """
     try:
-        candle_dicts = [c.model_dump() for c in candles]
+        # ★★★ یہ ہے حتمی اور درست تبدیلی ★★★
+        # ہم Pydantic آبجیکٹس کو براہ راست استعمال کریں گے، .model_dump() کی ضرورت نہیں
+        candle_dicts = [c.dict() for c in candles]
 
         tech_analysis = generate_technical_analysis_score(candle_dicts)
         technical_score = tech_analysis["score"]
@@ -85,3 +87,4 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
     except Exception as e:
         logger.error(f"{symbol} کے لیے فیوژن انجن ناکام: {e}", exc_info=True)
         return {"status": "error", "reason": f"{symbol} کے لیے AI فیوژن میں خرابی۔"}
+        
