@@ -4,9 +4,11 @@ import os
 import httpx
 import asyncio
 import logging
+import json
+from datetime import datetime # ★★★ خرابی کو ٹھیک کرنے کے لیے یہ لائن واپس شامل کی گئی ہے ★★★
 from typing import List, Optional, Dict, Any
 
-from key_manager import key_manager # ★★★ ہمارا نیا گلوبل مینیجر ★★★
+from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
 from config import TRADING_PAIRS, API_CONFIG
 
@@ -16,6 +18,7 @@ PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
 CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
 
 def get_tradeable_pairs() -> List[str]:
+    # اب 'datetime' یہاں پر کام کرے گا
     today = datetime.utcnow().weekday()
     if today >= 5: return TRADING_PAIRS["CRYPTO_PAIRS"]
     return TRADING_PAIRS["PRIMARY_PAIRS"] + TRADING_PAIRS["CRYPTO_PAIRS"]
@@ -30,7 +33,7 @@ async def _handle_rate_limit(response: httpx.Response, key: str):
         key_manager.mark_key_as_limited(key, daily_limit_exceeded=is_daily_limit)
     except Exception as e:
         logger.error(f"ریٹ لمٹ ہینڈلر میں خرابی: {e}")
-        key_manager.mark_key_as_limited(key, daily_limit_exceeded=False) # محفوظ رہنے کے لیے عارضی طور پر محدود کریں
+        key_manager.mark_key_as_limited(key, daily_limit_exceeded=False)
     await asyncio.sleep(2)
 
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
@@ -47,7 +50,6 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
             return await get_real_time_quotes(symbols)
         response.raise_for_status()
         data = response.json()
-        # ... (باقی پارسنگ منطق وہی رہے گی)
         quotes = {}
         if isinstance(data, list): return {}
         if "symbol" in data and isinstance(data, dict): quotes[data["symbol"]] = data
@@ -108,4 +110,4 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
 
 def update_market_state(live_prices: Dict[str, float]):
     pass
-    
+        
