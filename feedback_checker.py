@@ -6,60 +6,60 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
-import math # ★★★ یہ لائن شامل کی گئی ہے ★★★
 
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_real_time_quotes, get_pairs_to_monitor # ★★★ نیا امپورٹ ★★★
+from utils import get_real_time_quotes, get_pairs_to_monitor
 from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
 MOMENTUM_FILE = "market_momentum.json"
 PAIRS_TO_MONITOR = get_pairs_to_monitor()
-BATCH_SIZE = 7 # ★★★ ایک وقت میں صرف 7 جوڑوں کی درخواست کی جائے گی ★★★
+BATCH_SIZE = 7
+
+# ★★★ سب سے اہم تبدیلی: یہ یاد رکھے گا کہ اگلی باری کس کی ہے ★★★
+next_batch_index = 0
 
 async def check_active_signals_job():
+    global next_batch_index
     logger.info("🛡️ نگران انجن: فعال سگنلز کی نگرانی اور ڈیٹا اکٹھا کرنا شروع...")
+    
+    # 1. اس بار کون سے جوڑوں کو چیک کرنا ہے، اس کا فیصلہ کریں
+    start_index = next_batch_index * BATCH_SIZE
+    end_index = start_index + BATCH_SIZE
+    current_batch = PAIRS_TO_MONITOR[start_index:end_index]
+    
+    # اگلی باری کے لیے انڈیکس کو اپ ڈیٹ کریں
+    next_batch_index = (next_batch_index + 1) % (len(PAIRS_TO_MONITOR) // BATCH_SIZE)
+
     db = SessionLocal()
     try:
         active_signals = crud.get_all_active_signals_from_db(db)
         
+        # فعال سگنلز کو ہمیشہ چیک کریں، چاہے وہ اس بیچ میں نہ ہوں
         active_signal_pairs = {s.symbol for s in active_signals}
-        pairs_to_check_set = active_signal_pairs.union(set(PAIRS_TO_MONITOR))
+        
+        # اس بیچ کے جوڑوں اور فعال سگنلز کو ملا کر حتمی فہرست بنائیں
+        pairs_to_check_set = set(current_batch).union(active_signal_pairs)
         
         if not pairs_to_check_set:
             logger.info("🛡️ نگران انجن: نگرانی کے لیے کوئی جوڑا نہیں۔")
             return
 
-        all_quotes = {}
-        pair_list = list(pairs_to_check_set)
-        
-        # ★★★ سب سے اہم تبدیلی: درخواست کو محفوظ بیچز میں تقسیم کرنا ★★★
-        num_batches = math.ceil(len(pair_list) / BATCH_SIZE)
-        
-        for i in range(num_batches):
-            batch = pair_list[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-            if not batch: continue
-            
-            logger.info(f"🛡️ نگران انجن: بیچ {i+1}/{num_batches} کے لیے قیمتیں حاصل کی جا رہی ہیں...")
-            quotes = await get_real_time_quotes(batch)
-            if quotes:
-                all_quotes.update(quotes)
-            
-            # ہر بیچ کے بعد ایک چھوٹا سا وقفہ دیں تاکہ API پر بوجھ نہ پڑے
-            if i < num_batches - 1:
-                await asyncio.sleep(2)
+        logger.info(f"🛡️ نگران انجن: اس دور میں {len(pairs_to_check_set)} جوڑوں کی نگرانی کی جا رہی ہے: {list(pairs_to_check_set)}")
+        quotes = await get_real_time_quotes(list(pairs_to_check_set))
 
-        if not all_quotes:
+        if not quotes:
             logger.warning("🛡️ نگران انجن: اس منٹ کوئی قیمت/کوٹ حاصل نہیں ہوا۔")
             return
 
         if active_signals:
-            await check_signals_for_tp_sl(db, active_signals, all_quotes)
+            await check_signals_for_tp_sl(db, active_signals, quotes)
 
-        save_market_momentum(all_quotes)
+        # صرف ان جوڑوں کا ڈیٹا محفوظ کریں جو نگرانی کی فہرست میں ہیں
+        save_market_momentum(quotes)
 
     except Exception as e:
         logger.error(f"🛡️ نگران انجن کے کام میں خرابی: {e}", exc_info=True)
@@ -113,4 +113,4 @@ def save_market_momentum(quotes: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"مارکیٹ کی حرکت کا ڈیٹا محفوظ کرنے میں خرابی: {e}", exc_info=True)
-
+        
