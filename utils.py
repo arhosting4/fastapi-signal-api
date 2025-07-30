@@ -15,15 +15,16 @@ from config import TRADING_PAIRS, API_CONFIG
 logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن سے متغیرات ---
-TRADEABLE_PAIRS = TRADING_PAIRS["TRADEABLE_PAIRS"]
+# ★★★ یہاں غلطی تھی، اسے ٹھیک کر دیا گیا ہے ★★★
+PAIRS_TO_MONITOR = TRADING_PAIRS["PAIRS_TO_MONITOR"]
 PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
 CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
 
-def get_tradeable_pairs() -> List[str]:
+def get_pairs_to_monitor() -> List[str]:
     """
-    کنفیگریشن سے ٹریڈ کے قابل جوڑوں کی فہرست واپس کرتا ہے۔
+    کنفیگریشن سے نگرانی کے قابل جوڑوں کی فہرست واپس کرتا ہے۔
     """
-    return TRADEABLE_PAIRS
+    return PAIRS_TO_MONITOR
 
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
@@ -33,7 +34,6 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     if not symbols:
         return {}
 
-    # ★★★ گارڈین پول سے کلید حاصل کریں ★★★
     api_key = key_manager.get_guardian_key()
     if not api_key:
         logger.warning("نگرانی کے لیے کوئی API کلید دستیاب نہیں۔")
@@ -48,25 +48,22 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
 
         if response.status_code == 429:
             data = response.json()
-            # چیک کریں کہ آیا یہ یومیہ حد ہے یا منٹ کی حد
             is_daily = "day" in data.get("message", "").lower()
             key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
-            return None # ناکامی کی صورت میں کچھ واپس نہ کریں
+            return None
 
         response.raise_for_status()
         data = response.json()
 
         quotes = {}
-        # API کبھی ایک آبجیکٹ واپس کرتی ہے، کبھی ڈکشنری
-        if isinstance(data, list): # اگر جواب ایک فہرست ہے
+        if isinstance(data, list):
             for item in data:
                 if isinstance(item, dict) and "symbol" in item:
                     quotes[item["symbol"]] = item
-        elif isinstance(data, dict): # اگر جواب ایک ڈکشنری ہے
-             # اگر یہ ایک واحد علامت کا جواب ہے
+        elif isinstance(data, dict):
             if "symbol" in data:
                 quotes[data["symbol"]] = data
-            else: # اگر یہ علامتوں کی ڈکشنری ہے
+            else:
                 for symbol, details in data.items():
                     if isinstance(details, dict):
                         quotes[symbol] = details
@@ -86,7 +83,6 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
     TwelveData API سے OHLC کینڈلز لاتا ہے۔
     یہ فنکشن اب 'ہنٹر' کیز استعمال کرتا ہے۔
     """
-    # ★★★ ہنٹر پول سے کلید حاصل کریں ★★★
     api_key = key_manager.get_hunter_key()
     if not api_key:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
