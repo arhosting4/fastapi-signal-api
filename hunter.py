@@ -2,9 +2,12 @@
 
 import asyncio
 import logging
-import random
+import json
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
+import pandas as pd
+import numpy as np
 
 # مقامی امپورٹس
 import database_crud as crud
@@ -18,13 +21,109 @@ from config import STRATEGY
 logger = logging.getLogger(__name__)
 
 FINAL_CONFIDENCE_THRESHOLD = STRATEGY["FINAL_CONFIDENCE_THRESHOLD"]
-MIN_CHANGE_PERCENT_FOR_ANALYSIS = STRATEGY["MIN_CHANGE_PERCENT_FOR_ANALYSIS"]
+MOMENTUM_FILE = "market_momentum.json"
+ANALYSIS_CANDIDATE_COUNT = 4 # کتنے بہترین جوڑوں کا تجزیہ کرنا ہے
 
-recently_analyzed = {}
-ANALYSIS_COOLDOWN_SECONDS = 60 * 10
+# ==============================================================================
+# ★★★ اپرنٹس کا کام: ہر منٹ ڈیٹا اکٹھا کرنا ★★★
+# ==============================================================================
+async def collect_market_data_job():
+    """ہر منٹ چلتا ہے اور مارکیٹ کی حرکت کو ایک فائل میں محفوظ کرتا ہے۔"""
+    logger.info("👨‍🎓 اپرنٹس: مارکیٹ ڈیٹا اکٹھا کیا جا رہا ہے...")
+    
+    try:
+        with open(MOMENTUM_FILE, 'r') as f:
+            market_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        market_data = {}
 
-async def analyze_and_process_pair(db: Session, pair: str):
-    """ایک جوڑے کا مکمل تجزیہ کرتا ہے اور نتیجہ واپس کرتا ہے۔"""
+    pairs_to_check = get_tradeable_pairs()
+    if not pairs_to_check: return
+
+    quotes = await get_real_time_quotes(pairs_to_check)
+    if not quotes:
+        logger.warning("اپرنٹس: اس منٹ کوئی قیمت حاصل نہیں ہوئی۔")
+        return
+
+    now_iso = datetime.utcnow().isoformat()
+    for symbol, data in quotes.items():
+        if "percent_change" in data:
+            if symbol not in market_data:
+                market_data[symbol] = []
+            
+            try:
+                market_data[symbol].append({
+                    "time": now_iso,
+                    "change": float(data["percent_change"])
+                })
+                # صرف پچھلے 10 منٹ کا ڈیٹا رکھیں
+                market_data[symbol] = market_data[symbol][-10:]
+            except (ValueError, TypeError):
+                continue
+
+    try:
+        with open(MOMENTUM_FILE, 'w') as f:
+            json.dump(market_data, f)
+        logger.info(f"✅ اپرنٹس: {len(quotes)} جوڑوں کا ڈیٹا کامیابی سے محفوظ کیا گیا۔")
+    except IOError as e:
+        logger.error(f"مومنٹم فائل لکھنے میں خرابی: {e}")
+
+# ==============================================================================
+# ★★★ ماسٹر کا کام: ہر 5 منٹ بعد تجزیہ کرنا ★★★
+# ==============================================================================
+async def analyze_market_data_job():
+    """ہر 5 منٹ بعد چلتا ہے، بہترین جوڑوں کا انتخاب کرتا ہے اور ان کا گہرا تجزیہ کرتا ہے۔"""
+    logger.info("👑 ماسٹر: پچھلے 5 منٹ کے ڈیٹا کا تجزیہ شروع...")
+    
+    try:
+        with open(MOMENTUM_FILE, 'r') as f:
+            market_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        logger.warning("ماسٹر: تجزیہ کے لیے کوئی ڈیٹا فائل نہیں ملی۔")
+        return
+
+    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+    candidate_scores = {}
+
+    for symbol, history in market_data.items():
+        recent_history = [h for h in history if datetime.fromisoformat(h['time']) > five_minutes_ago]
+        if len(recent_history) < 3:
+            continue
+
+        df = pd.DataFrame(recent_history)
+        total_change = df['change'].sum()
+        consistency = df['change'].apply(np.sign).mean()
+        
+        score = abs(total_change) * (abs(consistency) ** 2)
+        candidate_scores[symbol] = score
+
+    if not candidate_scores:
+        logger.info("👑 ماسٹر: کوئی بھی جوڑا مستحکم حرکت کے معیار پر پورا نہیں اترا۔")
+        return
+
+    sorted_candidates = sorted(candidate_scores.items(), key=lambda item: item[1], reverse=True)
+    pairs_to_analyze = [item[0] for item in sorted_candidates[:ANALYSIS_CANDIDATE_COUNT]]
+    
+    logger.info(f"👑 ماسٹر: گہرے تجزیے کے لیے {len(pairs_to_analyze)} بہترین امیدوار منتخب کیے گئے: {pairs_to_analyze}")
+
+    db = SessionLocal()
+    try:
+        active_signals = {s.symbol for s in crud.get_all_active_signals_from_db(db)}
+        final_list = [p for p in pairs_to_analyze if p not in active_signals]
+        
+        if final_list:
+            analysis_tasks = [analyze_single_pair(db, pair) for pair in final_list]
+            await asyncio.gather(*analysis_tasks)
+    except Exception as e:
+        logger.error(f"ماسٹر کے تجزیے کے دوران خرابی: {e}", exc_info=True)
+    finally:
+        if db.is_active:
+            db.close()
+        logger.info("👑 ماسٹر: تجزیے کا دور مکمل ہوا۔")
+
+async def analyze_single_pair(db: Session, pair: str):
+    """یہ فنکشن صرف ایک جوڑے کا تجزیہ کرتا ہے"""
+    logger.info(f"🔬 [{pair}] کا گہرا تجزیہ کیا جا رہا ہے...")
     candles = await fetch_twelve_data_ohlc(pair)
     if not candles or len(candles) < 34:
         logger.info(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا۔")
@@ -36,7 +135,7 @@ async def analyze_and_process_pair(db: Session, pair: str):
         confidence = analysis_result.get('confidence', 0)
         log_message = (
             f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, "
-            f"اعتماد = {confidence:.2f}%, پیٹرن = {analysis_result.get('pattern', 'N/A')}"
+            f"اعتماد = {confidence:.2f}%"
         )
         logger.info(log_message)
         
@@ -50,61 +149,8 @@ async def analyze_and_process_pair(db: Session, pair: str):
                 asyncio.create_task(alert_task(signal_obj))
                 asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
         else:
-            logger.info(f"📉 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) تھریشولڈ ({FINAL_CONFIDENCE_THRESHOLD}%) سے کم ہے۔")
+            logger.info(f"📉 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) تھریشولڈ سے کم ہے۔")
             
     elif analysis_result:
         logger.info(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
-
-async def hunt_for_signals_job():
-    db = SessionLocal()
-    try:
-        initial_delay = random.uniform(1, 5)
-        await asyncio.sleep(initial_delay)
-
-        active_signals = {s.symbol for s in crud.get_all_active_signals_from_db(db)}
-        pairs_for_prescan = [p for p in get_tradeable_pairs() if p not in active_signals]
-        
-        if not pairs_for_prescan:
-            return
-
-        logger.info(f"🔬 پری اسکین شروع: {len(pairs_for_prescan)} جوڑوں کی نگرانی کی جا رہی ہے...")
-        
-        batch_size = 7
-        pair_batches = [pairs_for_prescan[i:i + batch_size] for i in range(0, len(pairs_for_prescan), batch_size)]
-        all_quotes = {}
-        for i, batch in enumerate(pair_batches):
-            quotes = await get_real_time_quotes(batch)
-            if quotes: all_quotes.update(quotes)
-            if i < len(pair_batches) - 1: await asyncio.sleep(2)
-
-        if not all_quotes:
-            return
-
-        interesting_pairs = []
-        current_time = asyncio.get_event_loop().time()
-        for symbol, data in all_quotes.items():
-            if symbol in recently_analyzed and current_time - recently_analyzed[symbol] < ANALYSIS_COOLDOWN_SECONDS:
-                continue
-            try:
-                if abs(float(data.get("percent_change", "0.0"))) > MIN_CHANGE_PERCENT_FOR_ANALYSIS:
-                    interesting_pairs.append(symbol)
-            except (ValueError, TypeError):
-                continue
-
-        if not interesting_pairs:
-            logger.info("✅ کوئی بھی جوڑا گہرے تجزیے کے معیار پر پورا نہیں اترا۔")
-            return
-            
-        logger.info(f"🏹 گہرا تجزیہ شروع: {len(interesting_pairs)} دلچسپ جوڑوں کا تجزیہ کیا جائے گا: {interesting_pairs}")
-
-        analysis_tasks = [analyze_and_process_pair(db, pair) for pair in interesting_pairs]
-        await asyncio.gather(*analysis_tasks)
-
-    except Exception as e:
-        logger.error(f"سگنل کی تلاش کے کام میں مہلک خرابی: {e}", exc_info=True)
-    finally:
-        if db.is_active:
-            db.close()
-        # ★★★ یہاں سے اضافی بریکٹ ہٹا دی گئی ہے ★★★
-        logger.info("🏹 ذہین سگنل کی تلاش کا دور مکمل ہوا۔")
-        
+    
