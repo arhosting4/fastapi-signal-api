@@ -11,14 +11,13 @@ from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
-from typing import Dict
 from pydantic import BaseModel
 
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables, engine
-from hunter import collect_market_data_job, analyze_market_data_job
-# ★★★ فیڈ بیک چیکر کو یہاں سے مکمل طور پر ہٹا دیا گیا ہے ★★★
+from hunter import hunt_for_signals_job
+from feedback_checker import check_active_signals_job # ★★★ نگران انجن کو واپس لایا گیا ★★★
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 from key_manager import key_manager
@@ -48,10 +47,7 @@ def get_db():
     finally:
         db.close()
 
-# ==============================================================================
 # API روٹس
-# ==============================================================================
-
 @app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
     try:
@@ -72,84 +68,20 @@ async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db
     if not password_data.password or password_data.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
     
-    # دستی طور پر بند کرنے کے لیے ایک فرضی قیمت (0.0) استعمال کی جا رہی ہے
-    success = crud.close_and_archive_signal(db, signal_id, "manual_close", 0.0, "Manually closed by admin")
+    # دستی طور پر بند کرنے کے لیے، ہم "manual_close" کا استعمال کریں گے
+    success = crud.close_and_archive_signal(db, signal_id, "manual_close", 0, "manual_close")
     
     if success:
         await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id}})
-        return {"detail": f"سگنل {signal_id} کامیابی سے بند کر دیا گیا اور ہسٹری میں محفوظ ہو گیا۔"}
+        return {"detail": f"سگنل {signal_id} کامیابی سے بند کر دیا گیا۔"}
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"فعال سگنل {signal_id} نہیں ملا۔")
-
-@app.get("/health", status_code=200)
-async def health_check():
-    return {"status": "ok"}
-
-@app.get("/api/system-status", response_class=JSONResponse)
-async def get_system_status():
-    scheduler_running = hasattr(app.state, "scheduler") and app.state.scheduler.running
-    last_heartbeat = getattr(app.state, "last_heartbeat", None)
-    db_status = "Disconnected"
-    try:
-        with engine.connect() as connection:
-            db_status = "Connected"
-    except Exception as e:
-        logger.error(f"ڈیٹا بیس کنکشن چیک کرنے میں خرابی: {e}")
-        db_status = "Connection Error"
-    total_keys = len(key_manager.keys)
-    available_keys = total_keys - len(key_manager.limited_keys)
-    return {
-        "server_status": "Online",
-        "timestamp_utc": datetime.utcnow().isoformat(),
-        "scheduler_status": "Running" if scheduler_running else "Stopped",
-        "last_heartbeat": last_heartbeat.isoformat() if last_heartbeat else "N/A",
-        "database_status": db_status,
-        "api_key_status": {
-            "total_keys": total_keys,
-            "available_keys": available_keys,
-            "limited_keys": len(key_manager.limited_keys)
-        }
-    }
-
-@app.get("/api/history", response_class=JSONResponse)
-async def get_history(db: Session = Depends(get_db)):
-    try:
-        return crud.get_completed_trades(db)
-    except Exception as e:
-        logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
-
-@app.get("/api/news", response_class=JSONResponse)
-async def get_news(db: Session = Depends(get_db)):
-    try:
-        return crud.get_cached_news(db)
-    except Exception as e:
-        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
-
-# ==============================================================================
-# WebSocket
-# ==============================================================================
-
-@app.websocket("/ws/live-signals")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
-
-# ==============================================================================
-# پس منظر کے کام اور اسٹارٹ اپ
-# ==============================================================================
 
 async def start_background_tasks():
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         return
 
-    logger.info(">>> 'سنگل کال اپرنٹس' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
+    logger.info(">>> 'ڈبل انجن' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
     
     scheduler = AsyncIOScheduler(timezone="UTC")
     app.state.scheduler = scheduler
@@ -157,18 +89,15 @@ async def start_background_tasks():
     def heartbeat_job():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
-
-    # ★★★ حتمی، محفوظ اور سادہ شیڈول ★★★
-    scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=10), id="system_heartbeat")
     
-    # 1. اپرنٹس (یہی اب فیڈ بیک چیکر کا کام بھی کرے گا)
-    scheduler.add_job(collect_market_data_job, IntervalTrigger(minutes=1, jitter=5), id="collect_market_data")
-    
-    # 2. ماسٹر (تجزیہ کار)
-    scheduler.add_job(analyze_market_data_job, IntervalTrigger(minutes=5, jitter=15), id="analyze_market_data")
-    
-    # 3. خبروں کا کیش
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+    # ★★★ نیا اور حتمی شیڈول ★★★
+    scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
+    # نگران انجن: ہر 2 منٹ بعد
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=2), id="guardian_engine_job")
+    # شکاری انجن: ہر 5 منٹ بعد
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunter_engine_job")
+    # خبروں کا انجن: ہر 4 گھنٹے بعد
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
     scheduler.start()
     heartbeat_job()
@@ -179,7 +108,11 @@ async def startup_event():
     logger.info("FastAPI سرور شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    logger.info("پس منظر کے کاموں کا شیڈول بنایا جا رہا ہے...")
+    
+    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
+    await update_economic_calendar_cache()
+    logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
+    
     asyncio.create_task(start_background_tasks())
 
 @app.on_event("shutdown")
@@ -189,6 +122,61 @@ async def shutdown_event():
         app.state.scheduler.shutdown()
         logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
 
-# اسٹیٹک فائلز کو آخر میں ماؤنٹ کریں
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+@app.websocket("/ws/live-signals")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+@app.get("/health", status_code=200)
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/api/system-status", response_class=JSONResponse)
+async def get_system_status():
+    scheduler_running = hasattr(app.state, "scheduler") and app.state.scheduler.running
+    last_heartbeat = getattr(app.state, "last_heartbeat", None)
     
+    db_status = "Disconnected"
+    try:
+        with engine.connect() as connection:
+            db_status = "Connected"
+    except Exception:
+        db_status = "Connection Error"
+
+    return {
+        "server_status": "Online",
+        "timestamp_utc": datetime.utcnow().isoformat(),
+        "scheduler_status": "Running" if scheduler_running else "Stopped",
+        "last_heartbeat": last_heartbeat.isoformat() if last_heartbeat else "N/A",
+        "database_status": db_status,
+        "key_status": {
+            "guardian_keys_total": len(key_manager.guardian_keys),
+            "hunter_keys_total": len(key_manager.hunter_keys),
+            "limited_keys_now": len(key_manager.limited_keys)
+        }
+    }
+
+@app.get("/api/history", response_class=JSONResponse)
+async def get_history(db: Session = Depends(get_db)):
+    try:
+        trades = crud.get_completed_trades(db)
+        return trades
+    except Exception as e:
+        logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+@app.get("/api/news", response_class=JSONResponse)
+async def get_news(db: Session = Depends(get_db)):
+    try:
+        news = crud.get_cached_news(db)
+        return news
+    except Exception as e:
+        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+            
