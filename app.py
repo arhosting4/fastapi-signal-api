@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Dict
 from pydantic import BaseModel
 
@@ -18,7 +18,7 @@ from pydantic import BaseModel
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables, engine
 from hunter import collect_market_data_job, analyze_market_data_job
-from feedback_checker import check_active_signals_job
+# ★★★ فیڈ بیک چیکر کو یہاں سے مکمل طور پر ہٹا دیا گیا ہے ★★★
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 from key_manager import key_manager
@@ -72,8 +72,7 @@ async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db
     if not password_data.password or password_data.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
     
-    # یہ فنکشن اب بھی کام کرے گا، لیکن اسے فیڈ بیک چیکر استعمال کرے گا
-    # دستی طور پر بند کرنے کے لیے ایک نیا فنکشن بنانا بہتر ہو سکتا ہے
+    # دستی طور پر بند کرنے کے لیے ایک فرضی قیمت (0.0) استعمال کی جا رہی ہے
     success = crud.close_and_archive_signal(db, signal_id, "manual_close", 0.0, "Manually closed by admin")
     
     if success:
@@ -97,8 +96,8 @@ async def get_system_status():
     except Exception as e:
         logger.error(f"ڈیٹا بیس کنکشن چیک کرنے میں خرابی: {e}")
         db_status = "Connection Error"
-    total_keys = len(key_manager.keys) + len(key_manager.limited_keys)
-    available_keys = len(key_manager.keys)
+    total_keys = len(key_manager.keys)
+    available_keys = total_keys - len(key_manager.limited_keys)
     return {
         "server_status": "Online",
         "timestamp_utc": datetime.utcnow().isoformat(),
@@ -147,11 +146,10 @@ async def websocket_endpoint(websocket: WebSocket):
 # ==============================================================================
 
 async def start_background_tasks():
-    """پس منظر کے تمام کاموں کو ایک محفوظ اور ترتیب وار طریقے سے شروع کرتا ہے۔"""
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         return
 
-    logger.info(">>> 'ایک وقت میں ایک قدم' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
+    logger.info(">>> 'سنگل کال اپرنٹس' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
     
     scheduler = AsyncIOScheduler(timezone="UTC")
     app.state.scheduler = scheduler
@@ -160,22 +158,16 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
 
-    # ★★★ نیا، محفوظ اور سادہ شیڈول ★★★
-    # ہر کام کو الگ الگ، واضح وقفے کے ساتھ شامل کریں
-    
-    # 1. بغیر API کال والے کام
+    # ★★★ حتمی، محفوظ اور سادہ شیڈول ★★★
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=10), id="system_heartbeat")
     
-    # 2. سب سے کم اہم API کال والا کام (فیڈ بیک چیکر)
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1, jitter=10), id="check_active_signals")
-    
-    # 3. اپرنٹس (ڈیٹا اکٹھا کرنے والا)
+    # 1. اپرنٹس (یہی اب فیڈ بیک چیکر کا کام بھی کرے گا)
     scheduler.add_job(collect_market_data_job, IntervalTrigger(minutes=1, jitter=5), id="collect_market_data")
     
-    # 4. ماسٹر (تجزیہ کار) - یہ 5 منٹ بعد خود ہی چلے گا
+    # 2. ماسٹر (تجزیہ کار)
     scheduler.add_job(analyze_market_data_job, IntervalTrigger(minutes=5, jitter=15), id="analyze_market_data")
     
-    # 5. خبروں کا کیش (یہ کام اب 4 گھنٹے بعد ہی چلے گا)
+    # 3. خبروں کا کیش
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
     
     scheduler.start()
@@ -184,20 +176,14 @@ async def start_background_tasks():
 
 @app.on_event("startup")
 async def startup_event():
-    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
     logger.info("FastAPI سرور شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    
-    # ★★★ سب سے اہم تبدیلی: اسٹارٹ اپ پر کوئی API کال نہیں ★★★
-    # صرف ایک کام شروع کریں جو پس منظر میں شیڈیولر کو ترتیب دے گا
-    # اس سے API کالز کا رش مکمل طور پر ختم ہو جائے گا
     logger.info("پس منظر کے کاموں کا شیڈول بنایا جا رہا ہے...")
     asyncio.create_task(start_background_tasks())
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
     logger.info("FastAPI سرور بند ہو رہا ہے۔")
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         app.state.scheduler.shutdown()
@@ -205,4 +191,4 @@ async def shutdown_event():
 
 # اسٹیٹک فائلز کو آخر میں ماؤنٹ کریں
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-                            
+    
