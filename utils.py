@@ -5,7 +5,7 @@ import httpx
 import asyncio
 import logging
 import json
-from datetime import datetime # ★★★ خرابی کو ٹھیک کرنے کے لیے یہ لائن واپس شامل کی گئی ہے ★★★
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
@@ -18,7 +18,6 @@ PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
 CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
 
 def get_tradeable_pairs() -> List[str]:
-    # اب 'datetime' یہاں پر کام کرے گا
     today = datetime.utcnow().weekday()
     if today >= 5: return TRADING_PAIRS["CRYPTO_PAIRS"]
     return TRADING_PAIRS["PRIMARY_PAIRS"] + TRADING_PAIRS["CRYPTO_PAIRS"]
@@ -36,12 +35,15 @@ async def _handle_rate_limit(response: httpx.Response, key: str):
         key_manager.mark_key_as_limited(key, daily_limit_exceeded=False)
     await asyncio.sleep(2)
 
+# ★★★ یہ فنکشن اب مکمل طور پر درست ہے ★★★
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
+    """کوٹس (جس میں پرسنٹیج تبدیلی شامل ہے) حاصل کرتا ہے اور انہیں صحیح طریقے سے پارس کرتا ہے۔"""
     if not symbols: return {}
     api_key = key_manager.get_api_key()
     if not api_key: return None
     
-    url = f"https://api.twelvedata.com/quote?symbol={','.join(symbols)}&apikey={api_key}"
+    symbol_str = ",".join(symbols)
+    url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=15)
@@ -50,13 +52,20 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
             return await get_real_time_quotes(symbols)
         response.raise_for_status()
         data = response.json()
+        
         quotes = {}
-        if isinstance(data, list): return {}
-        if "symbol" in data and isinstance(data, dict): quotes[data["symbol"]] = data
-        else:
-            for item in data.values():
-                if isinstance(item, dict) and "symbol" in item:
-                    quotes[item["symbol"]] = item
+        # اگر جواب ایک علامت کے لیے ہے
+        if "symbol" in data and isinstance(data, dict):
+            quotes[data["symbol"]] = data
+        # اگر جواب کئی علامتوں کے لیے ہے
+        elif isinstance(data, dict):
+            for symbol, details in data.items():
+                if isinstance(details, dict) and "symbol" in details:
+                    quotes[details["symbol"]] = details
+        
+        if not quotes:
+            logger.warning(f"کوٹس API سے کوئی درست ڈیٹا پارس نہیں کیا جا سکا۔ جواب: {data}")
+            
         return quotes
     except Exception as e:
         logger.error(f"کوٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
@@ -83,6 +92,7 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         return None
 
 async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, float]]:
+    """صرف قیمتیں حاصل کرتا ہے (فیڈ بیک چیکر کے لیے)"""
     if not symbols: return {}
     api_key = key_manager.get_api_key()
     if not api_key: return None
@@ -96,9 +106,9 @@ async def get_current_prices_from_api(symbols: List[str]) -> Optional[Dict[str, 
         response.raise_for_status()
         data = response.json()
         prices = {}
-        if "price" in data and isinstance(data, dict): prices[symbols[0]] = float(data["price"])
-        elif "price" in data: prices[symbols[0]] = float(data)
-        else:
+        if "price" in data and isinstance(data, dict):
+            prices[symbols[0]] = float(data["price"])
+        elif isinstance(data, dict):
             for symbol, details in data.items():
                 if isinstance(details, dict) and "price" in details:
                     prices[symbol] = float(details["price"])
