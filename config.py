@@ -1,8 +1,7 @@
 # filename: config.py
 
 # ==============================================================================
-# مرکزی کنفیگریشن فائل برائے ScalpMaster AI
-# تمام اہم پیرامیٹرز یہاں مرکزی حیثیت رکھتے ہیں۔
+# مرکزی کنفیگریشن فائل برائے ScalpMaster AI (ڈبل انجن ورژن)
 # ==============================================================================
 
 # --- API کنفیگریشن ---
@@ -11,14 +10,15 @@ API_CONFIG = {
     "CANDLE_COUNT": 100,
 }
 
-# --- ٹریڈنگ پیرامیٹرز ---
-# اب ہم صرف 14 منتخب جوڑوں پر توجہ مرکوز کریں گے۔
+# --- ٹریڈنگ اور نگرانی کے پیرامیٹرز ---
 TRADING_PAIRS = {
-    "PRIMARY_PAIRS": [
-        "XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", 
-        "AUD/USD", "NZD/USD", "USD/CHF", "EUR/JPY", "GBP/JPY"
+    # یہ 14 جوڑے ہیں جن کی نگرانی ہمارا "نگران انجن" ہر 2 منٹ بعد کرے گا۔
+    # "شکاری انجن" ان ہی جوڑوں میں سے بہترین مواقع تلاش کرے گا۔
+    "PAIRS_TO_MONITOR": [
+        "XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", "AUD/USD", 
+        "NZD/USD", "USD/CHF", "EUR/JPY", "GBP/JPY", "BTC/USD", "ETH/USD", 
+        "SOL/USD", "XRP/USD"
     ],
-    "CRYPTO_PAIRS": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
 }
 
 # --- سگنل جنریشن کی حکمت عملی ---
@@ -26,18 +26,7 @@ STRATEGY = {
     "SIGNAL_SCORE_THRESHOLD": 40.0,
     "FINAL_CONFIDENCE_THRESHOLD": 70.0,
     "MIN_RISK_REWARD_RATIO": 1.5,
-    # نیا پیرامیٹر: کم از کم اتنی فیصد حرکت پر گہرا تجزیہ کیا جائے گا۔
-    "MIN_CHANGE_PERCENT_FOR_ANALYSIS": 0.10, # مثال: 0.10%
-    
-    # ★★★ خرابی کو ٹھیک کرنے کے لیے یہ لائن واپس شامل کی گئی ہے ★★★
     "MIN_CONFLUENCE_SCORE": 4,
-}
-
-# --- فیڈ بیک چیکر ---
-FEEDBACK_CHECKER = {
-    # ایک کال میں زیادہ سے زیادہ 7 جوڑے بھیجے جا سکتے ہیں (TwelveData کی حد)
-    "MAX_PAIRS_PER_CALL": 7,
-    "PRIORITY_SYMBOLS": ["XAU/USD", "BTC/USD", "ETH/USD", "GBP/JPY"]
 }
 
 # --- تکنیکی تجزیہ کے پیرامیٹرز ---
