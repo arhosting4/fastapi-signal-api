@@ -23,7 +23,6 @@ MIN_CHANGE_PERCENT_FOR_ANALYSIS = STRATEGY["MIN_CHANGE_PERCENT_FOR_ANALYSIS"]
 recently_analyzed = {}
 ANALYSIS_COOLDOWN_SECONDS = 60 * 10
 
-# ★★★ نیا مددگار فنکشن: ایک جوڑے کا تجزیہ کرنے کے لیے ★★★
 async def analyze_and_process_pair(db: Session, pair: str):
     """ایک جوڑے کا مکمل تجزیہ کرتا ہے اور نتیجہ واپس کرتا ہے۔"""
     candles = await fetch_twelve_data_ohlc(pair)
@@ -33,7 +32,6 @@ async def analyze_and_process_pair(db: Session, pair: str):
 
     analysis_result = await generate_final_signal(db, pair, candles)
     
-    # ★★★ تفصیلی لاگنگ یہاں واپس آ گئی ہے ★★★
     if analysis_result and analysis_result.get("status") == "ok":
         confidence = analysis_result.get('confidence', 0)
         log_message = (
@@ -49,7 +47,6 @@ async def analyze_and_process_pair(db: Session, pair: str):
                 task_type = "new_signal" if update_result.is_new else "signal_updated"
                 alert_task = send_telegram_alert if update_result.is_new else send_signal_update_alert
                 logger.info(f"🎯 ★★★ سگنل پروسیس ہوا: {signal_obj['symbol']} ({task_type}) ★★★")
-                # ہم یہاں الرٹ بھیجنے کے لیے ٹاسک بناتے ہیں تاکہ انتظار نہ کرنا پڑے
                 asyncio.create_task(alert_task(signal_obj))
                 asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
         else:
@@ -100,7 +97,6 @@ async def hunt_for_signals_job():
             
         logger.info(f"🏹 گہرا تجزیہ شروع: {len(interesting_pairs)} دلچسپ جوڑوں کا تجزیہ کیا جائے گا: {interesting_pairs}")
 
-        # ★★★ تمام تجزیے کے کاموں کو ایک ساتھ چلائیں اور ان کے مکمل ہونے کا انتظار کریں ★★★
         analysis_tasks = [analyze_and_process_pair(db, pair) for pair in interesting_pairs]
         await asyncio.gather(*analysis_tasks)
 
@@ -109,5 +105,6 @@ async def hunt_for_signals_job():
     finally:
         if db.is_active:
             db.close()
-        logger.info("🏹 ذہین سگنل کی تلاش کا دور مکمل ہوا۔")```
+        # ★★★ یہاں سے اضافی بریکٹ ہٹا دی گئی ہے ★★★
+        logger.info("🏹 ذہین سگنل کی تلاش کا دور مکمل ہوا۔")
         
