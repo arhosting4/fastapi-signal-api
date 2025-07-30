@@ -10,14 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 from pydantic import BaseModel
 
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, create_db_and_tables, engine
-# ★★★ نیا امپورٹ: ہنٹر سے دو نئے کام امپورٹ کریں ★★★
 from hunter import collect_market_data_job, analyze_market_data_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
@@ -49,10 +48,12 @@ def get_db():
     finally:
         db.close()
 
+# ==============================================================================
 # API روٹس
+# ==============================================================================
+
 @app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
-    """تمام فعال سگنلز کو ڈیٹا بیس سے حاصل کرتا ہے۔"""
     try:
         signals = crud.get_all_active_signals_from_db(db)
         return [s.as_dict() for s in signals]
@@ -65,9 +66,7 @@ class PasswordData(BaseModel):
 
 @app.post("/api/delete-signal/{signal_id}", response_class=JSONResponse)
 async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db: Session = Depends(get_db)):
-    """ایک فعال سگنل کو دستی طور پر بند کرتا ہے اور اسے ہسٹری میں محفوظ کرتا ہے۔"""
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-    
     if not ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ایڈمن پاس ورڈ سرور پر کنفیگر نہیں ہے۔")
     if not password_data.password or password_data.password != ADMIN_PASSWORD:
@@ -83,83 +82,14 @@ async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"فعال سگنل {signal_id} نہیں ملا۔")
 
-async def start_background_tasks():
-    """پس منظر کے تمام کاموں کو شروع کرتا ہے۔"""
-    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        logger.info("پس منظر کے کام پہلے ہی چل رہے ہیں۔")
-        return
-
-    logger.info(">>> پس منظر کے تمام کام شروع ہو رہے ہیں...")
-    
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    app.state.scheduler = scheduler
-    
-    def heartbeat_job():
-        app.state.last_heartbeat = datetime.utcnow()
-        logger.info(f"❤️ سسٹم ہارٹ بیٹ: شیڈیولر زندہ ہے۔ آخری دھڑکن: {app.state.last_heartbeat.isoformat()}")
-    
-    # ★★★ نیا شیڈول: ماسٹر-اپرنٹس حکمت عملی ★★★
-    scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=10), id="system_heartbeat")
-    
-    # 1. اپرنٹس: ہر منٹ ڈیٹا اکٹھا کرے گا
-    scheduler.add_job(collect_market_data_job, IntervalTrigger(minutes=1), id="collect_market_data")
-    
-    # 2. ماسٹر: ہر 5 منٹ بعد تجزیہ کرے گا
-    scheduler.add_job(analyze_market_data_job, IntervalTrigger(minutes=5), id="analyze_market_data")
-    
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="check_active_signals")
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
-    
-    scheduler.start()
-    # پہلی بار کاموں کو فوری طور پر چلائیں
-    await collect_market_data_job()
-    await analyze_market_data_job()
-    heartbeat_job()
-    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-
-@app.on_event("startup")
-async def startup_event():
-    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
-    logger.info("FastAPI سرور شروع ہو رہا ہے...")
-    create_db_and_tables()
-    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-    
-    logger.info("پہلی بار خبروں کا کیش اپ ڈیٹ کیا جا رہا ہے...")
-    await update_economic_calendar_cache()
-    logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
-    
-    asyncio.create_task(start_background_tasks())
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
-    logger.info("FastAPI سرور بند ہو رہا ہے۔")
-    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        app.state.scheduler.shutdown()
-        logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
-
-@app.websocket("/ws/live-signals")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket کنکشن کو سنبھالتا ہے۔"""
-    await manager.connect(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
-
 @app.get("/health", status_code=200)
 async def health_check():
-    """ایک سادہ ہیلتھ چیک جو صرف سروس کے چلنے کی تصدیق کرتا ہے۔"""
     return {"status": "ok"}
 
 @app.get("/api/system-status", response_class=JSONResponse)
 async def get_system_status():
-    """سسٹم کی صحت اور کارکردگی کے بارے میں تفصیلی معلومات فراہم کرتا ہے۔"""
     scheduler_running = hasattr(app.state, "scheduler") and app.state.scheduler.running
     last_heartbeat = getattr(app.state, "last_heartbeat", None)
-    
     db_status = "Disconnected"
     try:
         with engine.connect() as connection:
@@ -167,10 +97,8 @@ async def get_system_status():
     except Exception as e:
         logger.error(f"ڈیٹا بیس کنکشن چیک کرنے میں خرابی: {e}")
         db_status = "Connection Error"
-
     total_keys = len(key_manager.keys) + len(key_manager.limited_keys)
     available_keys = len(key_manager.keys)
-    
     return {
         "server_status": "Online",
         "timestamp_utc": datetime.utcnow().isoformat(),
@@ -186,23 +114,95 @@ async def get_system_status():
 
 @app.get("/api/history", response_class=JSONResponse)
 async def get_history(db: Session = Depends(get_db)):
-    """مکمل شدہ ٹریڈز کی تاریخ حاصل کرتا ہے۔"""
     try:
-        trades = crud.get_completed_trades(db)
-        return trades
+        return crud.get_completed_trades(db)
     except Exception as e:
         logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 @app.get("/api/news", response_class=JSONResponse)
 async def get_news(db: Session = Depends(get_db)):
-    """کیش شدہ خبریں حاصل کرتا ہے۔"""
     try:
-        news = crud.get_cached_news(db)
-        return news
+        return crud.get_cached_news(db)
     except Exception as e:
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+# ==============================================================================
+# WebSocket
+# ==============================================================================
+
+@app.websocket("/ws/live-signals")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        logger.info("کلائنٹ نے WebSocket کنکشن بند کر دیا۔")
+
+# ==============================================================================
+# پس منظر کے کام اور اسٹارٹ اپ
+# ==============================================================================
+
+async def start_background_tasks():
+    """پس منظر کے تمام کاموں کو ایک محفوظ اور ترتیب وار طریقے سے شروع کرتا ہے۔"""
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        return
+
+    logger.info(">>> 'ایک وقت میں ایک قدم' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
     
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    app.state.scheduler = scheduler
+    
+    def heartbeat_job():
+        app.state.last_heartbeat = datetime.utcnow()
+        logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
+
+    # ★★★ نیا، محفوظ اور سادہ شیڈول ★★★
+    # ہر کام کو الگ الگ، واضح وقفے کے ساتھ شامل کریں
+    
+    # 1. بغیر API کال والے کام
+    scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=10), id="system_heartbeat")
+    
+    # 2. سب سے کم اہم API کال والا کام (فیڈ بیک چیکر)
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1, jitter=10), id="check_active_signals")
+    
+    # 3. اپرنٹس (ڈیٹا اکٹھا کرنے والا)
+    scheduler.add_job(collect_market_data_job, IntervalTrigger(minutes=1, jitter=5), id="collect_market_data")
+    
+    # 4. ماسٹر (تجزیہ کار) - یہ 5 منٹ بعد خود ہی چلے گا
+    scheduler.add_job(analyze_market_data_job, IntervalTrigger(minutes=5, jitter=15), id="analyze_market_data")
+    
+    # 5. خبروں کا کیش (یہ کام اب 4 گھنٹے بعد ہی چلے گا)
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="update_news")
+    
+    scheduler.start()
+    heartbeat_job()
+    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+
+@app.on_event("startup")
+async def startup_event():
+    """سرور شروع ہونے پر چلنے والے ایونٹس۔"""
+    logger.info("FastAPI سرور شروع ہو رہا ہے...")
+    create_db_and_tables()
+    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    # ★★★ سب سے اہم تبدیلی: اسٹارٹ اپ پر کوئی API کال نہیں ★★★
+    # صرف ایک کام شروع کریں جو پس منظر میں شیڈیولر کو ترتیب دے گا
+    # اس سے API کالز کا رش مکمل طور پر ختم ہو جائے گا
+    logger.info("پس منظر کے کاموں کا شیڈول بنایا جا رہا ہے...")
+    asyncio.create_task(start_background_tasks())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """سرور بند ہونے پر چلنے والے ایونٹس۔"""
+    logger.info("FastAPI سرور بند ہو رہا ہے۔")
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        app.state.scheduler.shutdown()
+        logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
+
+# اسٹیٹک فائلز کو آخر میں ماؤنٹ کریں
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+                            
