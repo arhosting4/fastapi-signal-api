@@ -14,7 +14,7 @@ import database_crud as crud
 from utils import get_tradeable_pairs, get_real_time_quotes, fetch_twelve_data_ohlc
 from fusion_engine import generate_final_signal
 from messenger import send_telegram_alert, send_signal_update_alert
-from models import SessionLocal
+from models import SessionLocal, ActiveSignal
 from websocket_manager import manager
 from config import STRATEGY
 
@@ -22,51 +22,89 @@ logger = logging.getLogger(__name__)
 
 FINAL_CONFIDENCE_THRESHOLD = STRATEGY["FINAL_CONFIDENCE_THRESHOLD"]
 MOMENTUM_FILE = "market_momentum.json"
-ANALYSIS_CANDIDATE_COUNT = 4 # کتنے بہترین جوڑوں کا تجزیہ کرنا ہے
+ANALYSIS_CANDIDATE_COUNT = 4
 
 # ==============================================================================
-# ★★★ اپرنٹس کا کام: ہر منٹ ڈیٹا اکٹھا کرنا ★★★
+# ★★★ اپرنٹس کا کام (اب فیڈ بیک چیکر کی ذمہ داری کے ساتھ) ★★★
 # ==============================================================================
 async def collect_market_data_job():
-    """ہر منٹ چلتا ہے اور مارکیٹ کی حرکت کو ایک فائل میں محفوظ کرتا ہے۔"""
-    logger.info("👨‍🎓 اپرنٹس: مارکیٹ ڈیٹا اکٹھا کیا جا رہا ہے...")
+    """ہر منٹ چلتا ہے، ایک ہی API کال میں فعال سگنلز کو چیک کرتا ہے اور مارکیٹ ڈیٹا محفوظ کرتا ہے۔"""
+    logger.info("👨‍🎓 اپرنٹس: مارکیٹ ڈیٹا اکٹھا اور فعال سگنلز کی جانچ شروع...")
     
+    db = SessionLocal()
     try:
-        with open(MOMENTUM_FILE, 'r') as f:
-            market_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        market_data = {}
+        active_signals = crud.get_all_active_signals_from_db(db)
+        
+        # تمام ضروری جوڑوں کی ایک منفرد فہرست بنائیں
+        tradeable_pairs = set(get_tradeable_pairs())
+        active_signal_pairs = {s.symbol for s in active_signals}
+        all_pairs_to_check = list(tradeable_pairs.union(active_signal_pairs))
 
-    pairs_to_check = get_tradeable_pairs()
-    if not pairs_to_check: return
+        if not all_pairs_to_check:
+            logger.info("اپرنٹس: چیک کرنے کے لیے کوئی جوڑا نہیں۔")
+            return
 
-    quotes = await get_real_time_quotes(pairs_to_check)
-    if not quotes:
-        logger.warning("اپرنٹس: اس منٹ کوئی قیمت حاصل نہیں ہوئی۔")
-        return
+        # صرف ایک API کال کریں
+        quotes = await get_real_time_quotes(all_pairs_to_check)
+        if not quotes:
+            logger.warning("اپرنٹس: اس منٹ کوئی قیمت/کوٹ حاصل نہیں ہوا۔")
+            return
 
-    now_iso = datetime.utcnow().isoformat()
-    for symbol, data in quotes.items():
-        if "percent_change" in data:
-            if symbol not in market_data:
-                market_data[symbol] = []
-            
-            try:
-                market_data[symbol].append({
-                    "time": now_iso,
-                    "change": float(data["percent_change"])
-                })
-                # صرف پچھلے 10 منٹ کا ڈیٹا رکھیں
-                market_data[symbol] = market_data[symbol][-10:]
-            except (ValueError, TypeError):
-                continue
+        # 1. فعال سگنلز کی قیمتیں چیک کریں (فیڈ بیک چیکر کی منطق)
+        if active_signals:
+            await check_signals_for_tp_sl(db, active_signals, quotes)
 
-    try:
+        # 2. مارکیٹ کا ڈیٹا اکٹھا کریں (اپرنٹس کی منطق)
+        try:
+            with open(MOMENTUM_FILE, 'r') as f:
+                market_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            market_data = {}
+
+        now_iso = datetime.utcnow().isoformat()
+        for symbol, data in quotes.items():
+            if "percent_change" in data and data.get("percent_change") is not None:
+                if symbol not in market_data: market_data[symbol] = []
+                try:
+                    market_data[symbol].append({"time": now_iso, "change": float(data["percent_change"])})
+                    market_data[symbol] = market_data[symbol][-10:]
+                except (ValueError, TypeError): continue
+        
         with open(MOMENTUM_FILE, 'w') as f:
             json.dump(market_data, f)
         logger.info(f"✅ اپرنٹس: {len(quotes)} جوڑوں کا ڈیٹا کامیابی سے محفوظ کیا گیا۔")
-    except IOError as e:
-        logger.error(f"مومنٹم فائل لکھنے میں خرابی: {e}")
+
+    except Exception as e:
+        logger.error(f"اپرنٹس کے کام میں خرابی: {e}", exc_info=True)
+    finally:
+        if db.is_active:
+            db.close()
+
+async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quotes: Dict[str, Any]):
+    """فعال سگنلز کو TP/SL کے لیے چیک کرتا ہے۔"""
+    for signal in signals:
+        quote_data = quotes.get(signal.symbol)
+        if not quote_data or "price" not in quote_data:
+            continue
+        
+        current_price = float(quote_data["price"])
+
+        outcome, close_price, reason = None, None, None
+        if signal.signal_type == "buy":
+            if current_price >= signal.tp_price:
+                outcome, close_price, reason = "tp_hit", signal.tp_price, "tp_hit"
+            elif current_price <= signal.sl_price:
+                outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit"
+        elif signal.signal_type == "sell":
+            if current_price <= signal.tp_price:
+                outcome, close_price, reason = "tp_hit", signal.tp_price, "tp_hit"
+            elif current_price >= signal.sl_price:
+                outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit"
+
+        if outcome:
+            logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome} کے طور پر نشان زد کیا گیا ★★★")
+            crud.close_and_archive_signal(db, signal.signal_id, outcome, close_price, reason)
+            asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
 
 # ==============================================================================
 # ★★★ ماسٹر کا کام: ہر 5 منٹ بعد تجزیہ کرنا ★★★
@@ -114,15 +152,13 @@ async def analyze_market_data_job():
         if final_list:
             analysis_tasks = [analyze_single_pair(db, pair) for pair in final_list]
             await asyncio.gather(*analysis_tasks)
-    except Exception as e:
-        logger.error(f"ماسٹر کے تجزیے کے دوران خرابی: {e}", exc_info=True)
     finally:
         if db.is_active:
             db.close()
         logger.info("👑 ماسٹر: تجزیے کا دور مکمل ہوا۔")
 
 async def analyze_single_pair(db: Session, pair: str):
-    """یہ فنکشن صرف ایک جوڑے کا تجزیہ کرتا ہے"""
+    """یہ فنکشن صرف ایک جوڑے کا تجزیہ کرتا ہے۔"""
     logger.info(f"🔬 [{pair}] کا گہرا تجزیہ کیا جا رہا ہے...")
     candles = await fetch_twelve_data_ohlc(pair)
     if not candles or len(candles) < 34:
@@ -153,4 +189,4 @@ async def analyze_single_pair(db: Session, pair: str):
             
     elif analysis_result:
         logger.info(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
-    
+        
