@@ -3,106 +3,116 @@
 import os
 import time
 import logging
-from typing import List, Optional, Dict
+from typing import List, Dict, Optional
 from collections import deque
-import threading
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
-# ★★★ حتمی ورژن: اسٹیٹ فل کی مینیجر (یادداشت کے ساتھ) ★★★
+# ★★★ حتمی ورژن: دو آزاد کی پولز اور اسمارٹ ایکسپائری کے ساتھ ★★★
 # ==============================================================================
+
 class KeyManager:
     def __init__(self):
-        self.keys: List[str] = []
+        self.guardian_keys: deque[str] = deque()
+        self.hunter_keys: deque[str] = deque()
         self.limited_keys: Dict[str, float] = {}
-        self.current_index: int = 0
-        self.lock = threading.Lock()
-        self._load_keys_robustly()
+        self.load_and_distribute_keys()
 
-    def _load_keys_robustly(self):
-        """ماحولیاتی متغیرات سے API کیز کو زیادہ مضبوط اور لچکدار طریقے سے لوڈ کرتا ہے۔"""
-        found_keys = set()
-        # بنیادی متغیر سے کیز لوڈ کریں
-        env_keys = os.getenv("TWELVE_DATA_API_KEYS", "")
-        if env_keys:
-            found_keys.update(key.strip() for key in env_keys.split(',') if key.strip())
-        
-        # انفرادی متغیرات سے کیز لوڈ کریں (e.g., TWELVE_DATA_API_KEY_1, _2, etc.)
+    def load_and_distribute_keys(self):
+        """
+        ماحولیاتی متغیرات سے تمام کیز کو لوڈ کرتا ہے اور انہیں دو پولز میں تقسیم کرتا ہے۔
+        """
+        all_keys = []
+        keys_str = os.getenv("TWELVE_DATA_API_KEYS", "")
+        if keys_str:
+            all_keys.extend(key.strip() for key in keys_str.split(',') if key.strip())
+
         i = 1
         while True:
             key = os.getenv(f"TWELVE_DATA_API_KEY_{i}")
             if not key:
                 break
-            found_keys.add(key.strip())
+            all_keys.append(key.strip())
             i += 1
         
-        self.keys = list(found_keys)
-        if not self.keys:
-            logger.error("کوئی بھی Twelve Data API کلید لوڈ نہیں ہوئی۔ سسٹم کام نہیں کرے گا۔")
-        else:
-            logger.info(f"KeyManager شروع کیا گیا: {len(self.keys)} منفرد API کلیدیں ملیں۔")
+        unique_keys = sorted(list(set(all_keys)))
+        
+        if not unique_keys:
+            logger.error("کوئی بھی Twelve Data API کلید لوڈ نہیں ہوئی۔ سسٹم کام نہیں کر سکتا۔")
+            return
 
-    def _get_next_available_key(self) -> Optional[str]:
-        """گھومنے والے انڈیکس کا استعمال کرتے ہوئے اگلی دستیاب کلید تلاش کرتا ہے۔"""
-        if not self.keys:
+        guardian_pool_size = 7
+        self.guardian_keys = deque(unique_keys[:guardian_pool_size])
+        self.hunter_keys = deque(unique_keys[guardian_pool_size:])
+
+        logger.info(f"KeyManager شروع کیا گیا: کل {len(unique_keys)} منفرد کیز ملیں۔")
+        logger.info(f"🛡️ گارڈین (نگرانی) پول: {len(self.guardian_keys)} کیز۔")
+        logger.info(f"🏹 ہنٹر (تلاش) پول: {len(self.hunter_keys)} کیز۔")
+
+    def _get_key_from_pool(self, pool: deque[str]) -> Optional[str]:
+        """
+        کسی مخصوص پول سے ایک دستیاب API کلید راؤنڈ روبن طریقے سے فراہم کرتا ہے۔
+        """
+        if not pool:
             return None
 
-        # تمام کیز کو ایک چکر میں چیک کریں
-        for _ in range(len(self.keys)):
-            key = self.keys[self.current_index]
-            
-            # انڈیکس کو اگلے چکر کے لیے آگے بڑھائیں
-            self.current_index = (self.current_index + 1) % len(self.keys)
+        for _ in range(len(pool)):
+            key = pool[0]
+            pool.rotate(-1)
 
-            if key not in self.limited_keys:
-                logger.info(f"👍 کلید {key[:8]}... فراہم کی گئی۔ اگلا انڈیکس: {self.current_index}")
+            if key in self.limited_keys:
+                if time.time() > self.limited_keys[key]:
+                    del self.limited_keys[key]
+                    logger.info(f"کلید {key[:8]}... کی پابندی ختم ہو گئی۔ اسے دوبارہ دستیاب کیا جا رہا ہے۔")
+                    return key
+                else:
+                    continue
+            else:
                 return key
         
-        # اگر کوئی بھی کلید دستیاب نہیں ہے
         return None
 
-    def get_api_key(self) -> Optional[str]:
-        """ایک دستیاب API کلید تھریڈ-سیف طریقے سے فراہم کرتا ہے۔"""
-        with self.lock:
-            # محدود کیز کو صاف کریں جن کا وقت ختم ہو گیا ہے
-            current_time = time.time()
-            keys_to_remove = [key for key, expiry_time in self.limited_keys.items() if current_time > expiry_time]
-            
-            for key in keys_to_remove:
-                del self.limited_keys[key]
-                logger.info(f"✅ API کلید {key[:8]}... کی پابندی ختم ہو گئی۔ اسے دوبارہ دستیاب کیا جا رہا ہے۔")
+    def get_guardian_key(self) -> Optional[str]:
+        """گارڈین پول سے ایک کلید حاصل کرتا ہے۔"""
+        key = self._get_key_from_pool(self.guardian_keys)
+        if not key:
+            logger.warning("🛡️ گارڈین پول کی تمام کیز فی الحال محدود ہیں۔")
+        return key
 
-            key = self._get_next_available_key()
-            if not key:
-                logger.warning(f"تمام {len(self.keys)} API کیز فی الحال محدود ہیں۔")
-                if self.limited_keys:
-                    next_available_time = min(self.limited_keys.values())
-                    wait_seconds = next_available_time - current_time
-                    logger.info(f"اگلی کلید تقریباً {wait_seconds/3600:.1f} گھنٹوں میں دستیاب ہوگی۔")
-            return key
+    def get_hunter_key(self) -> Optional[str]:
+        """ہنٹر پول سے ایک کلید حاصل کرتا ہے۔"""
+        key = self._get_key_from_pool(self.hunter_keys)
+        if not key:
+            logger.warning("🏹 ہنٹر پول کی تمام کیز فی الحال محدود ہیں۔")
+        return key
 
-    def mark_key_as_limited(self, key: str, daily_limit_exceeded: bool = False):
-        """ایک کلید کو محدود کے طور پر نشان زد کرتا ہے۔"""
-        with self.lock:
-            if key in self.limited_keys:
-                return
+    def report_key_issue(self, key: str, is_daily_limit: bool):
+        """
+        ایک کلید کو اس کی خرابی کی بنیاد پر محدود کے طور پر نشان زد کرتا ہے۔
+        """
+        if key in self.limited_keys:
+            return
+
+        if is_daily_limit:
+            # ★★★ آپ کی تجویز کے مطابق نئی اور ذہین منطق ★★★
+            # اگلے دن کے آغاز (UTC) تک محدود کریں
+            now_utc = datetime.now(timezone.utc)
+            tomorrow_utc = now_utc + timedelta(days=1)
+            midnight_utc = tomorrow_utc.replace(hour=0, minute=0, second=1, microsecond=0)
             
-            if daily_limit_exceeded:
-                # اگلے دن UTC آدھی رات تک محدود کریں + 5 منٹ کا بفر
-                now = datetime.utcnow()
-                midnight = datetime(now.year, now.month, now.day, 23, 59, 59, tzinfo=timezone.utc)
-                expiry_time = midnight.timestamp() + (5 * 60) # 5 منٹ کا بفر
-                duration_hours = (expiry_time - time.time()) / 3600
-                logger.warning(f"🚫 روزانہ کی حد ختم! API کلید {key[:8]}... کو اگلے دن تک ({duration_hours:.1f} گھنٹے) کے لیے محدود کیا جا رہا ہے۔")
-            else:
-                # منٹ کی حد کے لیے 65 سیکنڈ
-                duration_seconds = 65
-                expiry_time = time.time() + duration_seconds
-                logger.warning(f"⏱️ منٹ کی حد ختم! API کلید {key[:8]}... کو 65 سیکنڈ کے لیے محدود کیا جا رہا ہے۔")
+            expiry_timestamp = midnight_utc.timestamp()
+            self.limited_keys[key] = expiry_timestamp
             
+            logger.warning(f"کلید {key[:8]}... کی یومیہ حد ختم! اسے اگلے دن UTC کے آغاز تک محدود کیا جا رہا ہے۔")
+        else:
+            # منٹ کی حد ختم ہونے پر صرف 65 سیکنڈ کے لیے محدود کریں
+            duration_seconds = 65
+            expiry_time = time.time() + duration_seconds
             self.limited_keys[key] = expiry_time
+            # لاگنگ کو صاف رکھنے کے لیے، ہم فی منٹ کی حد کا لاگ نہیں دکھائیں گے جب تک کہ یہ ایک بڑا مسئلہ نہ بن جائے۔
+            # logger.warning(f"کلید {key[:8]}... کی فی منٹ حد ختم! اسے 65 سیکنڈ کے لیے محدود کیا جا رہا ہے۔")
 
 # سنگلٹن مثال
 key_manager = KeyManager()
-            
