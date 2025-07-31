@@ -12,7 +12,7 @@ from config import TECHNICAL_ANALYSIS
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
 
-# --- کنفیگریشن سے پیرامیٹرز ---
+# ... (اس فائل کے دیگر فنکشنز میں کوئی تبدیلی نہیں) ...
 EMA_SHORT_PERIOD = TECHNICAL_ANALYSIS["EMA_SHORT_PERIOD"]
 EMA_LONG_PERIOD = TECHNICAL_ANALYSIS["EMA_LONG_PERIOD"]
 RSI_PERIOD = TECHNICAL_ANALYSIS["RSI_PERIOD"]
@@ -77,12 +77,10 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'in_uptrend'] = df['in_uptrend'].iloc[i-1]
     return df
 
-# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
 def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
     if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
-    # اب ڈیٹا فریم بنانے کی ضرورت نہیں
     close = df['close']
     
     WEIGHTS = _load_weights()
@@ -91,7 +89,7 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     rsi = calculate_rsi(close, RSI_PERIOD)
     stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
-    df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR) # کاپی پر کام کریں
+    df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR)
     
     last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
     last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
@@ -129,17 +127,25 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
 
     return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
 
-# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
+
+# ★★★ یہاں تبدیلی کی گئی ہے ★★★
 def calculate_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
+    """
+    یہ فنکشن اب find_optimal_tp_sl کو براہ راست ڈیٹا فریم بھیجتا ہے۔
+    """
     if df.empty or len(df) < 34:
         return None
     try:
-        # find_optimal_tp_sl کو اب ڈکشنری کی فہرست کے بجائے ڈیٹا فریم کی ضرورت ہوگی
+        # ★★★ .to_dict('records') کو یہاں سے ہٹا دیا گیا ہے ★★★
         optimal_levels = find_optimal_tp_sl(df, signal_type)
+        
         if optimal_levels:
             return optimal_levels
         
+        # اگر کنفلونس کی بنیاد پر لیولز نہ ملیں تو فال بیک منطق (اگر ضروری ہو)
+        # فی الحال، ہم صرف None واپس کریں گے
         return None
+        
     except Exception as e:
         logging.error(f"TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
         return None
