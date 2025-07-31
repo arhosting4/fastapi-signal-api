@@ -29,7 +29,8 @@ STRATEGY = {
     "FINAL_CONFIDENCE_THRESHOLD": 70.0,
     "MIN_RISK_REWARD_RATIO": 1.5,
     "MIN_CONFLUENCE_SCORE": 4,
-    "CONFLUENCE_WEIGHTS": {
+    # ★★★ یہ گمشدہ ڈکشنری ہے جسے اب شامل کر دیا گیا ہے ★★★
+    "LEVEL_SCORING_WEIGHTS": {
         "pivots": 3,
         "swings": 2,
         "fibonacci": 2,
