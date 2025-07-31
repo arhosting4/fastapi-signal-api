@@ -33,7 +33,7 @@ def generate_reason(
             reason_parts.append("MACD لائن سگنل لائن سے اوپر ہے، جو تیزی کی رفتار (bullish momentum) کو ظاہر کرتی ہے۔")
         if supertrend_direction == "Up":
             reason_parts.append("Supertrend نے اوپر کے رجحان (uptrend) کی تصدیق کی ہے۔")
-    else: # core_signal == "sell"
+    else:  # core_signal == "sell"
         if macd_line < macd_signal_line:
             reason_parts.append("MACD لائن سگنل لائن سے نیچے ہے، جو مندی کی رفتار (bearish momentum) کو ظاہر کرتی ہے۔")
         if supertrend_direction == "Down":
@@ -56,7 +56,7 @@ def generate_reason(
         reason_parts.append(f"**خبروں یا مارکیٹ کے اتار چڑھاؤ کی وجہ سے رسک بلند (High) ہے۔**")
 
     # 5. اعتماد کا خلاصہ
-    if confidence < 75: # 70 کی حد کے قریب
+    if confidence < 75:  # 70 کی حد کے قریب
         reason_parts.append(f"کم اعتماد ({confidence:.1f}%) کی وجہ سے احتیاط کی سفارش کی جاتی ہے۔")
 
     return " ".join(reason_parts)
