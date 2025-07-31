@@ -27,7 +27,7 @@
         .table-wrapper { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-        th { background-color: var(--secondary); font-weight: 600; color: var(--text-secondary); }
+        th { background-color: var(--secondary); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; font-size: 0.85rem; }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background-color: var(--secondary); }
         .status-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; text-transform: uppercase; }
@@ -70,16 +70,16 @@
                             <th>Entry Price</th>
                             <th>Close Price</th>
                             <th>Outcome</th>
-                            <th>Reason</th>
-                            <th>Close Time</th>
+                            <th>Reason for Closure</th>
+                            <th>Close Time (UTC)</th>
                         </tr>
                     </thead>
                     <tbody id="history-body"></tbody>
                 </table>
             </div>
             <div class="no-data-message" id="no-history-message">
-                <h3><i class="fas fa-search"></i> No Data Found</h3>
-                <p>There are no completed trades in the history yet.</p>
+                <h3><i class="fas fa-hourglass-half"></i> Loading History...</h3>
+                <p>Please wait while we fetch the completed trades.</p>
             </div>
         </div>
     </main>
@@ -108,22 +108,34 @@
                     historyTable.style.display = 'table';
                     trades.forEach(trade => {
                         const row = document.createElement('tr');
-                        const outcomeClass = `status-${trade.outcome.toLowerCase()}`;
-                        const closePrice = trade.close_price ? trade.close_price.toFixed(5) : 'N/A';
-                        const reason = trade.reason_for_closure ? trade.reason_for_closure.replace('_', ' ') : 'N/A';
+                        
+                        // outcome اور reason_for_closure کے لیے کلاسز اور متن کو محفوظ طریقے سے حاصل کریں
+                        const outcome = trade.outcome || 'unknown';
+                        const outcomeClass = `status-${outcome.toLowerCase()}`;
+                        const outcomeText = (trade.outcome || 'N/A').replace(/_/g, ' ').toUpperCase();
+                        
+                        const reason = trade.reason_for_closure || 'N/A';
+                        const reasonText = reason.replace(/_/g, ' ');
+
+                        const closePrice = typeof trade.close_price === 'number' ? trade.close_price.toFixed(5) : 'N/A';
+                        const entryPrice = typeof trade.entry_price === 'number' ? trade.entry_price.toFixed(5) : 'N/A';
+                        
+                        // تاریخ کو UTC میں دکھانے کے لیے 'Z' شامل کریں
+                        const closeTime = trade.closed_at ? new Date(trade.closed_at + 'Z').toLocaleString('en-GB', { timeZone: 'UTC' }) : 'N/A';
 
                         row.innerHTML = `
                             <td><strong>${trade.symbol}</strong><br><small>${trade.timeframe}</small></td>
                             <td>${trade.signal_type.toUpperCase()}</td>
-                            <td>${trade.entry_price.toFixed(5)}</td>
+                            <td>${entryPrice}</td>
                             <td>${closePrice}</td>
-                            <td><span class="status-tag ${outcomeClass}">${trade.outcome.replace('_', ' ').toUpperCase()}</span></td>
-                            <td style="text-transform: capitalize;">${reason}</td>
-                            <td>${new Date(trade.closed_at + 'Z').toLocaleString()}</td>
+                            <td><span class="status-tag ${outcomeClass}">${outcomeText}</span></td>
+                            <td style="text-transform: capitalize;">${reasonText}</td>
+                            <td>${closeTime}</td>
                         `;
                         historyBody.appendChild(row);
                     });
                 } else {
+                    noHistoryMessage.innerHTML = '<h3><i class="fas fa-search"></i> No Data Found</h3><p>There are no completed trades in the history yet.</p>';
                     noHistoryMessage.style.display = 'block';
                     historyTable.style.display = 'none';
                 }
@@ -136,7 +148,8 @@
         }
         
         fetchTradeHistory();
-        setInterval(fetchTradeHistory, 60000);
+        // ہر 5 منٹ بعد ہسٹری کو اپ ڈیٹ کریں
+        setInterval(fetchTradeHistory, 5 * 60 * 1000);
     </script>
 </body>
 </html>
