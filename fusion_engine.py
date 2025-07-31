@@ -1,6 +1,7 @@
 # filename: fusion_engine.py
 
 import logging
+import pandas as pd  # ★★★ پانڈاز کو یہاں امپورٹ کریں ★★★
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
@@ -19,16 +20,26 @@ logger = logging.getLogger(__name__)
 
 SIGNAL_SCORE_THRESHOLD = STRATEGY["SIGNAL_SCORE_THRESHOLD"]
 
+# ★★★ مکمل طور پر اپ ڈیٹ شدہ فنکشن ★★★
 async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
     """
     تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
+    یہ فنکشن اب مرکزی طور پر ایک پانڈاز ڈیٹا فریم تیار کرتا ہے اور اسے تمام ذیلی فنکشنز کو بھیجتا ہے۔
     """
     try:
-        # ★★★ یہ ہے حتمی اور درست تبدیلی ★★★
-        # ہم Pydantic آبجیکٹس کو براہ راست استعمال کریں گے، .model_dump() کی ضرورت نہیں
-        candle_dicts = [c.dict() for c in candles]
+        # مرحلہ 1: ڈیٹا فریم کو مرکزی طور پر صرف ایک بار تیار کریں
+        df = pd.DataFrame([c.dict() for c in candles])
+        # بنیادی کالمز کو عددی قسم میں تبدیل کریں تاکہ حساب کتاب میں غلطی نہ ہو
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
+        
+        if len(df) < 34: # کم از کم ڈیٹا کی ضرورت
+             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
-        tech_analysis = generate_technical_analysis_score(candle_dicts)
+        # مرحلہ 2: تیار شدہ ڈیٹا فریم کو تمام تجزیاتی فنکشنز میں استعمال کریں
+        tech_analysis = generate_technical_analysis_score(df)
         technical_score = tech_analysis["score"]
         indicators = tech_analysis.get("indicators", {})
 
@@ -41,10 +52,10 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         if core_signal == "wait":
             return {"status": "no-signal", "reason": f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ ({SIGNAL_SCORE_THRESHOLD}) سے کم ہے۔"}
 
-        pattern_data = detect_patterns(candle_dicts)
-        risk_assessment = check_risk(candle_dicts)
+        pattern_data = detect_patterns(df)
+        risk_assessment = check_risk(df)
         news_data = await get_news_analysis_for_symbol(symbol)
-        market_structure = find_market_structure(candle_dicts)
+        market_structure = find_market_structure(df)
 
         final_risk_status = risk_assessment.get("status", "Normal")
         if news_data.get("impact") == "High":
@@ -56,7 +67,8 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
         )
         tier = get_tier(confidence, final_risk_status)
         
-        tp_sl_data = calculate_tp_sl(candle_dicts, core_signal)
+        # candle_dicts کی جگہ اب df استعمال ہوگا
+        tp_sl_data = calculate_tp_sl(df, core_signal)
         if not tp_sl_data:
             return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
         
@@ -78,7 +90,7 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             "confidence": round(confidence, 2),
             "tier": tier,
             "timeframe": "15min",
-            "price": candle_dicts[-1]['close'],
+            "price": df['close'].iloc[-1], # آخری قیمت ڈیٹا فریم سے حاصل کریں
             "tp": round(tp, 5),
             "sl": round(sl, 5),
             "component_scores": indicators.get("component_scores", {})
