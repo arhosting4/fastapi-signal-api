@@ -26,36 +26,43 @@ async def check_active_signals_job():
     global next_batch_index
     logger.info("🛡️ نگران انجن: فعال سگنلز کی نگرانی اور ڈیٹا اکٹھا کرنا شروع...")
     
-    # ★★★ سب سے اہم اور حتمی تبدیلی: خالص روٹیشن ★★★
-    # 1. اس بار کون سے 7 جوڑوں کو چیک کرنا ہے، اس کا فیصلہ کریں
+    # 1. روٹیشن کی بنیاد پر اس دور کے 7 جوڑوں کا انتخاب کریں
     start_index = next_batch_index * BATCH_SIZE
     end_index = start_index + BATCH_SIZE
-    current_batch = PAIRS_TO_MONITOR[start_index:end_index]
+    rotation_batch = PAIRS_TO_MONITOR[start_index:end_index]
     
     # اگلی باری کے لیے انڈیکس کو اپ ڈیٹ کریں
-    # یہ یقینی بناتا ہے کہ یہ 0 اور 1 کے درمیان گھومتا رہے (0 -> 1 -> 0 -> 1...)
     total_batches = (len(PAIRS_TO_MONITOR) + BATCH_SIZE - 1) // BATCH_SIZE
     next_batch_index = (next_batch_index + 1) % total_batches
 
-    if not current_batch:
-        logger.info("🛡️ نگران انجن: نگرانی کے لیے کوئی جوڑا نہیں۔")
-        return
-
-    logger.info(f"🛡️ نگران انجن: اس دور میں {len(current_batch)} جوڑوں کی نگرانی کی جا رہی ہے: {current_batch}")
-    quotes = await get_real_time_quotes(current_batch)
-
-    if not quotes:
-        logger.warning("🛡️ نگران انجن: اس منٹ کوئی قیمت/کوٹ حاصل نہیں ہوا۔")
-        return
-
     db = SessionLocal()
     try:
-        # 2. صرف ان فعال سگنلز کو چیک کریں جو اس بیچ کا حصہ ہیں
         active_signals = crud.get_all_active_signals_from_db(db)
+        active_signal_pairs = {s.symbol for s in active_signals}
+        
+        # ★★★ سب سے اہم اور حتمی تبدیلی: ہمیشہ چوکنا رہنا ★★★
+        # روٹیشن بیچ اور فعال سگنلز کو ملا کر ایک حتمی فہرست بنائیں
+        # اس سے یہ یقینی بنتا ہے کہ فعال سگنلز کو ہمیشہ چیک کیا جائے گا
+        final_pairs_to_check = set(rotation_batch).union(active_signal_pairs)
+        
+        if not final_pairs_to_check:
+            logger.info("🛡️ نگران انجن: نگرانی کے لیے کوئی جوڑا نہیں۔")
+            return
+
+        logger.info(f"🛡️ نگران انجن: اس دور میں {len(final_pairs_to_check)} جوڑوں کی نگرانی کی جا رہی ہے: {list(final_pairs_to_check)}")
+        
+        # ایک ہی API کال میں تمام ضروری قیمتیں حاصل کریں
+        quotes = await get_real_time_quotes(list(final_pairs_to_check))
+
+        if not quotes:
+            logger.warning("🛡️ نگران انجن: اس منٹ کوئی قیمت/کوٹ حاصل نہیں ہوا۔")
+            return
+
+        # اب تمام فعال سگنلز کو چیک کریں، کیونکہ ہمارے پاس ان سب کا ڈیٹا موجود ہے
         if active_signals:
             await check_signals_for_tp_sl(db, active_signals, quotes)
 
-        # 3. مارکیٹ کی حرکت کا ڈیٹا محفوظ کریں
+        # مارکیٹ کی حرکت کا ڈیٹا محفوظ کریں
         save_market_momentum(quotes)
 
     except Exception as e:
@@ -66,11 +73,7 @@ async def check_active_signals_job():
         logger.info("🛡️ نگران انجن: نگرانی کا دور مکمل ہوا۔")
 
 async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quotes: Dict[str, Any]):
-    """
-    یہ فنکشن اب صرف ان سگنلز کو چیک کرے گا جن کا ڈیٹا 'quotes' میں موجود ہے۔
-    """
     for signal in signals:
-        # اگر سگنل کا جوڑا اس بیچ میں نہیں تھا، تو اسے نظر انداز کر دیں
         if signal.symbol not in quotes:
             continue
 
@@ -117,4 +120,4 @@ def save_market_momentum(quotes: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"مارکیٹ کی حرکت کا ڈیٹا محفوظ کرنے میں خرابی: {e}", exc_info=True)
-            
+        
