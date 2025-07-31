@@ -26,9 +26,9 @@
         .news-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
         .news-content { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
         .news-title { font-size: 1.2rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--text-primary); line-height: 1.4; }
-        .news-source { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; font-weight: 500; }
+        .news-meta { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; font-weight: 500; }
         .news-snippet { color: var(--text-secondary); line-height: 1.6; flex-grow: 1; margin-bottom: 1rem; }
-        .read-more { color: var(--accent-gold); text-decoration: none; font-weight: 600; align-self: flex-start; transition: color 0.3s; }
+        .read-more { color: var(--accent-gold); text-decoration: none; font-weight: 600; align-self: flex-start; transition: color 0.3s; margin-top: auto; }
         .read-more:hover { color: var(--text-primary); }
         .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
         .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
@@ -56,7 +56,7 @@
     <main class="main-container">
         <h2 class="page-header">Latest Market News</h2>
         <div class="news-grid" id="news-grid"></div>
-        <div class="no-data-message" id="no-news-message" style="display: none;">
+        <div class="no-data-message" id="no-news-message" style="display: block;">
             <h3><i class="fas fa-sync-alt fa-spin"></i> Loading News...</h3>
             <p>Please wait while we fetch the latest market news.</p>
         </div>
@@ -74,45 +74,46 @@
 
         async function fetchNews() {
             try {
-                noNewsMessage.style.display = 'block';
                 const response = await fetch('/api/news');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 
                 const newsData = await response.json();
                 newsGrid.innerHTML = '';
 
-                // ★★★ یہاں تبدیلی کی گئی ہے ★★★
-                // 1. تمام علامتوں سے خبروں کو اکٹھا کرکے ایک فہرست بنائیں
                 let allArticles = [];
-                if (newsData && newsData.articles_by_symbol) {
+                if (newsData && newsData.articles_by_symbol && typeof newsData.articles_by_symbol === 'object') {
                     for (const symbol in newsData.articles_by_symbol) {
-                        allArticles = allArticles.concat(newsData.articles_by_symbol[symbol]);
+                        if (Array.isArray(newsData.articles_by_symbol[symbol])) {
+                            allArticles.push(...newsData.articles_by_symbol[symbol]);
+                        }
                     }
                 }
 
-                // 2. خبروں کو تازہ ترین کے مطابق ترتیب دیں
-                allArticles.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+                // ڈپلیکیٹ خبروں کو URL کی بنیاد پر ہٹائیں
+                const uniqueArticles = Array.from(new Map(allArticles.map(item => [item['url'], item])).values());
 
-                // 3. ڈپلیکیٹ خبروں کو ہٹائیں (اگر کوئی ہو)
-                const uniqueArticles = Array.from(new Set(allArticles.map(a => a.url)))
-                    .map(url => {
-                        return allArticles.find(a => a.url === url)
-                    });
-                // ★★★ تبدیلی ختم ★★★
+                // خبروں کو تازہ ترین کے مطابق ترتیب دیں
+                uniqueArticles.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
 
-                if (uniqueArticles && uniqueArticles.length > 0) {
+                if (uniqueArticles.length > 0) {
                     noNewsMessage.style.display = 'none';
                     newsGrid.style.display = 'grid';
                     uniqueArticles.forEach(item => {
                         const card = document.createElement('div');
                         card.className = 'news-card';
+                        
                         const snippet = item.snippet || item.title || 'No summary available.';
+                        const title = item.title || 'No Title';
+                        const source = item.source || 'Unknown Source';
+                        const url = item.url || '#';
+                        const publishedTime = item.published_at ? new Date(item.published_at).toLocaleString() : 'N/A';
+
                         card.innerHTML = `
                             <div class="news-content">
-                                <h3 class="news-title">${item.title || 'No Title'}</h3>
-                                <p class="source">${item.source || 'Unknown Source'} - ${new Date(item.published_at).toLocaleString()}</p>
-                                <p class="snippet">${snippet.substring(0, 150)}...</p>
-                                <a href="${item.url || '#'}" target="_blank" rel="noopener noreferrer" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
+                                <h3 class="news-title">${title}</h3>
+                                <p class="news-meta"><strong>${source}</strong> - ${publishedTime}</p>
+                                <p class="news-snippet">${snippet.substring(0, 150)}...</p>
+                                <a href="${url}" target="_blank" rel="noopener noreferrer" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
                             </div>
                         `;
                         newsGrid.appendChild(card);
@@ -127,6 +128,7 @@
         }
         
         fetchNews();
+        // ہر 15 منٹ بعد خبروں کو اپ ڈیٹ کریں
         setInterval(fetchNews, 15 * 60 * 1000);
     </script>
 </body>
