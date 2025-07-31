@@ -24,15 +24,12 @@ from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 from key_manager import key_manager
 
-# لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# FastAPI ایپ
 app = FastAPI(title="ScalpMaster AI API")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,7 +38,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# DB انحصار
 def get_db():
     db = SessionLocal()
     try:
@@ -49,7 +45,6 @@ def get_db():
     finally:
         db.close()
 
-# API روٹس
 @app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
     try:
@@ -68,8 +63,8 @@ async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db
     if not ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ایڈمن پاس ورڈ سرور پر کنفیگر نہیں ہے۔")
     
-    # محفوظ موازنہ
-    if not hmac.compare_digest(password_data.password, ADMIN_PASSWORD):
+    # محفوظ پاس ورڈ موازنہ
+    if not hmac.compare_digest(password_data.password.encode('utf-8'), ADMIN_PASSWORD.encode('utf-8')):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
     
     success = crud.close_and_archive_signal(db, signal_id, "manual_close", 0, "manual_close")
@@ -93,12 +88,12 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
     
-    # ★★★ نیا اور حتمی شیڈول ★★★
+    # ★★★ یہاں حتمی اور اسٹریٹجک تبدیلی کی گئی ہے ★★★
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
-    # نگران انجن: ہر 1 منٹ بعد
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="guardian_engine_job")
-    # شکاری انجن: ہر 3 منٹ بعد
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=3), id="hunter_engine_job")
+    # نگران انجن: ہر 2 منٹ بعد (پہلے 1 منٹ تھا)
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=2), id="guardian_engine_job")
+    # شکاری انجن: ہر 5 منٹ بعد (پہلے 3 منٹ تھا)
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunter_engine_job")
     # خبروں کا انجن: ہر 4 گھنٹے بعد
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
@@ -182,3 +177,4 @@ async def get_news(db: Session = Depends(get_db)):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+    
