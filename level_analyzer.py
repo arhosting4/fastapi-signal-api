@@ -1,18 +1,19 @@
 # filename: level_analyzer.py
+
 import logging
 import pandas as pd
 from typing import List, Dict, Optional, Tuple
-from config import STRATEGY # صرف STRATEGY کو امپورٹ کریں
+from config import STRATEGY
 
 logger = logging.getLogger(__name__)
 
-# ★★★ درست طریقہ: STRATEGY ڈکشنری سے قیمتیں حاصل کریں ★★★
 MIN_RISK_REWARD_RATIO = STRATEGY.get("MIN_RISK_REWARD_RATIO", 1.5)
 MIN_CONFLUENCE_SCORE = STRATEGY.get("MIN_CONFLUENCE_SCORE", 4)
 LEVEL_SCORING_WEIGHTS = STRATEGY.get("LEVEL_SCORING_WEIGHTS", {
     "pivots": 3, "swings": 2, "fibonacci": 2, "psychological": 1
 })
 
+# ... (اس فائل کے دیگر فنکشنز جیسے _calculate_pivot_points وغیرہ میں کوئی تبدیلی نہیں) ...
 def _calculate_pivot_points(df: pd.DataFrame) -> Dict[str, float]:
     last_day = df.iloc[-1]
     high, low, close = last_day['high'], last_day['low'], last_day['close']
@@ -47,10 +48,13 @@ def _get_psychological_levels(price: float) -> Dict[str, float]:
     base = round(price / unit) * unit
     return {'upper_psy': base + unit, 'lower_psy': base - unit}
 
-def find_market_structure(candles: List[Dict], window: int = 10) -> Dict[str, str]:
-    if len(candles) < window * 2:
+def find_market_structure(df: pd.DataFrame, window: int = 10) -> Dict[str, str]:
+    # ★★★ تبدیلی: اب یہ فنکشن پہلے سے ہی df لیتا ہے، جو کہ درست ہے۔ ★★★
+    # صرف اس بات کو یقینی بنانا ہے کہ یہ df کو دوبارہ نہ بنائے
+    if len(df) < window * 2:
         return {"trend": "غیر متعین", "zone": "غیر جانبدار", "reason": "ناکافی ڈیٹا۔"}
-    df = pd.DataFrame(candles)
+    
+    # df = pd.DataFrame(candles) # یہ لائن یہاں نہیں ہونی چاہیے
     df['high'] = pd.to_numeric(df['high'])
     df['low'] = pd.to_numeric(df['low'])
     df['swing_high'] = df['high'][(df['high'].shift(1) < df['high']) & (df['high'].shift(-1) < df['high'])]
@@ -68,15 +72,23 @@ def find_market_structure(candles: List[Dict], window: int = 10) -> Dict[str, st
             trend = "نیچے کا رجحان"
     return {"trend": trend, "zone": "N/A", "reason": f"موجودہ رجحان {trend} ہے۔"}
 
-def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
-    if len(candles) < 34: return None
-    df = pd.DataFrame(candles)
+
+# ★★★ یہاں تبدیلی کی گئی ہے ★★★
+def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
+    """
+    یہ فنکشن اب کینڈلز کی لسٹ کے بجائے براہ راست پانڈاز ڈیٹا فریم لیتا ہے۔
+    """
+    if len(df) < 34: return None
+    
+    # df = pd.DataFrame(candles) # ★★★ اس غیر ضروری لائن کو ہٹا دیا گیا ہے ★★★
+    
     last_close = df['close'].iloc[-1]
     pivots = list(_calculate_pivot_points(df).values())
     swings = _find_swing_levels(df)
     fib_levels = list(_get_fibonacci_levels(df).values())
     psy_levels = list(_get_psychological_levels(last_close).values())
     all_levels = set(pivots + swings['highs'] + swings['lows'] + fib_levels + psy_levels)
+    
     potential_tp_levels = {}
     potential_sl_levels = {}
     for level in all_levels:
@@ -85,6 +97,7 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
         if any(abs(level - s) < (last_close * 0.0005) for s in swings['highs'] + swings['lows']): score += LEVEL_SCORING_WEIGHTS.get('swings', 2)
         if any(abs(level - f) < (last_close * 0.0005) for f in fib_levels): score += LEVEL_SCORING_WEIGHTS.get('fibonacci', 2)
         if any(abs(level - p) < (last_close * 0.0005) for p in psy_levels): score += LEVEL_SCORING_WEIGHTS.get('psychological', 1)
+        
         if score >= MIN_CONFLUENCE_SCORE:
             if level > last_close:
                 if signal_type == 'buy': potential_tp_levels[level] = score
@@ -92,13 +105,21 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
             else:
                 if signal_type == 'sell': potential_tp_levels[level] = score
                 else: potential_sl_levels[level] = score
+
     if not potential_tp_levels or not potential_sl_levels:
         logger.warning(f"[{signal_type}] سگنل کے لیے کافی TP/SL لیولز نہیں ملے۔")
         return None
+        
     final_tp = max(potential_tp_levels, key=potential_tp_levels.get) if potential_tp_levels else None
-    final_sl = min(potential_sl_levels, key=potential_sl_levels.get) if signal_type == 'buy' and potential_sl_levels else max(potential_sl_levels, key=potential_sl_levels.get) if potential_sl_levels else None
+    # SL کی منطق کو درست کیا گیا
+    if signal_type == 'buy':
+        final_sl = min(potential_sl_levels, key=potential_sl_levels.get) if potential_sl_levels else None
+    else: # 'sell'
+        final_sl = max(potential_sl_levels, key=potential_sl_levels.get) if potential_sl_levels else None
+
     if not final_tp or not final_sl:
         return None
+        
     try:
         reward = abs(final_tp - last_close)
         risk = abs(last_close - final_sl)
@@ -109,6 +130,7 @@ def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[
             return None
     except ZeroDivisionError:
         return None
+        
     logger.info(f"کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f} (اسکور: {potential_tp_levels.get(final_tp, 0)}), SL={final_sl:.5f} (اسکور: {potential_sl_levels.get(final_sl, 0)})")
     return final_tp, final_sl
     
