@@ -10,59 +10,48 @@ from sqlalchemy.orm import Session
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_real_time_quotes, get_pairs_to_monitor
+from utils import get_real_time_quotes
 from websocket_manager import manager
+from roster_manager import get_monitoring_roster # ★★★ نیا امپورٹ ★★★
 
 logger = logging.getLogger(__name__)
 
-# --- نگرانی کے لیے بنیادی ترتیبات ---
 MOMENTUM_FILE = "market_momentum.json"
-PAIRS_TO_MONITOR = get_pairs_to_monitor()
-BATCH_SIZE = 7
+BATCH_SIZE = 14 # بیچ سائز کو بڑا رکھ سکتے ہیں تاکہ ایک ہی کال میں سب آ جائیں
 
-# ★★★ سچا مرکزی یادداشت: تمام جوڑوں کی تازہ ترین قیمتیں یہاں محفوظ ہوں گی ★★★
 latest_quotes_memory: Dict[str, Dict[str, Any]] = {}
-
-# یہ یاد رکھے گا کہ اگلی باری کس بیچ کی ہے
-next_batch_index = 0
 
 async def check_active_signals_job():
     """
     یہ فنکشن اب دو اہم کام کرتا ہے:
-    1. باری باری 7 جوڑوں کی قیمتیں لا کر 'مرکزی یادداشت' کو اپ ڈیٹ کرتا ہے۔
-    2. ہر بار، تمام فعال سگنلز کو 'مرکزی یادداشت' کی بنیاد پر چیک کرتا ہے۔
+    1. روسٹر مینیجر سے نگرانی کی متحرک فہرست حاصل کرتا ہے۔
+    2. ان جوڑوں کی قیمتیں لا کر 'مرکزی یادداشت' کو اپ ڈیٹ کرتا ہے اور فعال سگنلز کو چیک کرتا ہے۔
     """
-    global next_batch_index, latest_quotes_memory
+    global latest_quotes_memory
     logger.info("🛡️ نگران انجن: نگرانی کا نیا دور شروع...")
 
-    # 1. اس دور کے لیے 7 جوڑوں کا بیچ منتخب کریں
-    start_index = next_batch_index * BATCH_SIZE
-    end_index = start_index + BATCH_SIZE
-    current_batch = PAIRS_TO_MONITOR[start_index:end_index]
-    
-    # اگلی باری کے لیے انڈیکس کو اپ ڈیٹ کریں
-    total_batches = (len(PAIRS_TO_MONITOR) + BATCH_SIZE - 1) // BATCH_SIZE
-    next_batch_index = (next_batch_index + 1) % total_batches
-
-    if not current_batch:
-        logger.info("🛡️ نگران انجن: نگرانی کے لیے کوئی جوڑا نہیں۔")
-        return
-
-    # 2. صرف منتخب کردہ 7 جوڑوں کی قیمتیں حاصل کریں
-    logger.info(f"🛡️ نگران انجن: {len(current_batch)} جوڑوں کی قیمتیں حاصل کی جا رہی ہیں: {current_batch}")
-    new_quotes = await get_real_time_quotes(current_batch)
-
-    # 3. مرکزی یادداشت کو نئی قیمتوں سے اپ ڈیٹ کریں
-    if new_quotes:
-        latest_quotes_memory.update(new_quotes)
-        logger.info(f"✅ مرکزی یادداشت اپ ڈیٹ ہوئی۔ کل یادداشت میں {len(latest_quotes_memory)} جوڑوں کا ڈیٹا ہے۔")
-        save_market_momentum(new_quotes)
-    else:
-        logger.warning("🛡️ نگران انجن: اس دور میں کوئی نئی قیمت حاصل نہیں ہوئی۔")
-
-    # 4. اب، تمام فعال سگنلز کو مرکزی یادداشت کی بنیاد پر چیک کریں
     db = SessionLocal()
     try:
+        # 1. نگرانی کے لیے متحرک فہرست حاصل کریں
+        pairs_to_monitor = get_monitoring_roster(db)
+        
+        if not pairs_to_monitor:
+            logger.info("🛡️ نگران انجن: نگرانی کے لیے کوئی جوڑا نہیں۔")
+            return
+
+        # 2. تمام جوڑوں کی قیمتیں ایک ساتھ حاصل کریں
+        logger.info(f"🛡️ نگران انجن: {len(pairs_to_monitor)} جوڑوں کی قیمتیں حاصل کی جا رہی ہیں: {pairs_to_monitor}")
+        new_quotes = await get_real_time_quotes(pairs_to_monitor)
+
+        # 3. مرکزی یادداشت کو نئی قیمتوں سے اپ ڈیٹ کریں
+        if new_quotes:
+            latest_quotes_memory.update(new_quotes)
+            logger.info(f"✅ مرکزی یادداشت اپ ڈیٹ ہوئی۔ کل یادداشت میں {len(latest_quotes_memory)} جوڑوں کا ڈیٹا ہے۔")
+            save_market_momentum(new_quotes)
+        else:
+            logger.warning("🛡️ نگران انجن: اس دور میں کوئی نئی قیمت حاصل نہیں ہوئی۔")
+
+        # 4. اب، تمام فعال سگنلز کو مرکزی یادداشت کی بنیاد پر چیک کریں
         active_signals = crud.get_all_active_signals_from_db(db)
         if not active_signals:
             logger.info("🛡️ نگران انجن: کوئی فعال سگنل موجود نہیں۔")
@@ -73,7 +62,6 @@ async def check_active_signals_job():
             return
 
         logger.info(f"🛡️ نگران انجن: {len(active_signals)} فعال سگنلز کو مرکزی یادداشت سے چیک کیا جا رہا ہے...")
-        # ★★★ سب سے اہم اور حتمی تبدیلی: اب یہ فنکشن پوری یادداشت استعمال کرے گا ★★★
         await check_signals_for_tp_sl(db, active_signals, latest_quotes_memory)
 
     except Exception as e:
@@ -85,13 +73,9 @@ async def check_active_signals_job():
 
 
 async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quotes_memory: Dict[str, Any]):
-    """
-    یہ فنکشن اب تمام فعال سگنلز کو مرکزی یادداشت سے چیک کرتا ہے۔
-    """
+    """یہ فنکشن تمام فعال سگنلز کو مرکزی یادداشت سے چیک کرتا ہے۔"""
     signals_closed_count = 0
     for signal in signals:
-        # ★★★ بنیادی غلطی کا حتمی حل ★★★
-        # اگر سگنل کا جوڑا یادداشت میں نہیں ہے، تو اسے نظر انداز کر دیں
         if signal.symbol not in quotes_memory:
             continue
 
@@ -115,7 +99,6 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
             success = crud.close_and_archive_signal(db, signal.signal_id, outcome, close_price, reason)
             if success:
                 signals_closed_count += 1
-                # UI کو اپ ڈیٹ کرنے کے لیے براڈکاسٹ کریں
                 asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
     
     if signals_closed_count > 0:
@@ -123,9 +106,7 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
 
 
 def save_market_momentum(quotes: Dict[str, Any]):
-    """
-    یہ فنکشن صرف نئی حاصل کردہ قیمتوں کی بنیاد پر مارکیٹ کی حرکت کو محفوظ کرتا ہے۔
-    """
+    """یہ فنکشن صرف نئی حاصل کردہ قیمتوں کی بنیاد پر مارکیٹ کی حرکت کو محفوظ کرتا ہے۔"""
     try:
         try:
             with open(MOMENTUM_FILE, 'r') as f: market_data = json.load(f)
@@ -138,8 +119,7 @@ def save_market_momentum(quotes: Dict[str, Any]):
                 if symbol not in market_data: market_data[symbol] = []
                 try:
                     market_data[symbol].append({"time": now_iso, "change": float(data["percent_change"])})
-                    # صرف آخری 5 منٹ کا ڈیٹا رکھیں
-                    market_data[symbol] = market_data[symbol][-5:] 
+                    market_data[symbol] = market_data[symbol][-10:] 
                     successful_quotes += 1
                 except (ValueError, TypeError): continue
         
@@ -149,4 +129,4 @@ def save_market_momentum(quotes: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"مارکیٹ کی حرکت کا ڈیٹا محفوظ کرنے میں خرابی: {e}", exc_info=True)
-                
+                                  
