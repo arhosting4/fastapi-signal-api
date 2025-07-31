@@ -3,26 +3,15 @@
 import pandas as pd
 from typing import List, Dict
 
-def detect_patterns(candles: List[Dict]) -> Dict[str, str]:
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
+def detect_patterns(df: pd.DataFrame) -> Dict[str, str]:
     """
     کینڈل اسٹک پیٹرنز کی شناخت کرتا ہے۔
     """
-    if not candles or len(candles) < 2:
+    if df.empty or len(df) < 2:
         return {"pattern": "ناکافی ڈیٹا", "type": "neutral"}
 
-    # --- اہم تبدیلی: اب یہ پہلے سے ہی ڈکشنری ہے ---
-    df = pd.DataFrame(candles)
-
-    required_cols = ['open', 'high', 'low', 'close']
-    if not all(col in df.columns for col in required_cols):
-        return {"pattern": "کالم غائب ہیں", "type": "neutral"}
-
-    for col in required_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    df.dropna(inplace=True)
-    if len(df) < 2:
-        return {"pattern": "ناکافی ڈیٹا", "type": "neutral"}
-
+    # اب ڈیٹا فریم بنانے کی ضرورت نہیں
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
@@ -54,4 +43,4 @@ def detect_patterns(candles: List[Dict]) -> Dict[str, str]:
         return {"pattern": "Shooting Star", "type": "bearish"}
 
     return {"pattern": "کوئی خاص پیٹرن نہیں", "type": "neutral"}
-        
+    
