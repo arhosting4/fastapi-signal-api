@@ -8,14 +8,18 @@ from typing import List, Optional
 class Candle(BaseModel):
     """OHLC کینڈل ڈیٹا کی توثیق کرتا ہے"""
     datetime: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: Optional[float] = None
+    open: str  # API سے سٹرنگ کے طور پر آتا ہے، بعد میں تبدیل کریں گے
+    high: str
+    low: str
+    close: str
+    volume: Optional[str] = None
+    # ★★★ نیا اختیاری وصف ★★★
+    # یہ وصف utils.py میں ڈیٹا حاصل کرنے کے بعد شامل کیا جائے گا
+    symbol: Optional[str] = None
 
 class TwelveDataTimeSeries(BaseModel):
     """Twelve Data API سے آنے والے ٹائم سیریز کے جواب کی توثیق کرتا ہے"""
+    meta: Dict[str, Any] # میٹا ڈیٹا کو بھی شامل کر لیں تاکہ علامت کا نام مل سکے
     values: List[Candle]
     status: str
 
@@ -31,3 +35,4 @@ class SignalData(BaseModel):
     confidence: float
     reason: str
     timestamp: str
+    
