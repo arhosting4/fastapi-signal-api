@@ -6,7 +6,7 @@ import asyncio
 import logging
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # مقامی امپورٹس
 from database_crud import update_news_cache_in_db, get_cached_news
@@ -87,9 +87,30 @@ async def update_economic_calendar_cache():
     else:
         logger.warning("MarketAux سے کوئی خبر نہیں ملی یا جواب خالی تھا۔ کیش اپ ڈیٹ نہیں ہوا۔")
 
+def _parse_datetime_string(datetime_str: str) -> Optional[datetime]:
+    """
+    مختلف فارمیٹس میں آنے والی تاریخ کی سٹرنگ کو محفوظ طریقے سے پارس کرتا ہے
+    اور اسے ٹائم زون سے آگاہ (timezone-aware) UTC datetime آبجیکٹ میں تبدیل کرتا ہے۔
+    """
+    if not datetime_str:
+        return None
+    try:
+        # اگر سٹرنگ میں پہلے سے ٹائم زون کی معلومات موجود ہیں
+        if 'Z' in datetime_str or '+' in datetime_str or '-' in datetime_str[10:]:
+            dt_aware = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+            return dt_aware.astimezone(timezone.utc)
+        else:
+            # اگر ٹائم زون کی معلومات نہیں ہیں، تو اسے UTC سمجھیں
+            dt_naive = datetime.fromisoformat(datetime_str)
+            return dt_naive.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{datetime_str}'")
+        return None
+
 async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
     """
     کیش شدہ خبروں کی بنیاد پر کسی مخصوص علامت کے لیے خبروں کے اثرات کا تیزی سے تجزیہ کرتا ہے۔
+    ★★★ اب یہ تاریخ کو محفوظ طریقے سے پارس کرتا ہے۔ ★★★
     """
     db = SessionLocal()
     try:
@@ -108,32 +129,30 @@ async def get_news_analysis_for_symbol(symbol: str) -> Dict[str, Any]:
     if not relevant_articles:
         return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی متعلقہ خبر نہیں ملی۔"}
 
-    now = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     
     for article in relevant_articles:
         if article.get('impact') != "High":
             continue
 
-        try:
-            published_time_str = article.get('published_at')
-            if not published_time_str: continue
-            if 'Z' not in published_time_str and '+' not in published_time_str:
-                 published_time_str += 'Z'
-            published_time = datetime.fromisoformat(published_time_str.replace('Z', '+00:00'))
+        published_time = _parse_datetime_string(article.get('published_at'))
+        if not published_time:
+            continue
             
-            if now - timedelta(hours=1) <= published_time.replace(tzinfo=None) <= now + timedelta(hours=4):
-                return {
-                    "impact": "High",
-                    "reason": f"ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'"
-                }
-        except Exception as e:
-            logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
+        # چیک کریں کہ آیا خبر حال ہی میں (پچھلے 1 گھنٹے میں) جاری ہوئی ہے
+        # یا جلد ہی (اگلے 4 گھنٹوں میں) آنے والی ہے
+        if now_utc - timedelta(hours=1) <= published_time <= now_utc + timedelta(hours=4):
+            return {
+                "impact": "High",
+                "reason": f"ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'"
+            }
             
     return {"impact": "Clear", "reason": "اس علامت کے لیے کوئی حالیہ یا آنے والی اعلیٰ اثر والی خبر نہیں ملی۔"}
 
 async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, trade_end_time: datetime) -> bool:
     """
     یہ چیک کرتا ہے کہ آیا کسی ٹریڈ کے دوران کوئی اعلیٰ اثر والی خبر جاری ہوئی تھی۔
+    ★★★ اب یہ تاریخ کو محفوظ طریقے سے پارس کرتا ہے۔ ★★★
     """
     db = SessionLocal()
     try:
@@ -152,23 +171,21 @@ async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, t
     if not relevant_articles:
         return False
 
+    # ٹریڈ کے اوقات کو ٹائم زون سے آگاہ بنائیں (UTC)
+    start_time_utc = trade_start_time.replace(tzinfo=timezone.utc)
+    end_time_utc = trade_end_time.replace(tzinfo=timezone.utc)
+
     for article in relevant_articles:
         if article.get('impact') != "High":
             continue
 
-        try:
-            published_time_str = article.get('published_at')
-            if not published_time_str: continue
+        published_time = _parse_datetime_string(article.get('published_at'))
+        if not published_time:
+            continue
             
-            if 'Z' not in published_time_str and '+' not in published_time_str:
-                 published_time_str += 'Z'
-            published_time = datetime.fromisoformat(published_time_str.replace('Z', '+00:00')).replace(tzinfo=None)
-            
-            if trade_start_time <= published_time <= trade_end_time:
-                logger.info(f"ٹریڈ {symbol} کے دوران ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'")
-                return True
-        except Exception as e:
-            logger.warning(f"خبر کی تاریخ پارس کرنے میں خرابی: {e} - '{article.get('published_at')}'")
+        if start_time_utc <= published_time <= end_time_utc:
+            logger.info(f"ٹریڈ {symbol} کے دوران ایک اعلیٰ اثر والی خبر ملی: '{article.get('title', '')[:60]}...'")
+            return True
             
     return False
     
