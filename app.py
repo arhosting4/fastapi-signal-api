@@ -3,7 +3,8 @@
 import asyncio
 import logging
 import os
-import secrets  # ★★★ نیا اور محفوظ امپورٹ ★★★
+import hmac
+import hashlib
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -61,18 +62,16 @@ async def get_active_signals(db: Session = Depends(get_db)):
 class PasswordData(BaseModel):
     password: str
 
-# ★★★ اپ ڈیٹ شدہ اور محفوظ فنکشن ★★★
 @app.post("/api/delete-signal/{signal_id}", response_class=JSONResponse)
 async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db: Session = Depends(get_db)):
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
     if not ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ایڈمن پاس ورڈ سرور پر کنفیگر نہیں ہے۔")
     
-    # محفوظ موازنہ ٹائمنگ اٹیک سے بچنے کے لیے
-    if not secrets.compare_digest(password_data.password, ADMIN_PASSWORD):
+    # محفوظ موازنہ
+    if not hmac.compare_digest(password_data.password, ADMIN_PASSWORD):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
     
-    # دستی طور پر بند کرنے کے لیے، ہم "manual_close" کا استعمال کریں گے
     success = crud.close_and_archive_signal(db, signal_id, "manual_close", 0, "manual_close")
     
     if success:
@@ -85,7 +84,7 @@ async def start_background_tasks():
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
         return
 
-    logger.info(">>> 'ڈبل انجن' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
+    logger.info(">>> 'ڈائنامک روسٹر' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
     
     scheduler = AsyncIOScheduler(timezone="UTC")
     app.state.scheduler = scheduler
@@ -94,9 +93,13 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
     
+    # ★★★ نیا اور حتمی شیڈول ★★★
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=2), id="guardian_engine_job")
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunter_engine_job")
+    # نگران انجن: ہر 1 منٹ بعد
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="guardian_engine_job")
+    # شکاری انجن: ہر 3 منٹ بعد
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=3), id="hunter_engine_job")
+    # خبروں کا انجن: ہر 4 گھنٹے بعد
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
     scheduler.start()
@@ -179,4 +182,3 @@ async def get_news(db: Session = Depends(get_db)):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-    
