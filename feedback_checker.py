@@ -19,14 +19,19 @@ logger = logging.getLogger(__name__)
 MOMENTUM_FILE = "market_momentum.json"
 latest_quotes_memory: Dict[str, Dict[str, Any]] = {}
 
+# ★★★ یہ حتمی اور مکمل طور پر درست فنکشن ہے ★★★
 async def check_active_signals_job():
-    """نگران انجن کا مرکزی کام۔"""
+    """نگران انجن کا مرکزی کام۔ یہ ورژن DB سیشن کو صحیح طریقے سے ہینڈل کرتا ہے۔"""
     global latest_quotes_memory
     logger.info("🛡️ نگران انجن: نگرانی کا نیا دور شروع...")
+    
+    # ڈیٹا بیس سیشن کو باہر بنائیں
     db = SessionLocal()
     try:
         # 1. نگرانی کے لیے جوڑوں کی تازہ ترین فہرست حاصل کریں
+        # (اسے DB سیشن کی ضرورت ہے)
         pairs_to_monitor = get_monitoring_roster(db)
+        
         if not pairs_to_monitor:
             logger.info("🛡️ نگران انجن: نگرانی کے لیے کوئی جوڑا نہیں۔")
             return
@@ -34,6 +39,7 @@ async def check_active_signals_job():
         # 2. قیمتیں حاصل کریں اور یادداشت کو اپ ڈیٹ کریں
         logger.info(f"🛡️ نگران انجن: {len(pairs_to_monitor)} جوڑوں کی قیمتیں حاصل کی جا رہی ہیں: {pairs_to_monitor}")
         new_quotes = await get_real_time_quotes(pairs_to_monitor)
+        
         if new_quotes:
             latest_quotes_memory.update(new_quotes)
             logger.info(f"✅ مرکزی یادداشت اپ ڈیٹ ہوئی۔ کل یادداشت میں {len(latest_quotes_memory)} جوڑوں کا ڈیٹا ہے۔")
@@ -41,8 +47,9 @@ async def check_active_signals_job():
         else:
             logger.warning("🛡️ نگران انجن: اس دور میں کوئی نئی قیمت حاصل نہیں ہوئی۔")
 
-        # 3. فعال سگنلز کو چیک کریں
+        # 3. فعال سگنلز کو چیک کریں (اسی DB سیشن کا استعمال کرتے ہوئے)
         active_signals = crud.get_all_active_signals_from_db(db)
+        
         if not active_signals:
             logger.info("🛡️ نگران انجن: کوئی فعال سگنل موجود نہیں۔")
             return
@@ -57,27 +64,23 @@ async def check_active_signals_job():
     except Exception as e:
         logger.error(f"🛡️ نگران انجن کے کام میں خرابی: {e}", exc_info=True)
     finally:
+        # 4. تمام کام ختم ہونے کے بعد ہی DB سیشن کو بند کریں
         if db.is_active:
             db.close()
         logger.info("🛡️ نگران انجن: نگرانی کا دور مکمل ہوا۔")
 
 
 async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quotes_memory: Dict[str, Any]):
-    """
-    یہ فنکشن فعال سگنلز کو TP/SL کے خلاف چیک کرتا ہے۔
-    یہ ورژن ڈیٹا کی قسموں اور تفصیلی لاگنگ پر خصوصی توجہ دیتا ہے۔
-    """
+    """یہ فنکشن فعال سگنلز کو TP/SL کے خلاف چیک کرتا ہے۔"""
     signals_closed_count = 0
     for signal in signals:
         if signal.symbol not in quotes_memory:
             continue
-
         quote_data = quotes_memory.get(signal.symbol)
         if not quote_data or "price" not in quote_data:
             continue
         
         try:
-            # --- حتمی اور فول پروف تبدیلی: ہر قیمت کو فلوٹ میں تبدیل کریں ---
             current_price = float(quote_data["price"])
             tp_price = float(signal.tp_price)
             sl_price = float(signal.sl_price)
@@ -118,30 +121,20 @@ def save_market_momentum(quotes: Dict[str, Any]):
     """مارکیٹ کی حرکت کا ڈیٹا محفوظ کرتا ہے۔"""
     try:
         try:
-            with open(MOMENTUM_FILE, 'r') as f:
-                market_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            market_data = {}
-
+            with open(MOMENTUM_FILE, 'r') as f: market_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError): market_data = {}
         now_iso = datetime.utcnow().isoformat()
         successful_quotes = 0
         for symbol, data in quotes.items():
             if "percent_change" in data and data.get("percent_change") is not None:
-                if symbol not in market_data:
-                    market_data[symbol] = []
+                if symbol not in market_data: market_data[symbol] = []
                 try:
                     market_data[symbol].append({"time": now_iso, "change": float(data["percent_change"])})
                     market_data[symbol] = market_data[symbol][-10:] 
                     successful_quotes += 1
-                except (ValueError, TypeError):
-                    continue
-        
+                except (ValueError, TypeError): continue
         if successful_quotes > 0:
-            with open(MOMENTUM_FILE, 'w') as f:
-                json.dump(market_data, f)
-            # اس لاگ کو کم کر دیا تاکہ لاگ فائل صاف رہے
-            # logger.info(f"✅ نگران انجن: {successful_quotes} جوڑوں کی حرکت کا ڈیٹا کامیابی سے محفوظ کیا گیا۔")
-
+            with open(MOMENTUM_FILE, 'w') as f: json.dump(market_data, f)
     except Exception as e:
         logger.error(f"مارکیٹ کی حرکت کا ڈیٹا محفوظ کرنے میں خرابی: {e}", exc_info=True)
-        
+                    
