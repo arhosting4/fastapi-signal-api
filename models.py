@@ -3,6 +3,7 @@
 import os
 import time
 import logging
+import random  # ★★★ غلطی کی اصلاح: اس لائن کو شامل کیا گیا ہے ★★★
 from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Boolean)
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.exc import OperationalError
@@ -17,7 +18,6 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./signals.db")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# کنکشن پولنگ کو بہتر بنائیں
 engine_args = {
     "pool_size": 10,
     "max_overflow": 2,
@@ -32,12 +32,9 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ★★★ نیا ٹیبل شامل کیا گیا ★★★
 class JobLock(Base):
     __tablename__ = "job_lock"
-    # ایک منفرد نام جو لاک کی شناخت کرے گا
     lock_name = Column(String, primary_key=True)
-    # یہ ٹائم اسٹیمپ دکھائے گا کہ لاک کب حاصل کیا گیا
     locked_at = Column(DateTime, default=datetime.utcnow)
 
 class ActiveSignal(Base):
@@ -102,12 +99,6 @@ class CachedNews(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 def create_db_and_tables():
-    """
-    ڈیٹا بیس اور تمام ٹیبلز بناتا ہے۔ یہ فنکشن اب زیادہ مضبوط ہے
-    اور ریس کنڈیشنز سے بچنے کی کوشش کرتا ہے۔
-    """
-    # Render.com جیسے ماحول میں، ایک ہی وقت میں کئی ورکرز
-    # ٹیبل بنانے کی کوشش کر سکتے ہیں۔ یہ سادہ تاخیر اس مسئلے کو کم کرتی ہے۔
     time.sleep(random.uniform(0, 2))
     try:
         logger.info("ڈیٹا بیس اور ٹیبلز کی حالت کی تصدیق کی جا رہی ہے...")
@@ -115,7 +106,7 @@ def create_db_and_tables():
         logger.info("ٹیبلز کامیابی سے بنائے یا تصدیق کیے گئے۔")
     except OperationalError as e:
         logger.warning(f"ڈیٹا بیس بنانے میں خرابی (شاید کوئی دوسرا ورکر بنا رہا ہے): {e}")
-        time.sleep(5) # تھوڑا انتظار کریں اور دوبارہ کوشش کرنے دیں
+        time.sleep(5)
     except Exception as e:
         logger.error(f"ڈیٹا بیس بنانے میں ایک غیر متوقع خرابی: {e}", exc_info=True)
-
+            
