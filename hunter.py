@@ -3,11 +3,10 @@
 import asyncio
 import logging
 import json
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
-from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
+from typing import List, Dict, Any, Optional
+from sqlalchemy.orm import Session
 
 # مقامی امپورٹس
 import database_crud as crud
@@ -17,65 +16,38 @@ from messenger import send_telegram_alert, send_signal_update_alert
 from models import SessionLocal
 from websocket_manager import manager
 from config import STRATEGY
+from roster_manager import get_hunting_roster # ★★★ نیا امپورٹ ★★★
 
 logger = logging.getLogger(__name__)
 
 FINAL_CONFIDENCE_THRESHOLD = STRATEGY["FINAL_CONFIDENCE_THRESHOLD"]
-MOMENTUM_FILE = "market_momentum.json"
-ANALYSIS_CANDIDATE_COUNT = 4
 
 # ==============================================================================
-# ★★★ شکاری انجن کا کام (ہر 5 منٹ بعد) ★★★
+# ★★★ شکاری انجن کا کام (ہر 3 منٹ بعد، متحرک روسٹر اور متوازی تجزیے کے ساتھ) ★★★
 # ==============================================================================
 async def hunt_for_signals_job():
     """
-    یہ جاب ہر 5 منٹ چلتی ہے، مارکیٹ کے ڈیٹا کا تجزیہ کرتی ہے اور نئے سگنل تلاش کرتی ہے۔
+    یہ جاب ہر 3 منٹ چلتی ہے، متحرک روسٹر کی بنیاد پر نئے سگنل تلاش کرتی ہے۔
     """
     logger.info("🏹 شکاری انجن: نئے مواقع کی تلاش شروع...")
-    try:
-        with open(MOMENTUM_FILE, 'r') as f:
-            market_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        logger.warning("🏹 شکاری انجن: تجزیہ کے لیے کوئی ڈیٹا فائل نہیں ملی۔")
-        return
-
-    # پچھلے 5 منٹ کے ڈیٹا کی بنیاد پر بہترین امیدواروں کا انتخاب کریں
-    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
-    candidate_scores = {}
-    for symbol, history in market_data.items():
-        # صرف وہ اینٹریز لیں جو پچھلے 5 منٹ میں آئی ہیں
-        recent_history = [h for h in history if datetime.fromisoformat(h['time']) > five_minutes_ago]
-        if len(recent_history) < 2: continue # کم از کم 2 ڈیٹا پوائنٹس ہونے چاہئیں
-
-        df = pd.DataFrame(recent_history)
-        total_change = df['change'].sum()
-        # مستقل مزاجی کا اسکور (تمام حرکتیں ایک ہی سمت میں ہیں یا نہیں)
-        consistency = abs(df['change'].apply(np.sign).mean())
-        
-        # اسکور کا فارمولا: کل تبدیلی * مستقل مزاجی کا مربع
-        score = abs(total_change) * (consistency ** 2)
-        candidate_scores[symbol] = score
-
-    if not candidate_scores:
-        logger.info("🏹 شکاری انجن: کوئی بھی جوڑا مستحکم حرکت کے معیار پر پورا نہیں اترا۔")
-        return
-
-    # امیدواروں کو اسکور کے لحاظ سے ترتیب دیں
-    sorted_candidates = sorted(candidate_scores.items(), key=lambda item: item[1], reverse=True)
-    pairs_to_analyze = [item[0] for item in sorted_candidates[:ANALYSIS_CANDIDATE_COUNT]]
     
-    logger.info(f"🏹 شکاری انجن: گہرے تجزیے کے لیے {len(pairs_to_analyze)} بہترین امیدوار منتخب کیے گئے: {pairs_to_analyze}")
-
     db = SessionLocal()
     try:
-        active_signals = {s.symbol for s in crud.get_all_active_signals_from_db(db)}
-        final_list = [p for p in pairs_to_analyze if p not in active_signals]
+        # 1. روسٹر مینیجر سے تجزیے کے لیے جوڑوں کی تازہ ترین فہرست حاصل کریں
+        pairs_to_analyze = get_hunting_roster(db)
         
-        if final_list:
-            # ایک وقت میں ایک جوڑے کا تجزیہ کریں تاکہ API پر بوجھ نہ پڑے
-            for pair in final_list:
-                await analyze_single_pair(db, pair)
-                await asyncio.sleep(2) # ہر تجزیے کے بعد 2 سیکنڈ کا وقفہ
+        if not pairs_to_analyze:
+            logger.info("🏹 شکاری انجن: تجزیے کے لیے کوئی اہل جوڑا نہیں (شاید سب کے سگنل فعال ہیں)۔")
+            return
+
+        logger.info(f"🏹 شکاری انجن: {len(pairs_to_analyze)} جوڑوں کا متوازی تجزیہ شروع کیا جا رہا ہے: {pairs_to_analyze}")
+
+        # 2. تمام جوڑوں کا تجزیہ ایک ساتھ (concurrently) کریں
+        tasks = [analyze_single_pair(db, pair) for pair in pairs_to_analyze]
+        await asyncio.gather(*tasks)
+
+    except Exception as e:
+        logger.error(f"شکاری انجن کے کام میں خرابی: {e}", exc_info=True)
     finally:
         if db.is_active:
             db.close()
@@ -84,6 +56,12 @@ async def hunt_for_signals_job():
 async def analyze_single_pair(db: Session, pair: str):
     """ایک جوڑے کا گہرا تجزیہ کرتا ہے اور سگنل بناتا ہے۔"""
     logger.info(f"🔬 [{pair}] کا گہرا تجزیہ کیا جا رہا ہے...")
+    
+    # یہ چیک اب ضروری نہیں کیونکہ روسٹر مینیجر یہ کام کر رہا ہے، لیکن ایک اضافی حفاظتی تہہ کے طور پر رکھ سکتے ہیں
+    if crud.get_active_signal_by_symbol(db, pair):
+        logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: سگنل حال ہی میں فعال ہوا ہے۔")
+        return
+
     candles = await fetch_twelve_data_ohlc(pair)
     if not candles or len(candles) < 34:
         logger.info(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا۔")
@@ -111,4 +89,4 @@ async def analyze_single_pair(db: Session, pair: str):
             
     elif analysis_result:
         logger.info(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
-    
+        
