@@ -48,3 +48,15 @@ HIGH_IMPACT_KEYWORDS = {
     'XAU': ['war', 'crisis', 'geopolitical', 'fed', 'inflation'],
     'BTC': ['sec', 'regulation', 'etf', 'crypto ban', 'halving']
 }
+
+# ★★★ نیا کوڈ یہاں سے شروع ہو رہا ہے ★★★
+# --- لیول اسکورنگ کے لیے وزن ---
+# یہ وزن find_optimal_tp_sl فنکشن میں استعمال ہوں گے تاکہ بہترین TP/SL لیولز کا تعین کیا جا سکے۔
+# زیادہ وزن والے لیول زیادہ اہم سمجھے جاتے ہیں۔
+LEVEL_SCORING_WEIGHTS = {
+    "PIVOT": 4,          # یومیہ پیوٹ پوائنٹس (R1, S1, R2, S2)
+    "SWING": 3,          # 15-منٹ کے سوئنگ ہائی/لو
+    "FIBONACCI": 2,      # اہم فبوناکی ریٹریسمنٹ لیولز
+    "PSYCHOLOGICAL": 1   # نفسیاتی (گول نمبر) لیولز
+}
+# ★★★ نیا کوڈ یہاں ختم ہو رہا ہے ★★★
