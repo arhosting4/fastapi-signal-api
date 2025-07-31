@@ -103,6 +103,7 @@
             const statusText = document.getElementById('status-text');
             const notificationSound = document.getElementById('notification-sound');
             
+            // سگنلز کو ذخیرہ کرنے کے لیے مرکزی میپ
             let signals = new Map();
 
             function renderSignals() {
@@ -175,18 +176,29 @@
                         signals.delete(signalId);
                         renderSignals();
                     }, 500);
+                } else {
+                    // اگر کارڈ موجود نہیں تو بھی میپ سے ڈیلیٹ کریں اور دوبارہ رینڈر کریں
+                    if (signals.has(signalId)) {
+                        signals.delete(signalId);
+                        renderSignals();
+                    }
                 }
             }
 
+            // یہ فنکشن اب بیک اینڈ سے مکمل ہم آہنگی کو یقینی بناتا ہے
             async function fetchActiveSignals() {
                 try {
                     const response = await fetch('/api/active-signals');
                     if (!response.ok) throw new Error('Failed to fetch active signals');
                     const activeSignals = await response.json();
                     
+                    // پرانے سگنلز کو صاف کریں اور نئے ڈیٹا سے میپ کو دوبارہ بنائیں
+                    signals.clear();
                     activeSignals.forEach(signal => {
                         signals.set(signal.signal_id, signal);
                     });
+                    
+                    // UI کو تازہ ترین ڈیٹا کے ساتھ دوبارہ رینڈر کریں
                     renderSignals();
                 } catch (error) {
                     console.error('Error fetching active signals:', error);
@@ -201,6 +213,9 @@
                 socket.onopen = () => {
                     statusDot.classList.add('connected');
                     statusText.textContent = 'Live';
+                    // ہر بار جڑنے پر ڈیٹا کو دوبارہ ہم آہنگ کریں
+                    console.log("WebSocket connected. Syncing state with server...");
+                    fetchActiveSignals();
                 };
 
                 socket.onmessage = (event) => {
@@ -237,11 +252,10 @@
                 };
             }
 
-            fetchActiveSignals();
+            // ابتدائی طور پر صرف WebSocket کو کال کریں، جو خود ہی fetchActiveSignals کو کال کرے گا
             connectWebSocket();
         });
 
-        // ★★★ حتمی اور درست ڈیلیٹ فنکشن ★★★
         async function requestSignalDeletion(signalId) {
             const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
             
@@ -252,7 +266,7 @@
 
             try {
                 const response = await fetch(`/api/delete-signal/${signalId}`, {
-                    method: 'POST', // ★★★ یہ لائن اب درست طریقے سے شامل ہے ★★★
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -263,6 +277,7 @@
 
                 if (response.ok) {
                     alert(result.detail || "Signal closed successfully.");
+                    // یہاں UI فوری طور پر اپ ڈیٹ ہو جائے گا کیونکہ بیک اینڈ WebSocket پیغام بھیجے گا
                 } else {
                     alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
                 }
