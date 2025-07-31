@@ -5,6 +5,7 @@ import time
 import logging
 from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Boolean)
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -16,10 +17,28 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./signals.db")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# کنکشن آرگیومنٹس کو درست کیا گیا
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if "sqlite" in DATABASE_URL else create_engine(DATABASE_URL)
+# کنکشن پولنگ کو بہتر بنائیں
+engine_args = {
+    "pool_size": 10,
+    "max_overflow": 2,
+    "pool_recycle": 300,
+    "pool_pre_ping": True,
+}
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL, **engine_args)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# ★★★ نیا ٹیبل شامل کیا گیا ★★★
+class JobLock(Base):
+    __tablename__ = "job_lock"
+    # ایک منفرد نام جو لاک کی شناخت کرے گا
+    lock_name = Column(String, primary_key=True)
+    # یہ ٹائم اسٹیمپ دکھائے گا کہ لاک کب حاصل کیا گیا
+    locked_at = Column(DateTime, default=datetime.utcnow)
 
 class ActiveSignal(Base):
     __tablename__ = "active_signals"
@@ -33,9 +52,7 @@ class ActiveSignal(Base):
     sl_price = Column(Float)
     confidence = Column(Float)
     reason = Column(String)
-    # ★★★ نیا کالم شامل کیا گیا ★★★
-    # یہ ہر انڈیکیٹر کے اسکور کو ذخیرہ کرے گا تاکہ AI سیکھ سکے
-    component_scores = Column(JSON, nullable=True) 
+    component_scores = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -57,10 +74,9 @@ class CompletedTrade(Base):
     entry_price = Column(Float)
     tp_price = Column(Float)
     sl_price = Column(Float)
-    # ★★★ نئے کالمز شامل کیے گئے ★★★
-    close_price = Column(Float, nullable=True) # ٹریڈ کس قیمت پر بند ہوئی
-    reason_for_closure = Column(String, nullable=True) # بند ہونے کی وجہ (e.g., "tp_hit", "sl_hit")
-    outcome = Column(String, index=True) # نتیجہ (tp_hit, sl_hit)
+    close_price = Column(Float, nullable=True)
+    reason_for_closure = Column(String, nullable=True)
+    outcome = Column(String, index=True)
     confidence = Column(Float)
     reason = Column(String)
     closed_at = Column(DateTime, default=datetime.utcnow)
@@ -69,11 +85,6 @@ class CompletedTrade(Base):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
         if isinstance(d.get('closed_at'), datetime):
             d['closed_at'] = d['closed_at'].isoformat()
-        # as_dict میں دیگر تاریخوں کو ہینڈل کرنے کے لیے اضافی چیکس
-        if d.get('created_at') and isinstance(d.get('created_at'), datetime):
-            d['created_at'] = d['created_at'].isoformat()
-        if d.get('updated_at') and isinstance(d.get('updated_at'), datetime):
-            d['updated_at'] = d['updated_at'].isoformat()
         return d
 
 class FeedbackEntry(Base):
@@ -91,12 +102,20 @@ class CachedNews(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 def create_db_and_tables():
-    # یہ فنکشن ڈیٹا بیس اور ٹیبلز بناتا ہے
-    # پیداواری ماحول میں، Alembic جیسا ٹول استعمال کرنا بہتر ہے
-    logger.info("ڈیٹا بیس اور ٹیبلز کی حالت کی تصدیق کی جا رہی ہے...")
+    """
+    ڈیٹا بیس اور تمام ٹیبلز بناتا ہے۔ یہ فنکشن اب زیادہ مضبوط ہے
+    اور ریس کنڈیشنز سے بچنے کی کوشش کرتا ہے۔
+    """
+    # Render.com جیسے ماحول میں، ایک ہی وقت میں کئی ورکرز
+    # ٹیبل بنانے کی کوشش کر سکتے ہیں۔ یہ سادہ تاخیر اس مسئلے کو کم کرتی ہے۔
+    time.sleep(random.uniform(0, 2))
     try:
+        logger.info("ڈیٹا بیس اور ٹیبلز کی حالت کی تصدیق کی جا رہی ہے...")
         Base.metadata.create_all(bind=engine)
         logger.info("ٹیبلز کامیابی سے بنائے یا تصدیق کیے گئے۔")
+    except OperationalError as e:
+        logger.warning(f"ڈیٹا بیس بنانے میں خرابی (شاید کوئی دوسرا ورکر بنا رہا ہے): {e}")
+        time.sleep(5) # تھوڑا انتظار کریں اور دوبارہ کوشش کرنے دیں
     except Exception as e:
-        logger.error(f"ڈیٹا بیس بنانے میں خرابی: {e}", exc_info=True)
-        
+        logger.error(f"ڈیٹا بیس بنانے میں ایک غیر متوقع خرابی: {e}", exc_info=True)
+
