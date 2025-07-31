@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
-# ★★★ حتمی ورژن: دو آزاد کی پولز اور اسمارٹ ایکسپائری کے ساتھ ★★★
+# ★★★ حتمی ورژن: 5+4 کی پولز اور اسمارٹ ایکسپائری کے ساتھ ★★★
 # ==============================================================================
 
 class KeyManager:
@@ -39,11 +39,13 @@ class KeyManager:
         
         unique_keys = sorted(list(set(all_keys)))
         
-        if not unique_keys:
-            logger.error("کوئی بھی Twelve Data API کلید لوڈ نہیں ہوئی۔ سسٹم کام نہیں کر سکتا۔")
-            return
+        if len(unique_keys) < 9:
+            logger.error(f"سسٹم کو 9 منفرد API کیز کی ضرورت ہے، لیکن صرف {len(unique_keys)} ملیں۔ براہ کرم مزید کیز شامل کریں۔")
+            # اگر کیز کم ہیں تو بھی سسٹم کو چلانے کی کوشش کریں
+            guardian_pool_size = min(5, len(unique_keys) - 4) if len(unique_keys) > 4 else len(unique_keys)
+        else:
+            guardian_pool_size = 5
 
-        guardian_pool_size = 7
         self.guardian_keys = deque(unique_keys[:guardian_pool_size])
         self.hunter_keys = deque(unique_keys[guardian_pool_size:])
 
@@ -96,23 +98,17 @@ class KeyManager:
             return
 
         if is_daily_limit:
-            # ★★★ آپ کی تجویز کے مطابق نئی اور ذہین منطق ★★★
-            # اگلے دن کے آغاز (UTC) تک محدود کریں
             now_utc = datetime.now(timezone.utc)
             tomorrow_utc = now_utc + timedelta(days=1)
             midnight_utc = tomorrow_utc.replace(hour=0, minute=0, second=1, microsecond=0)
-            
             expiry_timestamp = midnight_utc.timestamp()
             self.limited_keys[key] = expiry_timestamp
-            
             logger.warning(f"کلید {key[:8]}... کی یومیہ حد ختم! اسے اگلے دن UTC کے آغاز تک محدود کیا جا رہا ہے۔")
         else:
-            # منٹ کی حد ختم ہونے پر صرف 65 سیکنڈ کے لیے محدود کریں
             duration_seconds = 65
             expiry_time = time.time() + duration_seconds
             self.limited_keys[key] = expiry_time
-            # لاگنگ کو صاف رکھنے کے لیے، ہم فی منٹ کی حد کا لاگ نہیں دکھائیں گے جب تک کہ یہ ایک بڑا مسئلہ نہ بن جائے۔
-            # logger.warning(f"کلید {key[:8]}... کی فی منٹ حد ختم! اسے 65 سیکنڈ کے لیے محدود کیا جا رہا ہے۔")
 
 # سنگلٹن مثال
 key_manager = KeyManager()
+    
