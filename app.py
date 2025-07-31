@@ -3,18 +3,20 @@
 import asyncio
 import logging
 import os
+import random
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timedelta
 
 # مقامی امپورٹس
 import database_crud as crud
-from models import SessionLocal, create_db_and_tables, engine
+from models import SessionLocal, create_db_and_tables, engine, JobLock
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
@@ -66,12 +68,35 @@ async def get_daily_stats_endpoint(db: Session = Depends(get_db)):
         logger.error(f"روزانہ کے اعداد و شمار حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
+# ★★★ مکمل طور پر اپ ڈیٹ شدہ فنکشن (ڈیٹا بیس لاک کے ساتھ) ★★★
 async def start_background_tasks():
-    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        return
-
-    logger.info(">>> 'ڈائنامک روسٹر' پروٹوکول کے تحت پس منظر کے کام شروع ہو رہے ہیں...")
+    """
+    پس منظر کے کاموں کو شروع کرتا ہے، لیکن صرف ایک ورکر پر۔
+    یہ ڈیٹا بیس لاک کا استعمال کرکے ریس کنڈیشن سے بچتا ہے۔
+    """
+    # تھوڑی سی بے ترتیب تاخیر تاکہ تمام ورکرز ایک ہی وقت میں لاک حاصل کرنے کی کوشش نہ کریں
+    await asyncio.sleep(random.uniform(1, 5))
     
+    db = SessionLocal()
+    try:
+        # 'scheduler_lock' نامی ایک لاک حاصل کرنے کی کوشش کریں
+        lock = JobLock(lock_name="scheduler_lock", locked_at=datetime.utcnow())
+        db.add(lock)
+        db.commit()
+        logger.info(f"✅ ورکر (PID: {os.getpid()}) نے کامیابی سے شیڈیولر لاک حاصل کر لیا۔ پس منظر کے کام شروع کیے جا رہے ہیں۔")
+    except IntegrityError:
+        # اگر لاک پہلے سے ہی کسی اور ورکر نے حاصل کر لیا ہے، تو ایک خرابی آئے گی
+        logger.info(f"🔵 ورکر (PID: {os.getpid()}) نے لاک حاصل نہیں کیا۔ کوئی اور ورکر پہلے ہی کام کر رہا ہے۔ یہ ورکر خاموش رہے گا۔")
+        db.rollback()
+        return # اس ورکر کے لیے فنکشن کو یہیں ختم کر دیں
+    except Exception as e:
+        logger.error(f"شیڈیولر لاک حاصل کرنے میں ایک غیر متوقع خرابی: {e}", exc_info=True)
+        db.rollback()
+        return
+    finally:
+        db.close()
+
+    # صرف وہ ورکر جو لاک حاصل کرے گا، وہی یہاں تک پہنچے گا
     scheduler = AsyncIOScheduler(timezone="UTC")
     app.state.scheduler = scheduler
     
@@ -79,37 +104,15 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
     
-    # ★★★ ذہین اور حتمی شیڈول (Staggered Jobs) ★★★
     now = datetime.utcnow()
-    
-    # ہارٹ بیٹ: ہر 15 منٹ بعد
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
-    
-    # نگران انجن: ہر 70 سیکنڈ بعد، فوری طور پر شروع ہو
-    scheduler.add_job(
-        check_active_signals_job, 
-        IntervalTrigger(seconds=70), 
-        id="guardian_engine_job",
-        next_run_time=now + timedelta(seconds=5) # 5 سیکنڈ بعد پہلی بار چلے
-    )
-    
-    # شکاری انجن: ہر 180 سیکنڈ (3 منٹ) بعد، 40 سیکنڈ کی تاخیر سے شروع ہو
-    scheduler.add_job(
-        hunt_for_signals_job, 
-        IntervalTrigger(seconds=180), 
-        id="hunter_engine_job",
-        next_run_time=now + timedelta(seconds=40) # 40 سیکنڈ بعد پہلی بار چلے
-    )
-    
-    # خبروں کا انجن: ہر 4 گھنٹے بعد
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=70), id="guardian_engine_job", next_run_time=now + timedelta(seconds=5))
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=180), id="hunter_engine_job", next_run_time=now + timedelta(seconds=40))
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
     scheduler.start()
     heartbeat_job()
-    logger.info("★★★ ذہین شیڈیولر (Staggered Scheduler) کامیابی سے شروع ہو گیا۔ ★★★")
-    logger.info(f"نگران انجن ہر 70 سیکنڈ بعد چلے گا۔ اگلی دوڑ: {scheduler.get_job('guardian_engine_job').next_run_time}")
-    logger.info(f"شکاری انجن ہر 180 سیکنڈ بعد چلے گا۔ اگلی دوڑ: {scheduler.get_job('hunter_engine_job').next_run_time}")
-
+    logger.info("★★★ ذہین شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
 
 @app.on_event("startup")
 async def startup_event():
@@ -121,6 +124,7 @@ async def startup_event():
     await update_economic_calendar_cache()
     logger.info("خبروں کا کیش کامیابی سے اپ ڈیٹ ہو گیا۔")
     
+    # پس منظر کے کاموں کو شروع کرنے کے لیے ٹاسک بنائیں
     asyncio.create_task(start_background_tasks())
 
 @app.on_event("shutdown")
