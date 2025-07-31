@@ -3,12 +3,11 @@
 import logging
 import pandas as pd
 from typing import List, Dict, Optional, Tuple
-from config import STRATEGY
+from config import STRATEGY, LEVEL_SCORING_WEIGHTS # ★★★ نیا امپورٹ ★★★
 
 logger = logging.getLogger(__name__)
 
 # ★★★ .get() کا استعمال کرکے محفوظ بنایا گیا ★★★
-# اگر یہ قیمتیں config میں نہ بھی ملیں تو بھی ایپ کریش نہیں ہوگی۔
 MIN_RISK_REWARD_RATIO = STRATEGY.get("MIN_RISK_REWARD_RATIO", 1.5)
 MIN_CONFLUENCE_SCORE = STRATEGY.get("MIN_CONFLUENCE_SCORE", 4)
 
@@ -81,59 +80,85 @@ def find_market_structure(candles: List[Dict], window: int = 10) -> Dict[str, st
 
     return {"trend": trend, "zone": "N/A", "reason": f"موجودہ رجحان {trend} ہے۔"}
 
+# ★★★ مکمل طور پر اپ ڈیٹ شدہ فنکشن یہاں سے شروع ہو رہا ہے ★★★
 def find_optimal_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
     """
     کنفلونس اسکورنگ کی بنیاد پر بہترین TP اور SL لیولز کی شناخت کرتا ہے۔
+    یہ اب کنفیگریشن سے وزن کا استعمال کرتا ہے تاکہ لیولز کی اہمیت کو پرکھا جا سکے۔
     """
     if len(candles) < 34: return None
         
     df = pd.DataFrame(candles)
     last_close = df['close'].iloc[-1]
     
+    # 1. تمام ممکنہ تکنیکی لیولز حاصل کریں
     pivots = list(_calculate_pivot_points(df).values())
     swings = _find_swing_levels(df)
     fib_levels = list(_get_fibonacci_levels(df).values())
     psy_levels = list(_get_psychological_levels(last_close).values())
 
-    all_levels = set(pivots + swings['highs'] + swings['lows'] + fib_levels + psy_levels)
+    all_level_sources = {
+        "PIVOT": pivots,
+        "SWING": swings['highs'] + swings['lows'],
+        "FIBONACCI": fib_levels,
+        "PSYCHOLOGICAL": psy_levels
+    }
     
+    # 2. وزنی اسکورنگ کے لیے ایک ڈکشنری بنائیں
+    level_scores: Dict[float, int] = {}
+    tolerance = last_close * 0.001 # قریب ترین لیولز کو گروپ کرنے کے لیے ایک رواداری
+
+    for level_type, levels_list in all_level_sources.items():
+        weight = LEVEL_SCORING_WEIGHTS.get(level_type, 0)
+        if weight == 0: continue
+
+        for level in levels_list:
+            # قریب ترین لیولز کو ایک ہی زون میں گروپ کریں
+            rounded_level_key = round(level / tolerance) * tolerance
+            
+            if rounded_level_key not in level_scores:
+                level_scores[rounded_level_key] = 0
+            level_scores[rounded_level_key] += weight
+
+    # 3. ممکنہ TP اور SL لیولز کو ان کے اسکور کے ساتھ الگ کریں
     potential_tp_levels = {}
     potential_sl_levels = {}
 
-    for level in all_levels:
-        score = 0
-        if any(abs(level - p) < (last_close * 0.0005) for p in pivots): score += 3
-        if any(abs(level - s) < (last_close * 0.0005) for s in swings['highs'] + swings['lows']): score += 2
-        if any(abs(level - f) < (last_close * 0.0005) for f in fib_levels): score += 2
-        if any(abs(level - p) < (last_close * 0.0005) for p in psy_levels): score += 1
-        
-        if score >= MIN_CONFLUENCE_SCORE: # یہاں MIN_CONFLUENCE_SCORE استعمال ہو رہا ہے
-            if level > last_close:
-                if signal_type == 'buy': potential_tp_levels[level] = score
-                else: potential_sl_levels[level] = score
-            else:
-                if signal_type == 'sell': potential_tp_levels[level] = score
-                else: potential_sl_levels[level] = score
+    for level, score in level_scores.items():
+        if score < MIN_CONFLUENCE_SCORE:
+            continue
+            
+        if level > last_close:
+            if signal_type == 'buy': potential_tp_levels[level] = score
+            else: potential_sl_levels[level] = score
+        elif level < last_close:
+            if signal_type == 'sell': potential_tp_levels[level] = score
+            else: potential_sl_levels[level] = score
 
     if not potential_tp_levels or not potential_sl_levels:
-        logger.warning(f"[{signal_type}] سگنل کے لیے کافی TP/SL لیولز نہیں ملے۔")
+        logger.warning(f"[{signal_type}] سگنل کے لیے کافی TP/SL لیولز نہیں ملے۔ کنفلونس اسکور کم تھا۔")
         return None
 
-    final_tp = max(potential_tp_levels, key=potential_tp_levels.get) if potential_tp_levels else None
-    final_sl = max(potential_sl_levels, key=potential_sl_levels.get) if potential_sl_levels else None
+    # 4. سب سے زیادہ اسکور والے بہترین TP اور SL کا انتخاب کریں
+    # TP کے لیے، ہم قریب ترین سب سے زیادہ اسکور والا لیول چاہتے ہیں
+    # SL کے لیے بھی، ہم قریب ترین سب سے زیادہ اسکور والا لیول چاہتے ہیں
+    final_tp = min(potential_tp_levels, key=lambda k: (abs(k - last_close), -potential_tp_levels[k])) if signal_type == 'buy' else max(potential_tp_levels, key=lambda k: (abs(k - last_close), -potential_tp_levels[k]))
+    final_sl = max(potential_sl_levels, key=lambda k: (abs(k - last_close), -potential_sl_levels[k])) if signal_type == 'buy' else min(potential_sl_levels, key=lambda k: (abs(k - last_close), -potential_sl_levels[k]))
 
-    if not final_tp or not final_sl:
-        return None
+    if signal_type == 'sell':
+        final_tp, final_sl = min(potential_tp_levels, key=lambda k: (abs(k - last_close), -potential_tp_levels[k])), max(potential_sl_levels, key=lambda k: (abs(k - last_close), -potential_sl_levels[k]))
 
+
+    # 5. رسک/ریوارڈ تناسب کی تصدیق کریں
     try:
         reward = abs(final_tp - last_close)
         risk = abs(last_close - final_sl)
         if risk == 0 or (reward / risk) < MIN_RISK_REWARD_RATIO:
-            logger.warning(f"بہترین لیولز کا رسک/ریوارڈ تناسب ({reward/risk:.2f}) بہت کم ہے۔ سگنل مسترد۔")
+            logger.warning(f"بہترین لیولز کا رسک/ریوارڈ تناسب ({reward/risk:.2f} if risk > 0 else 'inf') بہت کم ہے۔ سگنل مسترد۔")
             return None
     except ZeroDivisionError:
         return None
 
-    logger.info(f"کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f} (اسکور: {potential_tp_levels.get(final_tp, 0)}), SL={final_sl:.5f} (اسکور: {potential_sl_levels.get(final_sl, 0)})")
+    logger.info(f"وزنی کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f} (اسکور: {potential_tp_levels.get(final_tp, 0)}), SL={final_sl:.5f} (اسکور: {potential_sl_levels.get(final_sl, 0)})")
     return final_tp, final_sl
-    
+# ★★★ اپ ڈیٹ شدہ فنکشن یہاں ختم ہو رہا ہے ★★★
