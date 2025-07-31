@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # مقامی امپورٹس
 import database_crud as crud
@@ -79,21 +79,37 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
     
-    # ★★★ نیا اور حتمی شیڈول ★★★
+    # ★★★ ذہین اور حتمی شیڈول (Staggered Jobs) ★★★
+    now = datetime.utcnow()
+    
+    # ہارٹ بیٹ: ہر 15 منٹ بعد
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
     
-    # ★★★ تبدیلی: نگران انجن کا وقفہ 70 سیکنڈ کر دیا گیا ★★★
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=70), id="guardian_engine_job")
+    # نگران انجن: ہر 70 سیکنڈ بعد، فوری طور پر شروع ہو
+    scheduler.add_job(
+        check_active_signals_job, 
+        IntervalTrigger(seconds=70), 
+        id="guardian_engine_job",
+        next_run_time=now + timedelta(seconds=5) # 5 سیکنڈ بعد پہلی بار چلے
+    )
     
-    # شکاری انجن: ہر 3 منٹ بعد
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=3), id="hunter_engine_job")
+    # شکاری انجن: ہر 180 سیکنڈ (3 منٹ) بعد، 40 سیکنڈ کی تاخیر سے شروع ہو
+    scheduler.add_job(
+        hunt_for_signals_job, 
+        IntervalTrigger(seconds=180), 
+        id="hunter_engine_job",
+        next_run_time=now + timedelta(seconds=40) # 40 سیکنڈ بعد پہلی بار چلے
+    )
     
     # خبروں کا انجن: ہر 4 گھنٹے بعد
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
     scheduler.start()
     heartbeat_job()
-    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+    logger.info("★★★ ذہین شیڈیولر (Staggered Scheduler) کامیابی سے شروع ہو گیا۔ ★★★")
+    logger.info(f"نگران انجن ہر 70 سیکنڈ بعد چلے گا۔ اگلی دوڑ: {scheduler.get_job('guardian_engine_job').next_run_time}")
+    logger.info(f"شکاری انجن ہر 180 سیکنڈ بعد چلے گا۔ اگلی دوڑ: {scheduler.get_job('hunter_engine_job').next_run_time}")
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -171,4 +187,4 @@ async def get_news(db: Session = Depends(get_db)):
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-        
+    
