@@ -1,12 +1,9 @@
 # filename: models.py
 
 import os
-import time
 import logging
-import random  # ★★★ غلطی کی اصلاح: اس لائن کو شامل کیا گیا ہے ★★★
-from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Boolean)
+from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func)
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -18,24 +15,26 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./signals.db")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine_args = {
-    "pool_size": 10,
-    "max_overflow": 2,
-    "pool_recycle": 300,
-    "pool_pre_ping": True,
-}
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(DATABASE_URL, **engine_args)
+# کنکشن کی ترتیبات
+engine_args = {}
+if not DATABASE_URL.startswith("sqlite"):
+    engine_args = {
+        "pool_size": 10,
+        "max_overflow": 2,
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    }
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    **engine_args
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class JobLock(Base):
-    __tablename__ = "job_lock"
-    lock_name = Column(String, primary_key=True)
-    locked_at = Column(DateTime, default=datetime.utcnow)
+# ★★★ JobLock ٹیبل کو یہاں سے ہٹا دیا گیا ہے ★★★
 
 class ActiveSignal(Base):
     __tablename__ = "active_signals"
@@ -99,14 +98,15 @@ class CachedNews(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 def create_db_and_tables():
-    time.sleep(random.uniform(0, 2))
+    """
+    ڈیٹا بیس اور تمام ٹیبلز بناتا ہے۔
+    """
     try:
         logger.info("ڈیٹا بیس اور ٹیبلز کی حالت کی تصدیق کی جا رہی ہے...")
         Base.metadata.create_all(bind=engine)
         logger.info("ٹیبلز کامیابی سے بنائے یا تصدیق کیے گئے۔")
-    except OperationalError as e:
-        logger.warning(f"ڈیٹا بیس بنانے میں خرابی (شاید کوئی دوسرا ورکر بنا رہا ہے): {e}")
-        time.sleep(5)
     except Exception as e:
         logger.error(f"ڈیٹا بیس بنانے میں ایک غیر متوقع خرابی: {e}", exc_info=True)
-            
+        # اگر خرابی آتی ہے تو ایپ کو کریش ہونے سے روکنے کے لیے اسے پکڑیں
+        # پیداواری ماحول میں، آپ یہاں دوبارہ کوشش کرنے کی منطق شامل کر سکتے ہیں
+        pass
