@@ -4,26 +4,26 @@ import os
 import httpx
 import asyncio
 import logging
-import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
 from config import TRADING_PAIRS, API_CONFIG
+from roster_manager import get_monitoring_roster # ★★★ یہ امپورٹ اب استعمال ہوگا ★★★
 
 logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن سے متغیرات ---
-PAIRS_TO_MONITOR = TRADING_PAIRS["PAIRS_TO_MONITOR"]
+# ★★★ غلط لائن کو یہاں سے ہٹا دیا گیا ہے ★★★
 PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
 CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
 
-def get_pairs_to_monitor() -> List[str]:
-    """
-    کنفیگریشن سے نگرانی کے قابل جوڑوں کی فہرست واپس کرتا ہے۔
-    """
-    return PAIRS_TO_MONITOR
+# یہ فنکشن اب roster_manager میں منتقل ہو چکا ہے، لیکن ہم اسے یہاں رکھ سکتے ہیں
+# اگر کوئی اور ماڈیول اسے براہ راست استعمال کر رہا ہو، حالانکہ اب ایسا نہیں ہونا چاہیے۔
+# بہتر ہے کہ اسے بھی ہٹا دیا جائے تاکہ کوڈ صاف رہے۔
+# def get_pairs_to_monitor() -> List[str]:
+#     ...
 
 # ★★★ مکمل طور پر اپ ڈیٹ شدہ اور مضبوط فنکشن ★★★
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
@@ -55,8 +55,6 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
         response.raise_for_status()
         data = response.json()
 
-        # ★★★ نیا اور اہم چیک: جواب کی باڈی کی توثیق ★★★
-        # یہ چیک انفرادی علامت کی خرابیوں کو سنبھالتا ہے جو 200 OK کے ساتھ آتی ہیں
         if isinstance(data, dict) and data.get("status") == "error":
             logger.warning(f"کوٹس API نے خرابی واپس کی: {data.get('message', 'نامعلوم خرابی')}")
             return None
@@ -67,10 +65,8 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
                 if isinstance(item, dict) and "symbol" in item:
                     quotes[item["symbol"]] = item
         elif isinstance(data, dict):
-            # اگر جواب ایک واحد آبجیکٹ ہے (ایک علامت کے لیے)
             if "symbol" in data:
                 quotes[data["symbol"]] = data
-            # اگر جواب علامتوں کے لحاظ سے ایک ڈکشنری ہے
             else:
                 for symbol, details in data.items():
                     if isinstance(details, dict) and details.get("status") != "error":
@@ -117,12 +113,10 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
         response.raise_for_status()
         data = response.json()
         
-        # ★★★ نیا اور اہم چیک: جواب کی باڈی کی توثیق ★★★
         if "status" not in data or data.get("status") != "ok":
             logger.warning(f"[{symbol}] کے لیے Twelve Data API نے خرابی واپس کی: {data.get('message', 'نامعلوم خرابی')}")
             return None
 
-        # Pydantic ماڈل کی توثیق اب بھی ایک اچھی حفاظتی تہہ ہے
         validated_data = TwelveDataTimeSeries.model_validate(data)
         return validated_data.values[::-1]
 
