@@ -1,7 +1,7 @@
 # filename: config.py
 
 # ==============================================================================
-# مرکزی کنفیگریشن فائل برائے ScalpMaster AI (ڈبل انجن ورژن)
+# مرکزی کنفیگریشن فائل برائے ScalpMaster AI (ڈائنامک روسٹر ورژن)
 # ==============================================================================
 
 # --- API کنفیگریشن ---
@@ -10,15 +10,17 @@ API_CONFIG = {
     "CANDLE_COUNT": 100,
 }
 
-# --- ٹریڈنگ اور نگرانی کے پیرامیٹرز ---
+# --- ٹریڈنگ اور نگرانی کے پیرامیٹرز (متحرک روسٹر) ---
 TRADING_PAIRS = {
-    # یہ 14 جوڑے ہیں جن کی نگرانی ہمارا "نگران انجن" ہر 2 منٹ بعد کرے گا۔
-    # "شکاری انجن" ان ہی جوڑوں میں سے بہترین مواقع تلاش کرے گا۔
-    "PAIRS_TO_MONITOR": [
-        "XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", "AUD/USD", 
-        "NZD/USD", "USD/CHF", "EUR/JPY", "GBP/JPY", "BTC/USD", "ETH/USD", 
-        "SOL/USD", "XRP/USD"
-    ],
+    # بنیادی جوڑے جنہیں ہمیشہ ترجیح دی جائے گی
+    "WEEKDAY_PRIMARY": ["XAU/USD", "EUR/USD", "GBP/USD", "USD/CAD"],
+    # بیک اپ جوڑے جو بنیادی جوڑوں کے مصروف ہونے پر استعمال ہوں گے
+    "WEEKDAY_BACKUP": ["AUD/USD", "NZD/USD", "USD/JPY"],
+    
+    # ہفتے کے آخر کے لیے بنیادی کرپٹو جوڑے
+    "WEEKEND_PRIMARY": ["BTC/USD", "ETH/USD"],
+    # ہفتے کے آخر کے لیے بیک اپ کرپٹو جوڑے
+    "WEEKEND_BACKUP": ["SOL/USD", "XRP/USD"],
 }
 
 # --- سگنل جنریشن کی حکمت عملی ---
@@ -27,6 +29,12 @@ STRATEGY = {
     "FINAL_CONFIDENCE_THRESHOLD": 70.0,
     "MIN_RISK_REWARD_RATIO": 1.5,
     "MIN_CONFLUENCE_SCORE": 4,
+    "CONFLUENCE_WEIGHTS": {
+        "pivots": 3,
+        "swings": 2,
+        "fibonacci": 2,
+        "psychological": 1
+    }
 }
 
 # --- تکنیکی تجزیہ کے پیرامیٹرز ---
@@ -45,18 +53,10 @@ HIGH_IMPACT_KEYWORDS = {
     'USD': ['fed', 'fomc', 'cpi', 'nfp', 'unemployment', 'inflation', 'gdp', 'powell'],
     'EUR': ['ecb', 'inflation', 'gdp', 'unemployment', 'lagarde'],
     'GBP': ['boe', 'inflation', 'gdp', 'unemployment', 'bailey'],
+    'JPY': ['boj', 'intervention'],
+    'CAD': ['boc'],
+    'AUD': ['rba'],
+    'NZD': ['rbnz'],
     'XAU': ['war', 'crisis', 'geopolitical', 'fed', 'inflation'],
     'BTC': ['sec', 'regulation', 'etf', 'crypto ban', 'halving']
 }
-
-# ★★★ نیا کوڈ یہاں سے شروع ہو رہا ہے ★★★
-# --- لیول اسکورنگ کے لیے وزن ---
-# یہ وزن find_optimal_tp_sl فنکشن میں استعمال ہوں گے تاکہ بہترین TP/SL لیولز کا تعین کیا جا سکے۔
-# زیادہ وزن والے لیول زیادہ اہم سمجھے جاتے ہیں۔
-LEVEL_SCORING_WEIGHTS = {
-    "PIVOT": 4,          # یومیہ پیوٹ پوائنٹس (R1, S1, R2, S2)
-    "SWING": 3,          # 15-منٹ کے سوئنگ ہائی/لو
-    "FIBONACCI": 2,      # اہم فبوناکی ریٹریسمنٹ لیولز
-    "PSYCHOLOGICAL": 1   # نفسیاتی (گول نمبر) لیولز
-}
-# ★★★ نیا کوڈ یہاں ختم ہو رہا ہے ★★★
