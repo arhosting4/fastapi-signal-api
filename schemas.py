@@ -3,23 +3,23 @@
 Pydantic اسکیمیں ڈیٹا کی توثیق کے لیے
 """
 from pydantic import BaseModel, Field
-from typing import List, Optional
+# ★★★ گمشدہ امپورٹ کو یہاں شامل کیا گیا ہے ★★★
+from typing import List, Optional, Dict, Any
 
 class Candle(BaseModel):
     """OHLC کینڈل ڈیٹا کی توثیق کرتا ہے"""
     datetime: str
-    open: str  # API سے سٹرنگ کے طور پر آتا ہے، بعد میں تبدیل کریں گے
+    open: str
     high: str
     low: str
     close: str
     volume: Optional[str] = None
-    # ★★★ نیا اختیاری وصف ★★★
-    # یہ وصف utils.py میں ڈیٹا حاصل کرنے کے بعد شامل کیا جائے گا
     symbol: Optional[str] = None
 
 class TwelveDataTimeSeries(BaseModel):
     """Twelve Data API سے آنے والے ٹائم سیریز کے جواب کی توثیق کرتا ہے"""
-    meta: Dict[str, Any] # میٹا ڈیٹا کو بھی شامل کر لیں تاکہ علامت کا نام مل سکے
+    # اب Dict اور Any کی تعریف موجود ہے
+    meta: Dict[str, Any]
     values: List[Candle]
     status: str
 
