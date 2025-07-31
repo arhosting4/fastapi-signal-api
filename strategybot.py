@@ -32,7 +32,6 @@ def _load_weights() -> Dict[str, float]:
             "price_action": 0.10, "supertrend_confirm": 0.20
         }
 
-# ★★★ نیا اور بہتر RSI کیلکولیٹر ★★★
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
     gain = delta.where(delta > 0, 0).fillna(0)
@@ -41,11 +40,10 @@ def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     avg_gain = gain.rolling(window=period, min_periods=1).mean()
     avg_loss = loss.rolling(window=period, min_periods=1).mean()
 
-    rs = avg_gain / avg_loss.replace(0, 1e-9) # صفر سے تقسیم ہونے سے بچیں
+    rs = avg_gain / avg_loss.replace(0, 1e-9)
     rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50) # NaN ویلیوز کو 50 (غیر جانبدار) سے بھریں
+    return rsi.fillna(50)
 
-# ★★★ نیا اور بہتر Stochastics کیلکولیٹر ★★★
 def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
     low_k = low.rolling(window=k, min_periods=1).min()
     high_k = high.rolling(window=k, min_periods=1).max()
@@ -54,13 +52,11 @@ def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d
     stoch_d = stoch_k.rolling(window=d, min_periods=1).mean()
     
     stoch_df = pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
-    return stoch_df.fillna(50) # NaN ویلیوز کو 50 (غیر جانبدار) سے بھریں
+    return stoch_df.fillna(50)
 
-# ★★★ نیا اور بہتر Supertrend کیلکولیٹر ★★★
 def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
     high, low, close = df['high'], df['low'], df['close']
     
-    # ATR کا حساب
     tr1 = pd.DataFrame(high - low)
     tr2 = pd.DataFrame(abs(high - close.shift(1)))
     tr3 = pd.DataFrame(abs(low - close.shift(1)))
@@ -81,11 +77,12 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'in_uptrend'] = df['in_uptrend'].iloc[i-1]
     return df
 
-def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
-    if len(candles) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
+def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
+    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
-    df = pd.DataFrame(candles).set_index(pd.to_datetime([c['datetime'] for c in candles]))
+    # اب ڈیٹا فریم بنانے کی ضرورت نہیں
     close = df['close']
     
     WEIGHTS = _load_weights()
@@ -94,12 +91,12 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     rsi = calculate_rsi(close, RSI_PERIOD)
     stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
-    df = calculate_supertrend(df, SUPERTREND_ATR, SUPERTREND_FACTOR)
+    df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR) # کاپی پر کام کریں
     
     last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
     last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
     last_close, prev_close = close.iloc[-1], close.iloc[-2]
-    in_uptrend = df['in_uptrend'].iloc[-1]
+    in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
 
     if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
         return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
@@ -132,16 +129,16 @@ def generate_technical_analysis_score(candles: List[Dict]) -> Dict[str, Any]:
 
     return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
 
-def calculate_tp_sl(candles: List[Dict], signal_type: str) -> Optional[Tuple[float, float]]:
-    if not candles or len(candles) < 34:
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
+def calculate_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
+    if df.empty or len(df) < 34:
         return None
     try:
-        optimal_levels = find_optimal_tp_sl(candles, signal_type)
+        # find_optimal_tp_sl کو اب ڈکشنری کی فہرست کے بجائے ڈیٹا فریم کی ضرورت ہوگی
+        optimal_levels = find_optimal_tp_sl(df, signal_type)
         if optimal_levels:
             return optimal_levels
         
-        df = pd.DataFrame(candles)
-        # ... (ATR متبادل کی منطق یہاں شامل کی جا سکتی ہے اگر ضرورت ہو)
         return None
     except Exception as e:
         logging.error(f"TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
