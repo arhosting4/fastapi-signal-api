@@ -16,7 +16,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./signals.db")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
+# کنکشن آرگیومنٹس کو درست کیا گیا
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if "sqlite" in DATABASE_URL else create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -32,8 +33,9 @@ class ActiveSignal(Base):
     sl_price = Column(Float)
     confidence = Column(Float)
     reason = Column(String)
-    # ★★★ نیا کالم ★★★
-    component_scores = Column(JSON, nullable=True)
+    # ★★★ نیا کالم شامل کیا گیا ★★★
+    # یہ ہر انڈیکیٹر کے اسکور کو ذخیرہ کرے گا تاکہ AI سیکھ سکے
+    component_scores = Column(JSON, nullable=True) 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -55,10 +57,10 @@ class CompletedTrade(Base):
     entry_price = Column(Float)
     tp_price = Column(Float)
     sl_price = Column(Float)
-    # ★★★ نئے کالمز ★★★
-    close_price = Column(Float, nullable=True)
-    reason_for_closure = Column(String, nullable=True) # e.g., "tp_hit", "sl_hit", "manual_close"
-    outcome = Column(String, index=True) # outcome اب بھی رکھا گیا ہے تاکہ فلٹرنگ آسان ہو
+    # ★★★ نئے کالمز شامل کیے گئے ★★★
+    close_price = Column(Float, nullable=True) # ٹریڈ کس قیمت پر بند ہوئی
+    reason_for_closure = Column(String, nullable=True) # بند ہونے کی وجہ (e.g., "tp_hit", "sl_hit")
+    outcome = Column(String, index=True) # نتیجہ (tp_hit, sl_hit)
     confidence = Column(Float)
     reason = Column(String)
     closed_at = Column(DateTime, default=datetime.utcnow)
@@ -67,9 +69,10 @@ class CompletedTrade(Base):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
         if isinstance(d.get('closed_at'), datetime):
             d['closed_at'] = d['closed_at'].isoformat()
-        if isinstance(d.get('created_at'), datetime):
+        # as_dict میں دیگر تاریخوں کو ہینڈل کرنے کے لیے اضافی چیکس
+        if d.get('created_at') and isinstance(d.get('created_at'), datetime):
             d['created_at'] = d['created_at'].isoformat()
-        if isinstance(d.get('updated_at'), datetime):
+        if d.get('updated_at') and isinstance(d.get('updated_at'), datetime):
             d['updated_at'] = d['updated_at'].isoformat()
         return d
 
@@ -88,19 +91,12 @@ class CachedNews(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 def create_db_and_tables():
-    lock_file_path = "/tmp/db_lock"
+    # یہ فنکشن ڈیٹا بیس اور ٹیبلز بناتا ہے
+    # پیداواری ماحول میں، Alembic جیسا ٹول استعمال کرنا بہتر ہے
+    logger.info("ڈیٹا بیس اور ٹیبلز کی حالت کی تصدیق کی جا رہی ہے...")
     try:
-        fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        try:
-            logger.info("ڈیٹا بیس لاک حاصل کر لیا۔ تمام ٹیبلز بنائے جا رہے ہیں...")
-            Base.metadata.create_all(bind=engine)
-            logger.info("ٹیبلز کامیابی سے بن گئے۔")
-        finally:
-            os.close(fd)
-            os.remove(lock_file_path)
-    except FileExistsError:
-        logger.info("کوئی دوسرا ورکر ڈیٹا بیس بنا رہا ہے، انتظار کیا جا رہا ہے۔")
-        time.sleep(2)
+        Base.metadata.create_all(bind=engine)
+        logger.info("ٹیبلز کامیابی سے بنائے یا تصدیق کیے گئے۔")
     except Exception as e:
         logger.error(f"ڈیٹا بیس بنانے میں خرابی: {e}", exc_info=True)
-                            
+        
