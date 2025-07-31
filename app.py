@@ -3,9 +3,7 @@
 import asyncio
 import logging
 import os
-import hmac
-import hashlib
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, status
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +11,6 @@ from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
-from pydantic import BaseModel
 
 # مقامی امپورٹس
 import database_crud as crud
@@ -60,11 +57,6 @@ async def get_active_signals(db: Session = Depends(get_db)):
         logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-# ★★★ ڈیلیٹ والا اینڈ پوائنٹ اور اس کا پاس ورڈ ماڈل ہٹا دیا گیا ★★★
-# class PasswordData(BaseModel): ...
-# @app.post("/api/delete-signal/{signal_id}", ...)
-
-# ★★★ نیا API اینڈ پوائنٹ شامل کیا گیا ★★★
 @app.get("/api/daily-stats", response_class=JSONResponse)
 async def get_daily_stats_endpoint(db: Session = Depends(get_db)):
     try:
@@ -87,9 +79,16 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
     
+    # ★★★ نیا اور حتمی شیڈول ★★★
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="guardian_engine_job")
+    
+    # ★★★ تبدیلی: نگران انجن کا وقفہ 70 سیکنڈ کر دیا گیا ★★★
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=70), id="guardian_engine_job")
+    
+    # شکاری انجن: ہر 3 منٹ بعد
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=3), id="hunter_engine_job")
+    
+    # خبروں کا انجن: ہر 4 گھنٹے بعد
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
     scheduler.start()
@@ -120,7 +119,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # کلائنٹ سے آنے والے پیغامات کو نظر انداز کریں، صرف کنکشن کھلا رکھیں
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -172,5 +170,5 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-# اسٹیٹک فائلوں کو پیش کرنے کے لیے ماؤنٹ
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+        
