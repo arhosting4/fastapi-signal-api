@@ -20,7 +20,7 @@ MOMENTUM_FILE = "market_momentum.json"
 PAIRS_TO_MONITOR = get_pairs_to_monitor()
 BATCH_SIZE = 7
 
-# ★★★ مرکزی یادداشت: تمام جوڑوں کی تازہ ترین قیمتیں یہاں محفوظ ہوں گی ★★★
+# ★★★ سچا مرکزی یادداشت: تمام جوڑوں کی تازہ ترین قیمتیں یہاں محفوظ ہوں گی ★★★
 latest_quotes_memory: Dict[str, Dict[str, Any]] = {}
 
 # یہ یاد رکھے گا کہ اگلی باری کس بیچ کی ہے
@@ -56,7 +56,6 @@ async def check_active_signals_job():
     if new_quotes:
         latest_quotes_memory.update(new_quotes)
         logger.info(f"✅ مرکزی یادداشت اپ ڈیٹ ہوئی۔ کل یادداشت میں {len(latest_quotes_memory)} جوڑوں کا ڈیٹا ہے۔")
-        # مارکیٹ کی حرکت کا ڈیٹا بھی محفوظ کریں
         save_market_momentum(new_quotes)
     else:
         logger.warning("🛡️ نگران انجن: اس دور میں کوئی نئی قیمت حاصل نہیں ہوئی۔")
@@ -74,6 +73,7 @@ async def check_active_signals_job():
             return
 
         logger.info(f"🛡️ نگران انجن: {len(active_signals)} فعال سگنلز کو مرکزی یادداشت سے چیک کیا جا رہا ہے...")
+        # ★★★ سب سے اہم اور حتمی تبدیلی: اب یہ فنکشن پوری یادداشت استعمال کرے گا ★★★
         await check_signals_for_tp_sl(db, active_signals, latest_quotes_memory)
 
     except Exception as e:
@@ -90,6 +90,7 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
     """
     signals_closed_count = 0
     for signal in signals:
+        # ★★★ بنیادی غلطی کا حتمی حل ★★★
         # اگر سگنل کا جوڑا یادداشت میں نہیں ہے، تو اسے نظر انداز کر دیں
         if signal.symbol not in quotes_memory:
             continue
@@ -148,4 +149,4 @@ def save_market_momentum(quotes: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"مارکیٹ کی حرکت کا ڈیٹا محفوظ کرنے میں خرابی: {e}", exc_info=True)
-
+                
