@@ -5,6 +5,7 @@ import time
 import logging
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from typing import Optional  # ★★★ یہ لائن شامل کی گئی ہے ★★★
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,6 @@ class KeyManager:
         
         if len(unique_keys) < 9:
             logger.error(f"ناکافی API کیز! سسٹم کو 9 کیز کی ضرورت ہے، لیکن صرف {len(unique_keys)} ملیں۔")
-            # تقسیم کو بہترین ممکنہ طریقے سے کریں
             guardian_pool_size = min(5, len(unique_keys) - 4) if len(unique_keys) > 4 else len(unique_keys)
         else:
             guardian_pool_size = 5
@@ -43,21 +43,19 @@ class KeyManager:
         if not pool:
             return None
         
-        # صرف اس پول کی لمبائی تک گھومیں
         for _ in range(len(pool)):
             key = pool[0]
-            pool.rotate(-1) # کلید کو آخر میں بھیجیں
+            pool.rotate(-1)
 
             if key not in self.limited_keys:
-                return key # پہلی دستیاب کلید واپس کریں
+                return key
             
-            # اگر کلید محدود ہے، تو اس کی میعاد چیک کریں
             if time.time() > self.limited_keys[key]:
                 del self.limited_keys[key]
                 logger.info(f"کلید {key[:8]}... کی پابندی ختم ہو گئی۔ اسے دوبارہ دستیاب کیا جا رہا ہے۔")
                 return key
         
-        return None # اگر پول میں کوئی بھی کلید دستیاب نہیں
+        return None
 
     def get_guardian_key(self) -> Optional[str]:
         """گارڈین پول سے ایک کلید حاصل کرتا ہے۔"""
@@ -92,4 +90,3 @@ class KeyManager:
             logger.warning(f"کلید {key[:8]}... کی فی منٹ حد ختم! اسے 65 سیکنڈ کے لیے محدود کیا جا رہا ہے۔")
 
 key_manager = KeyManager()
-            
