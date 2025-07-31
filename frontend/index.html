@@ -21,6 +21,19 @@
         .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
         .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
         .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        
+        /* خلاصہ کارڈز کا اسٹائل */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; display: flex; align-items: center; gap: 1rem; transition: transform 0.3s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-card-icon { font-size: 2rem; width: 50px; height: 50px; display: grid; place-items: center; border-radius: 50%; flex-shrink: 0; }
+        .stat-card-icon.live { color: #58a6ff; background-color: rgba(88, 166, 255, 0.1); }
+        .stat-card-icon.tp { color: var(--signal-buy); background-color: rgba(35, 134, 54, 0.1); }
+        .stat-card-icon.sl { color: var(--signal-sell); background-color: rgba(218, 54, 51, 0.1); }
+        .stat-card-icon.winrate { color: var(--accent-gold); background-color: rgba(255, 171, 0, 0.1); }
+        .stat-card-info h3 { margin: 0; font-size: 1.8rem; font-weight: 700; }
+        .stat-card-info p { margin: 0; color: var(--text-secondary); }
+
         .signals-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
         .signals-section-header h2 { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin: 0; }
         .status-indicator { display: flex; align-items: center; gap: 8px; font-weight: 500; }
@@ -28,6 +41,7 @@
         .status-dot.connected { background-color: var(--signal-buy); animation: pulse-green 2s infinite; }
         @keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(35, 134, 54, 0); } 100% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0); } }
         @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(218, 54, 51, 0); } 100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0); } }
+        
         .signals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; }
         .signal-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s; animation: fadeIn 0.5s ease-out; display: flex; flex-direction: column; }
         .signal-card.closing { opacity: 0; transform: scale(0.9); }
@@ -45,9 +59,7 @@
         .ai-reason-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); flex-grow: 1; }
         .ai-reason-title { font-weight: 600; color: var(--accent-gold); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px; }
         .ai-reason-text { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; }
-        .signal-card-footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        .delete-btn { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1rem; transition: color 0.3s; }
-        .delete-btn:hover { color: var(--signal-sell); }
+        .signal-card-footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; align-items: center; }
         .signal-timestamp { font-size: 0.8rem; color: var(--text-secondary); }
         .card-flash { animation: flash-animation 1s ease-out; }
         @keyframes flash-animation { 0% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); } 50% { box-shadow: 0 0 15px 5px rgba(255, 171, 0, 0.5); } 100% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); } }
@@ -71,6 +83,39 @@
     </header>
 
     <main class="main-container">
+        <!-- خلاصہ کارڈز -->
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-card-icon live"><i class="fas fa-satellite-dish"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="live-signals-count">--</h3>
+                    <p>Live Signals</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-icon tp"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="tp-hits-count">--</h3>
+                    <p>Today's TP Hits</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-icon sl"><i class="fas fa-times-circle"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="sl-hits-count">--</h3>
+                    <p>Today's SL Hits</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-icon winrate"><i class="fas fa-trophy"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="win-rate-percent">--%</h3>
+                    <p>Today's Win Rate</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- لائیو سگنلز -->
         <section class="signals-section">
             <div class="signals-section-header">
                 <h2>Live Signals</h2>
@@ -80,9 +125,9 @@
                 </div>
             </div>
             <div class="signals-grid" id="signals-grid"></div>
-            <div class="no-signals" id="no-signals-message">
+            <div class="no-signals" id="no-signals-message" style="display: none;">
                 <h3><i class="fas fa-search"></i> Scanning Markets...</h3>
-                <p>Waiting for high-confidence trading opportunities.</p>
+                <p>No active signals at the moment. Waiting for high-confidence trading opportunities.</p>
             </div>
         </section>
     </main>
@@ -93,16 +138,18 @@
         <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
     
-    <audio id="notification-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
-
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const signalsGrid = document.getElementById('signals-grid');
             const noSignalsMessage = document.getElementById('no-signals-message');
             const statusDot = document.getElementById('status-dot');
             const statusText = document.getElementById('status-text');
-            const notificationSound = document.getElementById('notification-sound');
             
+            const liveSignalsCountEl = document.getElementById('live-signals-count');
+            const tpHitsCountEl = document.getElementById('tp-hits-count');
+            const slHitsCountEl = document.getElementById('sl-hits-count');
+            const winRatePercentEl = document.getElementById('win-rate-percent');
+
             let signals = new Map();
 
             function renderSignals() {
@@ -159,9 +206,6 @@
                     </div>
                     <div class="signal-card-footer">
                         <span class="signal-timestamp">Last update: ${timestamp}</span>
-                        <button class="delete-btn" onclick="requestSignalDeletion('${signal.signal_id}')" title="Manually Close Signal">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
                     </div>
                 `;
                 return card;
@@ -180,6 +224,26 @@
                         signals.delete(signalId);
                         renderSignals();
                     }
+                }
+            }
+
+            async function fetchDailyStats() {
+                try {
+                    const response = await fetch('/api/daily-stats');
+                    if (!response.ok) throw new Error('Failed to fetch daily stats');
+                    const stats = await response.json();
+                    
+                    liveSignalsCountEl.textContent = stats.live_signals;
+                    tpHitsCountEl.textContent = stats.tp_hits_today;
+                    slHitsCountEl.textContent = stats.sl_hits_today;
+                    winRatePercentEl.textContent = `${stats.win_rate_today}%`;
+
+                } catch (error) {
+                    console.error('Error fetching daily stats:', error);
+                    liveSignalsCountEl.textContent = 'N/A';
+                    tpHitsCountEl.textContent = 'N/A';
+                    slHitsCountEl.textContent = 'N/A';
+                    winRatePercentEl.textContent = 'N/A';
                 }
             }
 
@@ -208,21 +272,16 @@
                 socket.onopen = () => {
                     statusDot.classList.add('connected');
                     statusText.textContent = 'Live';
-                    console.log("WebSocket connected. Syncing state with server...");
+                    console.log("WebSocket connected. Syncing state...");
                     fetchActiveSignals();
+                    fetchDailyStats();
                 };
 
                 socket.onmessage = (event) => {
                     const message = JSON.parse(event.data);
                     const signalData = message.data;
 
-                    if (message.type === 'new_signal') {
-                        signals.set(signalData.signal_id, signalData);
-                        renderSignals();
-                        const card = document.getElementById(`signal-${signalData.signal_id}`);
-                        if(card) card.classList.add('card-flash');
-                        notificationSound.play().catch(e => console.log("Audio play failed:", e));
-                    } else if (message.type === 'signal_updated') {
+                    if (message.type === 'new_signal' || message.type === 'signal_updated') {
                         signals.set(signalData.signal_id, signalData);
                         renderSignals();
                         const card = document.getElementById(`signal-${signalData.signal_id}`);
@@ -232,6 +291,7 @@
                             removeSignalCard(signalData.signal_id);
                         }
                     }
+                    fetchDailyStats();
                 };
 
                 socket.onclose = () => {
@@ -247,40 +307,10 @@
             }
 
             connectWebSocket();
+            setInterval(fetchDailyStats, 60000);
         });
-
-        // ★★★ مکمل طور پر درست ڈیلیٹ فنکشن ★★★
-        async function requestSignalDeletion(signalId) {
-            const password = prompt("This is a protected action.\nPlease enter the admin password to manually close the signal:");
-            
-            if (password === null || password.trim() === "") {
-                // صارف نے کینسل کر دیا یا کچھ نہیں لکھا
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/delete-signal/${signalId}`, {
-                    method: 'POST', // میتھڈ کو واضح طور پر POST پر سیٹ کریں
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ password: password }), // پاس ورڈ کو JSON باڈی میں بھیجیں
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    alert(result.detail || "Signal closed successfully.");
-                } else {
-                    // FastAPI سے آنے والے خرابی کے پیغام کو دکھائیں
-                    alert(`Error: ${result.detail || 'Failed to delete signal.'}`);
-                }
-            } catch (error) {
-                console.error('Error during manual deletion:', error);
-                alert('An unexpected error occurred. Please check the console.');
-            }
-        }
     </script>
 
 </body>
-</html>
+    </html>
+    
