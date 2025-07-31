@@ -24,12 +24,15 @@ from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 from key_manager import key_manager
 
+# لاگنگ کی ترتیب
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+# FastAPI ایپ
 app = FastAPI(title="ScalpMaster AI API")
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,12 +41,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# DB انحصار
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+# --- API روٹس ---
 
 @app.get("/api/active-signals", response_class=JSONResponse)
 async def get_active_signals(db: Session = Depends(get_db)):
@@ -54,26 +60,19 @@ async def get_active_signals(db: Session = Depends(get_db)):
         logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
-class PasswordData(BaseModel):
-    password: str
+# ★★★ ڈیلیٹ والا اینڈ پوائنٹ اور اس کا پاس ورڈ ماڈل ہٹا دیا گیا ★★★
+# class PasswordData(BaseModel): ...
+# @app.post("/api/delete-signal/{signal_id}", ...)
 
-@app.post("/api/delete-signal/{signal_id}", response_class=JSONResponse)
-async def delete_signal_endpoint(signal_id: str, password_data: PasswordData, db: Session = Depends(get_db)):
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-    if not ADMIN_PASSWORD:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ایڈمن پاس ورڈ سرور پر کنفیگر نہیں ہے۔")
-    
-    # محفوظ پاس ورڈ موازنہ
-    if not hmac.compare_digest(password_data.password.encode('utf-8'), ADMIN_PASSWORD.encode('utf-8')):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="غلط پاس ورڈ")
-    
-    success = crud.close_and_archive_signal(db, signal_id, "manual_close", 0, "manual_close")
-    
-    if success:
-        await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id}})
-        return {"detail": f"سگنل {signal_id} کامیابی سے بند کر دیا گیا۔"}
-    else:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"فعال سگنل {signal_id} نہیں ملا۔")
+# ★★★ نیا API اینڈ پوائنٹ شامل کیا گیا ★★★
+@app.get("/api/daily-stats", response_class=JSONResponse)
+async def get_daily_stats_endpoint(db: Session = Depends(get_db)):
+    try:
+        stats = crud.get_daily_stats(db)
+        return stats
+    except Exception as e:
+        logger.error(f"روزانہ کے اعداد و شمار حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 async def start_background_tasks():
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
@@ -88,13 +87,9 @@ async def start_background_tasks():
         app.state.last_heartbeat = datetime.utcnow()
         logger.info(f"❤️ سسٹم ہارٹ بیٹ: {app.state.last_heartbeat.isoformat()}")
     
-    # ★★★ یہاں حتمی اور اسٹریٹجک تبدیلی کی گئی ہے ★★★
     scheduler.add_job(heartbeat_job, IntervalTrigger(minutes=15), id="system_heartbeat")
-    # نگران انجن: ہر 2 منٹ بعد (پہلے 1 منٹ تھا)
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=2), id="guardian_engine_job")
-    # شکاری انجن: ہر 5 منٹ بعد (پہلے 3 منٹ تھا)
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=5), id="hunter_engine_job")
-    # خبروں کا انجن: ہر 4 گھنٹے بعد
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(minutes=1), id="guardian_engine_job")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(minutes=3), id="hunter_engine_job")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
     scheduler.start()
@@ -125,6 +120,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
+            # کلائنٹ سے آنے والے پیغامات کو نظر انداز کریں، صرف کنکشن کھلا رکھیں
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -176,5 +172,5 @@ async def get_news(db: Session = Depends(get_db)):
         logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
+# اسٹیٹک فائلوں کو پیش کرنے کے لیے ماؤنٹ
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-    
