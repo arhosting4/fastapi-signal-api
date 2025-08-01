@@ -6,13 +6,14 @@ import json
 import logging
 from typing import List, Tuple, Optional, Dict, Any
 
+# مقامی امپورٹس
 from level_analyzer import find_optimal_tp_sl
 from config import TECHNICAL_ANALYSIS
 
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
 
-# ... (اس فائل کے دیگر فنکشنز میں کوئی تبدیلی نہیں) ...
+# --- کنفیگریشن سے پیرامیٹرز ---
 EMA_SHORT_PERIOD = TECHNICAL_ANALYSIS["EMA_SHORT_PERIOD"]
 EMA_LONG_PERIOD = TECHNICAL_ANALYSIS["EMA_LONG_PERIOD"]
 RSI_PERIOD = TECHNICAL_ANALYSIS["RSI_PERIOD"]
@@ -22,6 +23,7 @@ SUPERTREND_ATR = TECHNICAL_ANALYSIS["SUPERTREND_ATR"]
 SUPERTREND_FACTOR = TECHNICAL_ANALYSIS["SUPERTREND_FACTOR"]
 
 def _load_weights() -> Dict[str, float]:
+    """حکمت عملی کے وزن کو JSON فائل سے لوڈ کرتا ہے۔"""
     try:
         with open(WEIGHTS_FILE, 'r') as f:
             return json.load(f)
@@ -32,24 +34,25 @@ def _load_weights() -> Dict[str, float]:
             "price_action": 0.10, "supertrend_confirm": 0.20
         }
 
+# ★★★ یہ فنکشنز اب پانڈاز-TA کی جگہ استعمال ہوں گے ★★★
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
     gain = delta.where(delta > 0, 0).fillna(0)
     loss = -delta.where(delta < 0, 0).fillna(0)
     
-    avg_gain = gain.rolling(window=period, min_periods=1).mean()
-    avg_loss = loss.rolling(window=period, min_periods=1).mean()
+    avg_gain = gain.ewm(com=period - 1, adjust=False).mean()
+    avg_loss = loss.ewm(com=period - 1, adjust=False).mean()
 
     rs = avg_gain / avg_loss.replace(0, 1e-9)
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50)
 
 def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
-    low_k = low.rolling(window=k, min_periods=1).min()
-    high_k = high.rolling(window=k, min_periods=1).max()
+    low_k = low.rolling(window=k).min()
+    high_k = high.rolling(window=k).max()
     
     stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
-    stoch_d = stoch_k.rolling(window=d, min_periods=1).mean()
+    stoch_d = stoch_k.rolling(window=d).mean()
     
     stoch_df = pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
     return stoch_df.fillna(50)
@@ -63,9 +66,8 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     tr = pd.concat([tr1, tr2, tr3], axis=1, join='inner').max(axis=1)
     atr = tr.ewm(alpha=1/atr_period, adjust=False).mean()
     
-    hl2 = (high + low) / 2
-    df['upperband'] = hl2 + (multiplier * atr)
-    df['lowerband'] = hl2 - (multiplier * atr)
+    df['upperband'] = (high + low) / 2 + (multiplier * atr)
+    df['lowerband'] = (high + low) / 2 - (multiplier * atr)
     df['in_uptrend'] = True
 
     for i in range(1, len(df)):
@@ -75,14 +77,20 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'in_uptrend'] = False
         else:
             df.loc[df.index[i], 'in_uptrend'] = df['in_uptrend'].iloc[i-1]
+            
+        if df['in_uptrend'].iloc[i] and df['lowerband'].iloc[i] < df['lowerband'].iloc[i-1]:
+            df.loc[df.index[i], 'lowerband'] = df['lowerband'].iloc[i-1]
+        if not df['in_uptrend'].iloc[i] and df['upperband'].iloc[i] > df['upperband'].iloc[i-1]:
+            df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
+            
     return df
 
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
 def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
     if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
 
     close = df['close']
-    
     WEIGHTS = _load_weights()
     
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
@@ -106,11 +114,11 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
     supertrend_score = 1 if in_uptrend else -1
 
     total_score = (
-        (ema_score * WEIGHTS["ema_cross"]) +
-        (rsi_score * WEIGHTS["rsi_position"]) +
-        (stoch_score * WEIGHTS["stoch_position"]) +
-        (price_action_score * WEIGHTS["price_action"]) +
-        (supertrend_score * WEIGHTS["supertrend_confirm"])
+        (ema_score * WEIGHTS.get("ema_cross", 0.30)) +
+        (rsi_score * WEIGHTS.get("rsi_position", 0.20)) +
+        (stoch_score * WEIGHTS.get("stoch_position", 0.20)) +
+        (price_action_score * WEIGHTS.get("price_action", 0.10)) +
+        (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.20))
     ) * 100
 
     indicators_data = {
@@ -127,26 +135,13 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
 
     return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
 
-
-# ★★★ یہاں تبدیلی کی گئی ہے ★★★
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
 def calculate_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
-    """
-    یہ فنکشن اب find_optimal_tp_sl کو براہ راست ڈیٹا فریم بھیجتا ہے۔
-    """
     if df.empty or len(df) < 34:
         return None
     try:
-        # ★★★ .to_dict('records') کو یہاں سے ہٹا دیا گیا ہے ★★★
-        optimal_levels = find_optimal_tp_sl(df, signal_type)
-        
-        if optimal_levels:
-            return optimal_levels
-        
-        # اگر کنفلونس کی بنیاد پر لیولز نہ ملیں تو فال بیک منطق (اگر ضروری ہو)
-        # فی الحال، ہم صرف None واپس کریں گے
-        return None
-        
+        # find_optimal_tp_sl کو اب براہ راست ڈیٹا فریم بھیجا جائے گا
+        return find_optimal_tp_sl(df, signal_type)
     except Exception as e:
         logging.error(f"TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
         return None
-    
