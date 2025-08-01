@@ -22,126 +22,83 @@ STOCH_D = TECHNICAL_ANALYSIS["STOCH_D"]
 SUPERTREND_ATR = TECHNICAL_ANALYSIS["SUPERTREND_ATR"]
 SUPERTREND_FACTOR = TECHNICAL_ANALYSIS["SUPERTREND_FACTOR"]
 
+# --- حکمت عملی کے وزن کو JSON فائل سے لوڈ کرتا ہے ---
 def _load_weights() -> Dict[str, float]:
-    """حکمت عملی کے وزن کو JSON فائل سے لوڈ کرتا ہے۔"""
     try:
         with open(WEIGHTS_FILE, 'r') as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         logger.warning(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ وزن استعمال کیا جا رہا ہے۔")
         return {
-            "ema_cross": 0.30, "rsi_position": 0.20, "stoch_position": 0.20,
-            "price_action": 0.10, "supertrend_confirm": 0.20
+            "ema_cross": 0.30,
+            "rsi_position": 0.20,
+            "stoch_position": 0.20,
+            "price_action": 0.10,
+            "supertrend_confirm": 0.20
         }
 
-# ★★★ یہ فنکشنز اب پانڈاز-TA کی جگہ استعمال ہوں گے ★★★
+# --- RSI کیلکولیٹ کرتا ہے ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
-    delta = data.diff(1)
+    delta = data.diff()
     gain = delta.where(delta > 0, 0).fillna(0)
     loss = -delta.where(delta < 0, 0).fillna(0)
-    
-    avg_gain = gain.ewm(com=period - 1, adjust=False).mean()
-    avg_loss = loss.ewm(com=period - 1, adjust=False).mean()
-
-    rs = avg_gain / avg_loss.replace(0, 1e-9)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50)
+    return rsi
 
-def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
-    low_k = low.rolling(window=k).min()
-    high_k = high.rolling(window=k).max()
-    
-    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
-    stoch_d = stoch_k.rolling(window=d).mean()
-    
-    stoch_df = pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
-    return stoch_df.fillna(50)
+# --- EMA کیلکولیٹ ---
+def calculate_ema(data: pd.Series, period: int) -> pd.Series:
+    return data.ewm(span=period, adjust=False).mean()
 
-def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
-    high, low, close = df['high'], df['low'], df['close']
-    
-    tr1 = pd.DataFrame(high - low)
-    tr2 = pd.DataFrame(abs(high - close.shift(1)))
-    tr3 = pd.DataFrame(abs(low - close.shift(1)))
-    tr = pd.concat([tr1, tr2, tr3], axis=1, join='inner').max(axis=1)
-    atr = tr.ewm(alpha=1/atr_period, adjust=False).mean()
-    
-    df['upperband'] = (high + low) / 2 + (multiplier * atr)
-    df['lowerband'] = (high + low) / 2 - (multiplier * atr)
-    df['in_uptrend'] = True
+# --- اسٹاکاسٹک کیلکولیٹ ---
+def calculate_stochastic(df: pd.DataFrame, k_period: int, d_period: int) -> Tuple[pd.Series, pd.Series]:
+    low_min = df['low'].rolling(window=k_period).min()
+    high_max = df['high'].rolling(window=k_period).max()
+    k = 100 * ((df['close'] - low_min) / (high_max - low_min))
+    d = k.rolling(window=d_period).mean()
+    return k, d
 
-    for i in range(1, len(df)):
-        if close.iloc[i] > df['upperband'].iloc[i-1]:
-            df.loc[df.index[i], 'in_uptrend'] = True
-        elif close.iloc[i] < df['lowerband'].iloc[i-1]:
-            df.loc[df.index[i], 'in_uptrend'] = False
-        else:
-            df.loc[df.index[i], 'in_uptrend'] = df['in_uptrend'].iloc[i-1]
-            
-        if df['in_uptrend'].iloc[i] and df['lowerband'].iloc[i] < df['lowerband'].iloc[i-1]:
-            df.loc[df.index[i], 'lowerband'] = df['lowerband'].iloc[i-1]
-        if not df['in_uptrend'].iloc[i] and df['upperband'].iloc[i] > df['upperband'].iloc[i-1]:
-            df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
-            
-    return df
+# --- کور اسکور کیلکولیٹ فنکشن ---
+def compute_core_score(df: pd.DataFrame) -> float:
+    weights = _load_weights()
 
-# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
-def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
-        return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
+    ema_short = calculate_ema(df['close'], EMA_SHORT_PERIOD)
+    ema_long = calculate_ema(df['close'], EMA_LONG_PERIOD)
+    rsi = calculate_rsi(df['close'], RSI_PERIOD)
+    k, d = calculate_stochastic(df, STOCH_K, STOCH_D)
 
-    close = df['close']
-    WEIGHTS = _load_weights()
-    
-    ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
-    ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
-    rsi = calculate_rsi(close, RSI_PERIOD)
-    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
-    df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR)
-    
-    last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
-    last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
-    last_close, prev_close = close.iloc[-1], close.iloc[-2]
-    in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
+    score = 0.0
+    latest_idx = -1
 
-    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
-        return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
+    if ema_short.iloc[latest_idx] > ema_long.iloc[latest_idx]:
+        score += weights["ema_cross"]
 
-    ema_score = 1 if last_ema_fast > last_ema_slow else -1
-    rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
-    stoch_score = 1 if last_stoch_k > 52 else (-1 if last_stoch_k < 48 else 0)
-    price_action_score = 1 if last_close > prev_close else -1
-    supertrend_score = 1 if in_uptrend else -1
+    if rsi.iloc[latest_idx] > 50:
+        score += weights["rsi_position"]
 
-    total_score = (
-        (ema_score * WEIGHTS.get("ema_cross", 0.30)) +
-        (rsi_score * WEIGHTS.get("rsi_position", 0.20)) +
-        (stoch_score * WEIGHTS.get("stoch_position", 0.20)) +
-        (price_action_score * WEIGHTS.get("price_action", 0.10)) +
-        (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.20))
-    ) * 100
+    if k.iloc[latest_idx] > d.iloc[latest_idx]:
+        score += weights["stoch_position"]
 
-    indicators_data = {
-        "ema_fast": round(last_ema_fast, 5), "ema_slow": round(last_ema_slow, 5),
-        "rsi": round(last_rsi, 2), "stoch_k": round(last_stoch_k, 2),
-        "supertrend_direction": "Up" if in_uptrend else "Down",
-        "technical_score": round(total_score, 2),
-        "component_scores": {
-            "ema_cross": ema_score, "rsi_position": rsi_score,
-            "stoch_position": stoch_score, "price_action": price_action_score,
-            "supertrend_confirm": supertrend_score
+    # Price action + Supertrend placeholders
+    score += weights["price_action"]  # future logic placeholder
+    score += weights["supertrend_confirm"]  # future logic placeholder
+
+    return round(score, 3)
+
+# --- مین فنکشن: سگنل ریٹرن کرتا ہے ---
+def generate_trade_signal(df: pd.DataFrame) -> Dict[str, Any]:
+    if df.empty or len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, STOCH_K):
+        return {"error": "ڈیٹا ناکافی ہے۔"}
+
+    score = compute_core_score(df)
+    tp_sl = find_optimal_tp_sl(df)
+
+    return {
+        "core_score": score,
+        "tp": tp_sl.get("tp"),
+        "sl": tp_sl.get("sl"),
+        "confidence": round(min(score * 100, 100), 1),
+        "strategy": "EMA + RSI + Stoch Combo"
         }
-    }
-
-    return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
-
-# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
-def calculate_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
-    if df.empty or len(df) < 34:
-        return None
-    try:
-        # find_optimal_tp_sl کو اب براہ راست ڈیٹا فریم بھیجا جائے گا
-        return find_optimal_tp_sl(df, signal_type)
-    except Exception as e:
-        logging.error(f"TP/SL کیلکولیشن میں خرابی: {e}", exc_info=True)
-        return None
