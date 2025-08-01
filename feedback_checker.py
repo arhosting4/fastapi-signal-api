@@ -42,8 +42,18 @@ async def check_active_signals_job():
         if any(s.is_new for s in active_signals_in_db):
             db.commit()
         
+        # ★★★ یہاں تبدیلی کی گئی ہے ★★★
+        # اگر چیک کرنے کے لیے کوئی اہل سگنل نہیں ہے، تو بھی ہمیں ڈیش بورڈ کو اپ ڈیٹ کرنا ہے
         if not signals_to_check_now:
             logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں ہو سکتے ہیں)۔")
+            # لیکن اگر کل فعال سگنل موجود ہیں، تو ان کا ڈیٹا بھیجیں
+            if active_signals_in_db:
+                stats = crud.get_daily_stats(db)
+                live_signals_count = len(active_signals_in_db)
+                await manager.broadcast({
+                    "type": "stats_update", 
+                    "data": {**stats, "live_signals": live_signals_count}
+                })
             return
         
         # --- ڈیٹا حاصل کرنے کی منطق ---
@@ -98,12 +108,10 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
         quote_data = quotes_memory.get(signal.symbol)
         if not quote_data: continue
         
-        # ڈیٹا کی قسم کی بنیاد پر قیمتیں حاصل کریں (کینڈل یا کوٹ)
         current_high = quote_data.get('high')
         current_low = quote_data.get('low')
         
         if current_high is None or current_low is None:
-            # اگر یہ کوٹ ہے تو 'price' فیلڈ استعمال کریں
             price = quote_data.get('price')
             if price is None: continue
             try:
