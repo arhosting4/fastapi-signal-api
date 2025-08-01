@@ -9,7 +9,6 @@ from pydantic import ValidationError
 # مقامی امپورٹس
 from key_manager import key_manager
 from schemas import TwelveDataTimeSeries, Candle
-# ★★★ حل: سیٹنگز کو 'api_settings' سے امپورٹ کریں ★★★
 from config import api_settings
 
 logger = logging.getLogger(__name__)
@@ -20,13 +19,17 @@ PRIMARY_TIMEFRAME = api_settings.PRIMARY_TIMEFRAME
 CANDLE_COUNT = api_settings.CANDLE_COUNT + 1
 
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
-    # ... (بقیہ کوڈ میں کوئی تبدیلی نہیں) ...
+    """
+    دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین کوٹس حاصل کرتا ہے۔
+    یہ فنکشن مرکزی کی پول سے ایک کلید استعمال کرتا ہے۔
+    """
     if not symbols:
         return {}
 
-    api_key = key_manager.get_guardian_key()
+    # ★★★ تبدیلی: get_guardian_key کی جگہ get_key استعمال کریں ★★★
+    api_key = key_manager.get_key()
     if not api_key:
-        logger.warning("نگرانی کے لیے کوئی API کلید دستیاب نہیں۔")
+        logger.warning("کوٹس حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
 
     symbol_str = ",".join(symbols)
@@ -68,7 +71,12 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
         return None
 
 async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
-    api_key = key_manager.get_hunter_key()
+    """
+    TwelveData API سے OHLC کینڈلز لاتا ہے اور صرف مکمل شدہ کینڈلز واپس کرتا ہے۔
+    یہ فنکشن مرکزی کی پول سے ایک کلید استعمال کرتا ہے۔
+    """
+    # ★★★ تبدیلی: get_hunter_key کی جگہ get_key استعمال کریں ★★★
+    api_key = key_manager.get_key()
     if not api_key:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
@@ -94,8 +102,10 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
 
         validated_data = TwelveDataTimeSeries.model_validate(data)
         
+        # API سے آنے والی فہرست کو پہلے ترتیب دیں (نئی سے پرانی)
         sorted_values = sorted(validated_data.values, key=lambda x: x.datetime, reverse=True)
         
+        # سب سے حالیہ کینڈل (جو نامکمل ہو سکتی ہے) کو ہٹا دیں
         completed_candles_raw = sorted_values[1:api_settings.CANDLE_COUNT + 1]
 
         enriched_candles = []
@@ -103,6 +113,7 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
             candle_data.symbol = symbol
             enriched_candles.append(candle_data)
 
+        # کینڈلز کو واپس پرانی سے نئی کی ترتیب میں کریں تاکہ تجزیہ درست ہو
         return enriched_candles[::-1]
 
     except ValidationError as e:
