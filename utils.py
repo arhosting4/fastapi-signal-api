@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن سے متغیرات ---
 PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
-CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"]
+# ★★★ کینڈل کی تعداد کو 101 کر دیا گیا ہے ★★★
+CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"] + 1 # ایک اضافی کینڈل حاصل کریں گے تاکہ نامکمل کو ہٹا سکیں
 
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
@@ -63,17 +64,17 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
         logger.error(f"کوٹس حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
 
-# ★★★ مکمل طور پر اپ ڈیٹ شدہ اور ذہین فنکشن ★★★
 async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
     """
-    TwelveData API سے OHLC کینڈلز لاتا ہے اور ہر کینڈل میں علامت کا نام شامل کرتا ہے۔
-    یہ فنکشن 'ہنٹر' کیز استعمال کرتا ہے۔
+    TwelveData API سے OHLC کینڈلز لاتا ہے، ہر کینڈل میں علامت کا نام شامل کرتا ہے،
+    اور یقینی بناتا ہے کہ صرف مکمل شدہ کینڈلز واپس کی جائیں۔
     """
     api_key = key_manager.get_hunter_key()
     if not api_key:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
     
+    # ہم CANDLE_COUNT (101) کینڈلز کی درخواست کر رہے ہیں
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
     
     try:
@@ -95,25 +96,23 @@ async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
 
         validated_data = TwelveDataTimeSeries.model_validate(data)
         
-        enriched_candles = []
-        for candle in validated_data.values:
-            try:
-                # ہر کینڈل میں علامت کا نام شامل کریں
-                candle.symbol = symbol
-                # قیمتوں کو فلوٹ میں تبدیل کریں
-                candle.open = float(candle.open)
-                candle.high = float(candle.high)
-                candle.low = float(candle.low)
-                candle.close = float(candle.close)
-                enriched_candles.append(candle)
-            except (ValueError, TypeError) as e:
-                logger.warning(f"کینڈل ڈیٹا کو تبدیل کرنے میں خرابی: {e} - {candle.dict()}")
-                continue
+        # ★★★ صرف مکمل شدہ کینڈلز کو یقینی بنانے کی منطق ★★★
+        # API سے آنے والی فہرست کو پہلے ترتیب دیں (نئی سے پرانی)
+        sorted_values = sorted(validated_data.values, key=lambda x: x.datetime, reverse=True)
+        
+        # سب سے حالیہ کینڈل (جو نامکمل ہو سکتی ہے) کو ہٹا دیں
+        # اور صرف 100 کینڈلز لیں
+        completed_candles_raw = sorted_values[1:101]
 
-        # کینڈلز کو پرانی سے نئی کی ترتیب میں واپس کریں
+        enriched_candles = []
+        for candle in completed_candles_raw:
+            candle.symbol = symbol
+            enriched_candles.append(candle)
+
+        # کینڈلز کو واپس پرانی سے نئی کی ترتیب میں کریں تاکہ تجزیہ درست ہو
         return enriched_candles[::-1]
 
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
-    
+        
