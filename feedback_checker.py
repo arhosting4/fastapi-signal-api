@@ -29,31 +29,29 @@ async def check_active_signals_job():
     try:
         active_signals_in_db = crud.get_all_active_signals_from_db(db)
         
+        if not active_signals_in_db:
+            logger.info("🛡️ نگران انجن: کوئی فعال سگنل موجود نہیں۔")
+            return
+
         # --- گریس پیریڈ کی منطق ---
         signals_to_check_now = []
+        made_grace_period_change = False
         for signal in active_signals_in_db:
             if signal.is_new:
                 logger.info(f"🛡️ سگنل {signal.symbol} گریس پیریڈ میں ہے۔ اسے اگلی بار چیک کیا جائے گا۔")
                 signal.is_new = False
+                made_grace_period_change = True
             else:
                 signals_to_check_now.append(signal)
         
-        # ڈیٹا بیس میں is_new فلیگ کو اپ ڈیٹ کریں
-        if any(s.is_new for s in active_signals_in_db):
+        # ★★★ یہاں تبدیلی کی گئی ہے ★★★
+        # اگر کوئی بھی فلیگ تبدیل ہوا ہے، تو اسے ڈیٹا بیس میں محفوظ کریں
+        if made_grace_period_change:
             db.commit()
         
-        # ★★★ یہاں تبدیلی کی گئی ہے ★★★
-        # اگر چیک کرنے کے لیے کوئی اہل سگنل نہیں ہے، تو بھی ہمیں ڈیش بورڈ کو اپ ڈیٹ کرنا ہے
         if not signals_to_check_now:
             logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں ہو سکتے ہیں)۔")
-            # لیکن اگر کل فعال سگنل موجود ہیں، تو ان کا ڈیٹا بھیجیں
-            if active_signals_in_db:
-                stats = crud.get_daily_stats(db)
-                live_signals_count = len(active_signals_in_db)
-                await manager.broadcast({
-                    "type": "stats_update", 
-                    "data": {**stats, "live_signals": live_signals_count}
-                })
+            # یہاں سے stats_update بھیجنے کی ضرورت نہیں کیونکہ یہ کام اب فرنٹ اینڈ خود کر رہا ہے
             return
         
         # --- ڈیٹا حاصل کرنے کی منطق ---
@@ -63,7 +61,6 @@ async def check_active_signals_job():
         
         latest_quotes_memory: Dict[str, Dict[str, Any]] = {}
 
-        # 1. فعال سگنلز کے لیے درست OHLC ڈیٹا حاصل کریں
         if active_symbols_for_ohlc:
             logger.info(f"🛡️ نگران: {len(active_symbols_for_ohlc)} فعال سگنلز کے لیے درست کینڈل ڈیٹا حاصل کیا جا رہا ہے...")
             ohlc_tasks = [fetch_twelve_data_ohlc(symbol) for symbol in active_symbols_for_ohlc]
@@ -73,7 +70,6 @@ async def check_active_signals_job():
                     latest_candle = candles[-1]
                     latest_quotes_memory[latest_candle.symbol] = latest_candle.dict()
 
-        # 2. غیر فعال جوڑوں کے لیے فوری قیمت حاصل کریں
         if inactive_symbols_for_quote:
             logger.info(f"🛡️ نگران: {len(inactive_symbols_for_quote)} غیر فعال جوڑوں کے لیے فوری قیمت حاصل کی جا رہی ہے...")
             quotes = await get_real_time_quotes(inactive_symbols_for_quote)
@@ -86,7 +82,6 @@ async def check_active_signals_job():
 
         logger.info(f"✅ مرکزی یادداشت اپ ڈیٹ ہوئی۔ کل یادداشت میں {len(latest_quotes_memory)} جوڑوں کا ڈیٹا ہے۔")
         
-        # --- TP/SL چیک کرنے کی منطق ---
         logger.info(f"🛡️ نگران انجن: {len(signals_to_check_now)} اہل فعال سگنلز کو چیک کیا جا رہا ہے...")
         await check_signals_for_tp_sl(db, signals_to_check_now, latest_quotes_memory)
 
@@ -141,4 +136,4 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
     
     if signals_closed_count > 0:
         logger.info(f"🛡️ نگران انجن: کل {signals_closed_count} سگنل بند کیے گئے۔")
-        
+            
