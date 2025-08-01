@@ -5,7 +5,7 @@ import pandas as pd
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-# مقامی امپورٹس
+# 🧠 مقامی تجزیاتی ماڈیولز
 from strategybot import generate_technical_analysis_score, calculate_tp_sl
 from patternai import detect_patterns
 from riskguardian import check_risk
@@ -20,88 +20,91 @@ from config import STRATEGY
 logger = logging.getLogger(__name__)
 
 SIGNAL_SCORE_THRESHOLD = STRATEGY["SIGNAL_SCORE_THRESHOLD"]
+FINAL_CONFIDENCE_THRESHOLD = STRATEGY["FINAL_CONFIDENCE_THRESHOLD"]
 
+# =====================================================================================
 async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
     """
     تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
-    ★★★ اب یہ مرکزی طور پر ایک پانڈاز ڈیٹا فریم تیار کرتا ہے اور اسے تمام ذیلی فنکشنز کو بھیجتا ہے۔ ★★★
+    ★★★ یہ مرکزی hub ہے جو تمام ماڈیولز سے data لے کر فیصلہ کرتا ہے ★★★
     """
     try:
-        # مرحلہ 1: ڈیٹا فریم کو مرکزی طور پر صرف ایک بار تیار کریں
+        # 🔹 Step 1: Candles validate کریں
         if not candles or len(candles) < 34:
-            return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(candles)} کینڈلز)۔"}
+            return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(candles)} کینڈلز)"}
 
+        # 🔹 Step 2: Candle DataFrame بنائیں
         df = pd.DataFrame([c.dict() for c in candles])
-        # بنیادی کالمز کو عددی قسم میں تبدیل کریں تاکہ حساب کتاب میں غلطی نہ ہو
         for col in ['open', 'high', 'low', 'close', 'volume']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # اگر کسی اہم کالم میں NaN ویلیو ہو تو اسے ہٹا دیں
-        df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
-        
-        if len(df) < 34:
-             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
+        df.dropna(inplace=True)
 
-        # مرحلہ 2: تیار شدہ ڈیٹا فریم کو تمام تجزیاتی فنکشنز میں استعمال کریں
-        tech_analysis = generate_technical_analysis_score(df)
-        technical_score = tech_analysis["score"]
-        indicators = tech_analysis.get("indicators", {})
+        current_price = df['close'].iloc[-1]
 
-        core_signal = "wait"
-        if technical_score >= SIGNAL_SCORE_THRESHOLD:
-            core_signal = "buy"
-        elif technical_score <= -SIGNAL_SCORE_THRESHOLD:
-            core_signal = "sell"
-        
-        if core_signal == "wait":
-            return {"status": "no-signal", "reason": f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ ({SIGNAL_SCORE_THRESHOLD}) سے کم ہے۔"}
+        # 🔹 Step 3: تکنیکی اسکور حاصل کریں
+        tech_score = generate_technical_analysis_score(df)
 
-        pattern_data = detect_patterns(df)
-        risk_assessment = check_risk(df)
-        news_data = await get_news_analysis_for_symbol(symbol)
-        market_structure = find_market_structure(df) # ★★★ اسے بھی ڈیٹا فریم بھیجیں ★★★
+        if tech_score < SIGNAL_SCORE_THRESHOLD:
+            return {"status": "no-signal", "reason": f"اسکور کم ہے: {tech_score:.2f}"}
 
-        final_risk_status = risk_assessment.get("status", "Normal")
-        if news_data.get("impact") == "High":
-            final_risk_status = "Critical" if final_risk_status == "High" else "High"
-        
-        confidence = get_confidence(
-            db, core_signal, technical_score, pattern_data.get("type", "neutral"),
-            final_risk_status, news_data.get("impact"), symbol
-        )
-        tier = get_tier(confidence, final_risk_status)
-        
-        # ★★★ اب calculate_tp_sl کو بھی ڈیٹا فریم بھیجیں ★★★
-        tp_sl_data = calculate_tp_sl(df, core_signal)
-        if not tp_sl_data:
-            return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
-        
-        tp, sl = tp_sl_data
+        # 🔹 Step 4: confidence ماڈل سے اعتماد حاصل کریں
+        confidence = get_confidence(df)
 
+        if confidence < FINAL_CONFIDENCE_THRESHOLD:
+            return {"status": "no-signal", "reason": f"اعتماد کم ہے: {confidence:.2f}%"}
+
+        # 🔹 Step 5: پیٹرن تجزیہ
+        pattern_info = detect_patterns(df)
+
+        # 🔹 Step 6: خبروں کا تجزیہ
+        news_impact = get_news_analysis_for_symbol(db, symbol)
+
+        # 🔹 Step 7: مارکیٹ اسٹرکچر تجزیہ
+        structure = find_market_structure(df)
+
+        # 🔹 Step 8: TP/SL کیلکولیٹ کریں
+        levels = calculate_tp_sl(df)
+        tp, sl = levels.get("tp"), levels.get("sl")
+
+        if not tp or not sl:
+            return {"status": "no-signal", "reason": "مناسب TP/SL نہ ملا"}
+
+        # 🔹 Step 9: رسک چیک
+        risk_check = check_risk(current_price, sl)
+        if not risk_check["allowed"]:
+            return {"status": "no-signal", "reason": risk_check["reason"]}
+
+        # 🔹 Step 10: سگنل Tier نکالیں
+        tier = get_tier(tech_score, confidence)
+
+        # 🔹 Step 11: Reason Generator
         reason = generate_reason(
-            core_signal, pattern_data, final_risk_status,
-            news_data, confidence, market_structure, indicators=indicators
+            symbol=symbol,
+            tech_score=tech_score,
+            confidence=confidence,
+            pattern=pattern_info.get("pattern", ""),
+            news=news_impact,
+            structure=structure,
+            tp=tp,
+            sl=sl
         )
 
+        # 🔹 Step 12: سگنل تیار کریں
         return {
-            "status": "ok",
+            "status": "signal",
             "symbol": symbol,
-            "signal": core_signal,
-            "pattern": pattern_data.get("pattern"),
-            "risk": final_risk_status,
-            "news": news_data.get("impact"),
-            "reason": reason,
-            "confidence": round(confidence, 2),
+            "score": tech_score,
+            "confidence": confidence,
+            "pattern": pattern_info,
+            "news": news_impact,
+            "structure": structure,
+            "tp": tp,
+            "sl": sl,
             "tier": tier,
-            "timeframe": "15min",
-            "price": df['close'].iloc[-1],
-            "tp": round(tp, 5),
-            "sl": round(sl, 5),
-            "component_scores": indicators.get("component_scores", {})
+            "reason": reason
         }
 
     except Exception as e:
-        logger.error(f"{symbol} کے لیے فیوژن انجن ناکام: {e}", exc_info=True)
-        return {"status": "error", "reason": f"{symbol} کے لیے AI فیوژن میں خرابی۔"}
-        
+        logger.error(f"❌ سگنل تیار کرنے میں خرابی: {e}", exc_info=True)
+        return {"status": "error", "reason": "اندرونی خرابی"}
