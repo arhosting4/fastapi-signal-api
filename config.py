@@ -1,112 +1,74 @@
 # filename: config.py
 
-import os
-from typing import List, Dict, Set
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from dotenv import load_dotenv
+import logging
+from typing import List, Optional
 
-# .env فائل کو لوڈ کریں تاکہ pydantic_settings اسے پڑھ سکے
-load_dotenv()
+from pydantic import Field, PostgresDsn, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# لاگنگ کی ترتیب
+logger = logging.getLogger(__name__)
+
+class AppSettings(BaseSettings):
+    """ایپلیکیشن کی عمومی سیٹنگز۔"""
+    PROJECT_NAME: str = "ScalpMaster AI"
+    VERSION: str = "1.0.0"
+    LOG_LEVEL: str = "INFO"
 
 class APISettings(BaseSettings):
     """
-    بیرونی APIs اور بنیادی ایپلیکیشن کی سیٹنگز۔
-    یہ .env فائل سے اقدار لوڈ کرے گی۔
+    بیرونی API کیز اور حساس معلومات کے لیے سیٹنگز۔
+    یہ pydantic-settings کا استعمال کرتے ہوئے .env فائل یا ماحولیاتی متغیرات سے لوڈ ہوتی ہیں۔
     """
-    # ماڈل کنفیگریشن: .env فائل کا نام اور کیس کی عدم حساسیت
+    # ماڈل کو بتائیں کہ .env فائل کو بھی دیکھنا ہے
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
-    # ڈیٹا بیس کنکشن
-    DATABASE_URL: str = "sqlite:///./signals.db"
+    # ڈیٹا بیس کا URL
+    DATABASE_URL: PostgresDsn
 
-    # Twelve Data API کیز (کوما سے الگ شدہ)
-    TWELVE_DATA_API_KEYS: str
-    
-    # MarketAux API کی
-    MARKETAUX_API_KEY: str
+    # ★★★ حل: تمام مطلوبہ فیلڈز کے لیے ایک خالی ڈیفالٹ ویلیو فراہم کریں ★★★
+    # اس سے ایپلیکیشن کریش نہیں ہوگی اگر متغیر سیٹ نہ ہو۔
+    TWELVE_DATA_API_KEYS: str = Field(default="")
+    MARKETAUX_API_KEY: str = Field(default="")
+    TELEGRAM_BOT_TOKEN: str = Field(default="")
+    TELEGRAM_CHAT_ID: str = Field(default="")
 
-    # ٹیلیگرام بوٹ کی تفصیلات
-    TELEGRAM_BOT_TOKEN: str
-    TELEGRAM_CHAT_ID: str
-
-    # لاگنگ کی سطح
-    LOG_LEVEL: str = "INFO"
-
+    # یہ ایک پراپرٹی ہے جو API کیز کی سٹرنگ کو ایک فہرست میں تبدیل کرتی ہے
     @property
     def twelve_data_keys_list(self) -> List[str]:
-        """کوما سے الگ کی گئی API کیز کی سٹرنگ کو ایک فہرست میں تبدیل کرتا ہے۔"""
         if not self.TWELVE_DATA_API_KEYS:
+            logger.warning("TWELVE_DATA_API_KEYS ماحولیاتی متغیر سیٹ نہیں ہے یا خالی ہے۔")
             return []
         return [key.strip() for key in self.TWELVE_DATA_API_KEYS.split(',') if key.strip()]
 
-class StrategySettings(BaseSettings):
-    """
-    ٹریڈنگ کی حکمت عملی اور تکنیکی تجزیے کے لیے پیرامیٹرز۔
-    یہ اقدار ہارڈ کوڈڈ ہیں کیونکہ یہ حکمت عملی کا بنیادی حصہ ہیں،
-    لیکن انہیں .env سے بھی اوور رائڈ کیا جا سکتا ہے۔
-    """
-    model_config = SettingsConfigDict(extra='ignore')
-
-    # سگنل بنانے کے لیے کم از کم اسکور
-    SIGNAL_SCORE_THRESHOLD: float = 40.0
-    # حتمی سگنل جاری کرنے کے لیے کم از کم اعتماد
-    FINAL_CONFIDENCE_THRESHOLD: float = 70.0
-    # کم از کم رسک/ریوارڈ کا تناسب
-    MIN_RISK_REWARD_RATIO: float = 1.2
-    # کنفلونس اسکور کی کم از کم حد
-    MIN_CONFLUENCE_SCORE: int = 4
-
 class TradingSettings(BaseSettings):
-    """
-    ٹریڈنگ کے جوڑوں اور ٹائم فریم کے لیے سیٹنگز۔
-    """
-    PRIMARY_TIMEFRAME: str = "15min"
-    CANDLE_COUNT: int = 100
-    
+    """ٹریڈنگ جوڑوں کے لیے سیٹنگز۔"""
     WEEKDAY_PRIMARY: List[str] = ["XAU/USD", "EUR/USD", "GBP/USD", "USD/CAD"]
     WEEKDAY_BACKUP: List[str] = ["AUD/USD", "NZD/USD", "USD/JPY"]
     WEEKEND_PRIMARY: List[str] = ["BTC/USD", "ETH/USD"]
     WEEKEND_BACKUP: List[str] = ["SOL/USD", "XRP/USD"]
 
-class TechnicalAnalysisSettings(BaseSettings):
-    """
-    تکنیکی انڈیکیٹرز کے لیے پیرامیٹرز۔
-    """
-    EMA_SHORT_PERIOD: int = 10
-    EMA_LONG_PERIOD: int = 30
-    RSI_PERIOD: int = 14
-    STOCH_K: int = 14
-    STOCH_D: int = 3
-    SUPERTREND_ATR: int = 10
-    SUPERTREND_FACTOR: float = 3.0
+class StrategySettings(BaseSettings):
+    """ٹریڈنگ کی حکمت عملی کے لیے پیرامیٹرز۔"""
+    SIGNAL_SCORE_THRESHOLD: float = 40.0
+    FINAL_CONFIDENCE_THRESHOLD: float = 70.0
+    MIN_RISK_REWARD_RATIO: float = 1.2
+    MIN_CONFLUENCE_SCORE: int = 4
 
-class NewsSettings(BaseSettings):
-    """
-    خبروں کے تجزیے کے لیے مطلوبہ الفاظ۔
-    """
-    HIGH_IMPACT_KEYWORDS: Dict[str, List[str]] = {
-        'USD': ['fed', 'fomc', 'cpi', 'nfp', 'unemployment', 'inflation', 'gdp', 'powell'],
-        'EUR': ['ecb', 'inflation', 'gdp', 'unemployment', 'lagarde'],
-        'GBP': ['boe', 'inflation', 'gdp', 'unemployment', 'bailey'],
-        'JPY': ['boj', 'intervention'],
-        'CAD': ['boc'],
-        'AUD': ['rba'],
-        'NZD': ['rbnz'],
-        'XAU': ['war', 'crisis', 'geopolitical', 'fed', 'inflation'],
-        'BTC': ['sec', 'regulation', 'etf', 'crypto ban', 'halving']
-    }
+# --- سیٹنگز کے نمونے بنانا ---
+# یہ نمونے پوری ایپلیکیشن میں استعمال ہوں گے
 
-# تمام سیٹنگز کو ایک جگہ پر قابلِ رسائی بنانے کے لیے سنگلٹن آبجیکٹس
+app_settings = AppSettings()
 api_settings = APISettings()
-strategy_settings = StrategySettings()
 trading_settings = TradingSettings()
-tech_settings = TechnicalAnalysisSettings()
-news_settings = NewsSettings()
+strategy_settings = StrategySettings()
 
-# ایک .env.example فائل بھی بنائی جانی چاہیے تاکہ صارف کو معلوم ہو کہ کون سے متغیرات سیٹ کرنے ہیں:
-# DATABASE_URL="postgresql://user:password@host:port/database"
-# TWELVE_DATA_API_KEYS="key1,key2,key3,key4,key5,key6,key7,key8,key9"
-# MARKETAUX_API_KEY="your_marketaux_key"
-# TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
-# TELEGRAM_CHAT_ID="your_telegram_chat_id"
+# ایپلیکیشن شروع ہونے پر ایک بار چیک کریں
+if not api_settings.twelve_data_keys_list:
+    logger.critical("کوئی Twelve Data API کلید فراہم نہیں کی گئی۔ شکاری اور نگران انجن کام نہیں کریں گے۔")
+if not api_settings.MARKETAUX_API_KEY:
+    logger.warning("MARKETAUX_API_KEY فراہم نہیں کیا گیا۔ خبروں کا ماڈیول کام نہیں کرے گا۔")
+if not api_settings.TELEGRAM_BOT_TOKEN or not api_settings.TELEGRAM_CHAT_ID:
+    logger.warning("ٹیلیگرام کی سیٹنگز فراہم نہیں کی گئیں۔ الرٹس نہیں بھیجے جائیں گے۔")
+
 # LOG_LEVEL="INFO"
