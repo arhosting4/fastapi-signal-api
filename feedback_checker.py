@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 # مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_real_time_quotes  # ★★★ صرف یہ فنکشن استعمال ہوگا ★★★
+from utils import get_real_time_quotes
 from websocket_manager import manager
 from trainerai import learn_from_outcome
 
@@ -17,26 +17,45 @@ logger = logging.getLogger(__name__)
 
 async def check_active_signals_job():
     """
-    یہ فنکشن اب انتہائی آسان ہے:
+    یہ فنکشن اب درست ترتیب کے ساتھ کام کرتا ہے:
     1. تمام فعال سگنلز حاصل کرتا ہے۔
-    2. ان کی تازہ ترین قیمتیں ایک ہی API کال میں حاصل کرتا ہے۔
-    3. قیمت کی بنیاد پر TP/SL کو چیک کرتا ہے۔
+    2. گریس پیریڈ والے سگنلز کو الگ کرتا ہے۔
+    3. صرف اہل سگنلز کی قیمتیں حاصل کرتا ہے۔
+    4. قیمت کی بنیاد پر TP/SL کو چیک کرتا ہے۔
     """
-    logger.info("🛡️ نگران انجن: نگرانی کا نیا، آسان دور شروع...")
+    logger.info("🛡️ نگران انجن: نگرانی کا نیا، درست دور شروع...")
     
     db = SessionLocal()
     try:
-        active_signals = crud.get_all_active_signals_from_db(db)
+        all_active_signals = crud.get_all_active_signals_from_db(db)
         
-        if not active_signals:
+        if not all_active_signals:
             logger.info("🛡️ نگران انجن: کوئی فعال سگنل موجود نہیں۔")
             return
 
-        # --- مرحلہ 1: تمام فعال سگنلز کی علامتیں حاصل کریں ---
-        symbols_to_check = list({s.symbol for s in active_signals})
+        # --- مرحلہ 1: گریس پیریڈ والے سگنلز کو الگ کریں ---
+        signals_to_check_now = []
+        made_grace_period_change = False
+        for signal in all_active_signals:
+            if signal.is_new:
+                logger.info(f"🛡️ سگنل {signal.symbol} گریس پیریڈ میں ہے۔ اس کا فلیگ اپ ڈیٹ کیا جا رہا ہے۔")
+                signal.is_new = False
+                made_grace_period_change = True
+            else:
+                signals_to_check_now.append(signal)
         
-        # --- مرحلہ 2: تمام قیمتیں ایک ساتھ حاصل کریں ---
-        logger.info(f"🛡️ نگران: {len(symbols_to_check)} جوڑوں کے لیے حقیقی وقت کی قیمتیں حاصل کی جا رہی ہیں...")
+        # اگر کوئی فلیگ تبدیل ہوا ہے تو ڈیٹا بیس میں محفوظ کریں
+        if made_grace_period_change:
+            db.commit()
+
+        # --- مرحلہ 2: اگر کوئی اہل سگنل نہیں تو دور ختم کریں ---
+        if not signals_to_check_now:
+            logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں تھے)۔")
+            return
+
+        # --- مرحلہ 3: صرف اہل سگنلز کی قیمتیں حاصل کریں ---
+        symbols_to_check = list({s.symbol for s in signals_to_check_now})
+        logger.info(f"🛡️ نگران: {len(symbols_to_check)} اہل جوڑوں کے لیے حقیقی وقت کی قیمتیں حاصل کی جا رہی ہیں...")
         latest_quotes = await get_real_time_quotes(symbols_to_check)
 
         if not latest_quotes:
@@ -45,8 +64,9 @@ async def check_active_signals_job():
             
         logger.info(f"✅ قیمت کی یادداشت اپ ڈیٹ ہوئی۔ کل {len(latest_quotes)} جوڑوں کا ڈیٹا ہے۔")
 
-        # --- مرحلہ 3: قیمت کی بنیاد پر TP/SL چیک کریں ---
-        await check_signals_for_tp_sl(db, active_signals, latest_quotes)
+        # --- مرحلہ 4: اہل سگنلز پر TP/SL چیک کریں ---
+        logger.info(f"🛡️ نگران: {len(signals_to_check_now)} اہل سگنلز پر TP/SL کی جانچ کی جا رہی ہے...")
+        await check_signals_for_tp_sl(db, signals_to_check_now, latest_quotes)
 
     except Exception as e:
         logger.error(f"🛡️ نگران انجن کے کام میں خرابی: {e}", exc_info=True)
@@ -58,7 +78,7 @@ async def check_active_signals_job():
 
 async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quotes: Dict[str, Any]):
     """
-    یہ فنکشن اب صرف حقیقی وقت کی قیمت کی بنیاد پر سگنلز کو چیک کرتا ہے۔
+    یہ فنکشن اب صرف اہل سگنلز کو چیک کرتا ہے۔
     """
     signals_closed_count = 0
     for signal in signals:
@@ -76,7 +96,6 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
 
         outcome, close_price, reason = None, None, None
         
-        # --- براہ راست قیمت کا موازنہ ---
         if signal.signal_type == "buy":
             if current_price >= signal.tp_price: 
                 outcome, close_price, reason = "tp_hit", signal.tp_price, "tp_hit_by_price"
@@ -100,4 +119,6 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
     
     if signals_closed_count > 0:
         logger.info(f"🛡️ نگران انجن: کل {signals_closed_count} سگنل بند کیے گئے۔")
-        
+    else:
+        logger.info("🛡️ نگران: کسی بھی سگنل کا TP/SL ہٹ نہیں ہوا۔")
+    
