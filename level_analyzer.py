@@ -14,8 +14,8 @@ LEVEL_SCORING_WEIGHTS = STRATEGY.get("LEVEL_SCORING_WEIGHTS", {
 })
 
 def _calculate_pivot_points(df: pd.DataFrame) -> Dict[str, float]:
-    last_day = df.iloc[-1]
-    high, low, close = last_day['high'], last_day['low'], last_day['close']
+    last_candle = df.iloc[-1]
+    high, low, close = last_candle['high'], last_candle['low'], last_candle['close']
     pivot = (high + low + close) / 3
     return {
         'p': pivot,
@@ -26,7 +26,7 @@ def _calculate_pivot_points(df: pd.DataFrame) -> Dict[str, float]:
 def _find_swing_levels(df: pd.DataFrame, window: int = 10) -> Dict[str, List[float]]:
     highs = df['high'].rolling(window=window, center=True).max().dropna().unique()
     lows = df['low'].rolling(window=window, center=True).min().dropna().unique()
-    return {"highs": sorted(highs, reverse=True)[:3], "lows": sorted(lows)[:3]}
+    return {"highs": sorted(list(highs), reverse=True)[:3], "lows": sorted(list(lows))[:3]}
 
 def _get_fibonacci_levels(df: pd.DataFrame) -> Dict[str, float]:
     recent_high = df['high'].tail(34).max()
@@ -47,34 +47,36 @@ def _get_psychological_levels(price: float) -> Dict[str, float]:
     base = round(price / unit) * unit
     return {'upper_psy': base + unit, 'lower_psy': base - unit}
 
-def find_market_structure(df: pd.DataFrame) -> Dict[str, str]:
-    # اس فنکشن کو بھی پانڈاز ڈیٹا فریم استعمال کرنا چاہیے
-    window = 10
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
+def find_market_structure(df: pd.DataFrame, window: int = 10) -> Dict[str, str]:
     if len(df) < window * 2:
         return {"trend": "غیر متعین", "zone": "غیر جانبدار", "reason": "ناکافی ڈیٹا۔"}
     
-    df['swing_high'] = df['high'][(df['high'].shift(1) < df['high']) & (df['high'].shift(-1) < df['high'])]
-    df['swing_low'] = df['low'][(df['low'].shift(1) > df['low']) & (df['low'].shift(-1) > df['low'])]
-    recent_swings = df.tail(window * 2)
+    df_copy = df.copy()
+    df_copy['swing_high'] = df_copy['high'][(df_copy['high'].shift(1) < df_copy['high']) & (df_copy['high'].shift(-1) < df_copy['high'])]
+    df_copy['swing_low'] = df_copy['low'][(df_copy['low'].shift(1) > df_copy['low']) & (df_copy['low'].shift(-1) > df_copy['low'])]
+    
+    recent_swings = df_copy.tail(window * 2)
     recent_highs = recent_swings['swing_high'].dropna()
     recent_lows = recent_swings['swing_low'].dropna()
-    
-    if recent_highs.empty or recent_lows.empty:
+
+    if len(recent_highs) < 2 or len(recent_lows) < 2:
         return {"trend": "رینجنگ", "zone": "غیر جانبدار", "reason": "کوئی واضح سوئنگ پوائنٹس نہیں"}
     
     trend = "رینجنگ"
-    if len(recent_highs) >= 2 and len(recent_lows) >= 2:
-        if recent_highs.iloc[-1] > recent_highs.iloc[-2] and recent_lows.iloc[-1] > recent_lows.iloc[-2]:
-            trend = "اوپر کا رجحان"
-        elif recent_highs.iloc[-1] < recent_highs.iloc[-2] and recent_lows.iloc[-1] < recent_lows.iloc[-2]:
-            trend = "نیچے کا رجحان"
-            
+    if recent_highs.iloc[-1] > recent_highs.iloc[-2] and recent_lows.iloc[-1] > recent_lows.iloc[-2]:
+        trend = "اوپر کا رجحان"
+    elif recent_highs.iloc[-1] < recent_highs.iloc[-2] and recent_lows.iloc[-1] < recent_lows.iloc[-2]:
+        trend = "نیچے کا رجحان"
+        
     return {"trend": trend, "zone": "N/A", "reason": f"موجودہ رجحان {trend} ہے۔"}
 
+# ★★★ اپ ڈیٹ شدہ فنکشن دستخط ★★★
 def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
     if len(df) < 34: return None
     
     last_close = df['close'].iloc[-1]
+    
     pivots = list(_calculate_pivot_points(df).values())
     swings = _find_swing_levels(df)
     fib_levels = list(_get_fibonacci_levels(df).values())
@@ -85,32 +87,30 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
     potential_tp_levels = {}
     potential_sl_levels = {}
     
+    proximity = last_close * 0.0005 # قیمت کے قریب ہونے کی حد
+
     for level in all_levels:
         score = 0
-        if any(abs(level - p) < (last_close * 0.0005) for p in pivots): score += LEVEL_SCORING_WEIGHTS.get('pivots', 3)
-        if any(abs(level - s) < (last_close * 0.0005) for s in swings['highs'] + swings['lows']): score += LEVEL_SCORING_WEIGHTS.get('swings', 2)
-        if any(abs(level - f) < (last_close * 0.0005) for f in fib_levels): score += LEVEL_SCORING_WEIGHTS.get('fibonacci', 2)
-        if any(abs(level - p) < (last_close * 0.0005) for p in psy_levels): score += LEVEL_SCORING_WEIGHTS.get('psychological', 1)
+        if any(abs(level - p) < proximity for p in pivots): score += LEVEL_SCORING_WEIGHTS.get('pivots', 3)
+        if any(abs(level - s) < proximity for s in swings['highs'] + swings['lows']): score += LEVEL_SCORING_WEIGHTS.get('swings', 2)
+        if any(abs(level - f) < proximity for f in fib_levels): score += LEVEL_SCORING_WEIGHTS.get('fibonacci', 2)
+        if any(abs(level - p) < proximity for p in psy_levels): score += LEVEL_SCORING_WEIGHTS.get('psychological', 1)
         
         if score >= MIN_CONFLUENCE_SCORE:
             if level > last_close:
                 if signal_type == 'buy': potential_tp_levels[level] = score
                 else: potential_sl_levels[level] = score
-            else:
+            elif level < last_close:
                 if signal_type == 'sell': potential_tp_levels[level] = score
                 else: potential_sl_levels[level] = score
-                
+
     if not potential_tp_levels or not potential_sl_levels:
-        # ★★★ لاگ لیول کو INFO میں تبدیل کر دیا گیا ہے ★★★
-        logger.info(f"[{signal_type}] سگنل کے لیے کافی TP/SL لیولز نہیں ملے۔")
+        logger.warning(f"[{signal_type}] سگنل کے لیے کافی TP/SL لیولز نہیں ملے۔")
         return None
-        
-    final_tp = max(potential_tp_levels, key=potential_tp_levels.get) if potential_tp_levels else None
-    final_sl = min(potential_sl_levels, key=potential_sl_levels.get) if signal_type == 'buy' and potential_sl_levels else max(potential_sl_levels, key=potential_sl_levels.get) if potential_sl_levels else None
-    
-    if not final_tp or not final_sl:
-        return None
-        
+
+    final_tp = max(potential_tp_levels, key=potential_tp_levels.get) if signal_type == 'buy' else min(potential_tp_levels, key=potential_tp_levels.get)
+    final_sl = min(potential_sl_levels, key=potential_sl_levels.get) if signal_type == 'buy' else max(potential_sl_levels, key=potential_sl_levels.get)
+
     try:
         reward = abs(final_tp - last_close)
         risk = abs(last_close - final_sl)
@@ -118,13 +118,12 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
         
         rr_ratio = reward / risk
         if rr_ratio < MIN_RISK_REWARD_RATIO:
-            # ★★★ لاگ لیول کو INFO میں تبدیل کر دیا گیا ہے ★★★
-            logger.info(f"بہترین لیولز کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) بہت کم ہے۔ سگنل مسترد۔")
+            logger.warning(f"بہترین لیولز کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) بہت کم ہے۔ سگنل مسترد۔")
             return None
             
     except ZeroDivisionError:
         return None
         
-    logger.info(f"کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f} (اسکور: {potential_tp_levels.get(final_tp, 0)}), SL={final_sl:.5f} (اسکور: {potential_sl_levels.get(final_sl, 0)})")
+    logger.info(f"کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f}, SL={final_sl:.5f}")
     return final_tp, final_sl
     
