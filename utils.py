@@ -1,3 +1,5 @@
+# filename: utils.py
+
 import os
 import httpx
 import logging
@@ -9,24 +11,16 @@ from config import API_CONFIG
 
 logger = logging.getLogger(__name__)
 
-# --- کنفیگریشن سے متغیرات ---
 PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
-CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"] + 1  # ★ آخری نا مکمل کینڈل سے بچنے کے لیے ایک زائد لیا جاتا ہے ★
+CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"] + 1
 
-# ==============================================================================
-# 🔁 Guardian API سے Live Quotes حاصل کریں
-# ==============================================================================
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
-    """
-    دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین کوٹس حاصل کرتا ہے۔
-    یہ فنکشن 'گارڈین' کیز استعمال کرتا ہے۔
-    """
     if not symbols:
         return {}
 
     api_key = key_manager.get_guardian_key()
     if not api_key:
-        logger.warning("🚫 نگرانی کے لیے کوئی API کلید دستیاب نہیں۔")
+        logger.warning("No guardian API key available.")
         return None
 
     symbol_str = ",".join(symbols)
@@ -35,30 +29,18 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=20)
-
         if response.status_code == 429:
-            logger.warning("⚠️ API limit exceed ہو گیا ہے (429 Too Many Requests)")
+            logger.warning("API limit exceeded (429).")
             return None
-
-        data = response.json()
-        return data
-
+        return response.json()
     except Exception as e:
-        logger.error(f"❌ Guardian quotes fetch کرنے میں خرابی: {e}", exc_info=True)
+        logger.error(f"Error fetching real-time quotes: {e}", exc_info=True)
         return None
 
-# ==============================================================================
-# 📊 TwelveData API سے کینڈل ڈیٹا حاصل کریں (OHLC)
-# ==============================================================================
 def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
-    """
-    کسی جوڑے کے لیے TwelveData API سے OHLC کینڈل ڈیٹا حاصل کرتا ہے۔
-    آخری نامکمل کینڈل کو ہٹا کر صاف ڈیٹا واپس کرتا ہے۔
-    """
-
     api_key = key_manager.get_main_key()
     if not api_key:
-        logger.warning("🚫 TwelveData API کلید دستیاب نہیں۔")
+        logger.warning("No main API key available.")
         return None
 
     url = (
@@ -68,15 +50,14 @@ def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
 
     try:
         response = httpx.get(url, timeout=30)
-
         if response.status_code != 200:
-            logger.warning(f"⚠️ TwelveData API response code: {response.status_code}")
+            logger.warning(f"TwelveData API response code: {response.status_code}")
             return None
 
         data = response.json()
         candles_raw = data.get("values", [])
         if not candles_raw or len(candles_raw) < 3:
-            logger.info(f"⛔ کینڈل ڈیٹا ناکافی ہے: {symbol}")
+            logger.info(f"Insufficient candle data for: {symbol}")
             return None
 
         candles: List[Candle] = [
@@ -90,9 +71,7 @@ def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
             )
             for entry in candles_raw
         ]
-
-        return candles[:-1]  # آخری کینڈل عموماً incomplete ہوتا ہے
-
+        return candles[:-1]
     except Exception as e:
-        logger.error(f"❌ TwelveData کینڈل ڈیٹا fetch کرنے میں خرابی: {e}", exc_info=True)
+        logger.error(f"Error fetching OHLC data: {e}", exc_info=True)
         return None
