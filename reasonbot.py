@@ -3,61 +3,49 @@
 from typing import Dict, Any
 
 def generate_reason(
-    core_signal: str,
-    pattern_data: Dict[str, str],
-    risk_status: str,
-    news_data: Dict[str, Any],
+    symbol: str,
+    tech_score: float,
     confidence: float,
-    market_structure: Dict[str, str],
-    *,
-    indicators: Dict[str, Any]
+    pattern: str,
+    news: Dict[str, Any],
+    structure: Dict[str, str],
+    tp: float,
+    sl: float
 ) -> str:
     """
     تمام تجزیاتی ماڈیولز سے حاصل کردہ ڈیٹا کی بنیاد پر ایک جامع اور انسانی فہم وجہ تیار کرتا ہے۔
-    ★★★ اب یہ MACD اور Supertrend کو بھی شامل کرتا ہے۔ ★★★
+    ★★★ تجزیہ میں شامل ہیں: تکنیکی اسکور، اعتماد، پیٹرن، خبریں، مارکیٹ اسٹرکچر، TP/SL ★★★
     """
-    reason_parts = []
-    signal_action = "خریداری" if core_signal == "buy" else "فروخت"
-    
-    # 1. بنیادی تکنیکی اسکور
-    tech_score = indicators.get('technical_score', 0)
-    reason_parts.append(f"مجموعی تکنیکی اسکور ({tech_score:.1f}) ایک مضبوط {signal_action} کے رجحان کی نشاندہی کرتا ہے۔")
-    
-    # 2. رفتار اور رجحان کا تجزیہ (Momentum and Trend Analysis)
-    macd_line = indicators.get('macd_line', 0)
-    macd_signal_line = indicators.get('macd_signal_line', 0)
-    supertrend_direction = indicators.get('supertrend_direction', 'N/A')
+    parts = []
 
-    if core_signal == "buy":
-        if macd_line > macd_signal_line:
-            reason_parts.append("MACD لائن سگنل لائن سے اوپر ہے، جو تیزی کی رفتار (bullish momentum) کو ظاہر کرتی ہے۔")
-        if supertrend_direction == "Up":
-            reason_parts.append("Supertrend نے اوپر کے رجحان (uptrend) کی تصدیق کی ہے۔")
-    else:  # core_signal == "sell"
-        if macd_line < macd_signal_line:
-            reason_parts.append("MACD لائن سگنل لائن سے نیچے ہے، جو مندی کی رفتار (bearish momentum) کو ظاہر کرتی ہے۔")
-        if supertrend_direction == "Down":
-            reason_parts.append("Supertrend نے نیچے کے رجحان (downtrend) کی تصدیق کی ہے۔")
+    # 🔹 Symbol
+    parts.append(f"یہ سگنل {symbol} پر مبنی ہے۔")
 
-    # 3. مارکیٹ کی ساخت اور پیٹرن
-    trend = market_structure.get("trend", "غیر متعین")
-    if trend in ["اوپر کا رجحان", "نیچے کا رجحان"] and trend.startswith(core_signal.replace("buy", "اوپر").replace("sell", "نیچے")):
-        reason_parts.append(f"مارکیٹ کی مجموعی ساخت ({trend}) بھی اس سگنل کی حمایت کرتی ہے۔")
-    
-    pattern_name = pattern_data.get("pattern", "کوئی خاص پیٹرن نہیں")
-    if pattern_data.get("type") in ["bullish", "bearish"]:
-        reason_parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) بھی دیکھا گیا ہے۔")
+    # 🔹 Technical Score
+    if tech_score >= 50:
+        parts.append(f"تکنیکی اسکور {tech_score:.1f} ہے جو ایک مضبوط سگنل کی طرف اشارہ کرتا ہے۔")
+    else:
+        parts.append(f"تکنیکی اسکور {tech_score:.1f} قدرے کم ہے لیکن دیگر عوامل نے سگنل کو تقویت دی ہے۔")
 
-    # 4. رسک اور خبروں کا انتباہ
-    news_reason = news_data.get('reason', 'N/A')
-    if risk_status == "Critical":
-        reason_parts.append(f"**انتباہ: اعلیٰ اثر والی خبر ('{news_reason[:50]}...') کی وجہ سے رسک انتہائی بلند (Critical) ہے۔**")
-    elif risk_status == "High":
-        reason_parts.append(f"**خبروں یا مارکیٹ کے اتار چڑھاؤ کی وجہ سے رسک بلند (High) ہے۔**")
+    # 🔹 Confidence
+    parts.append(f"ماڈل نے {confidence:.1f}% اعتماد کے ساتھ سگنل جاری کیا ہے۔")
 
-    # 5. اعتماد کا خلاصہ
-    if confidence < 75:  # 70 کی حد کے قریب
-        reason_parts.append(f"کم اعتماد ({confidence:.1f}%) کی وجہ سے احتیاط کی سفارش کی جاتی ہے۔")
+    # 🔹 Pattern Recognition
+    if pattern:
+        parts.append(f"مارکیٹ میں '{pattern}' پیٹرن دیکھا گیا ہے، جو رجحان کی تصدیق کرتا ہے۔")
 
-    return " ".join(reason_parts)
-    
+    # 🔹 News Impact
+    if news and news.get("impact_score", 0) > 0:
+        sentiment = news.get("sentiment", "N/A")
+        parts.append(f"حالیہ خبروں کا اثر '{sentiment}' رہا ہے جس نے سگنل کو مزید مضبوط کیا۔")
+
+    # 🔹 Market Structure
+    if structure:
+        trend = structure.get("trend", "نامعلوم")
+        parts.append(f"مارکیٹ کا موجودہ رجحان '{trend}' پایا گیا ہے۔")
+
+    # 🔹 TP/SL
+    parts.append(f"منافع لینے کا ہدف (TP) {tp} اور نقصان روکنے کی حد (SL) {sl} مقرر کی گئی ہے۔")
+
+    # 🔚 Final Join
+    return " ".join(parts)
