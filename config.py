@@ -1,7 +1,7 @@
 # filename: config.py
 
 import logging
-from typing import List, Optional
+from typing import List
 
 from pydantic import Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,14 +15,11 @@ class AppSettings(BaseSettings):
 
 class APISettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
-
     DATABASE_URL: PostgresDsn
     TWELVE_DATA_API_KEYS: str = Field(default="")
     MARKETAUX_API_KEY: str = Field(default="")
     TELEGRAM_BOT_TOKEN: str = Field(default="")
     TELEGRAM_CHAT_ID: str = Field(default="")
-
-    # ★★★ حل: گمشدہ سیٹنگز کو یہاں شامل کریں ★★★
     PRIMARY_TIMEFRAME: str = "15min"
     CANDLE_COUNT: int = 100
 
@@ -45,15 +42,28 @@ class StrategySettings(BaseSettings):
     MIN_RISK_REWARD_RATIO: float = 1.2
     MIN_CONFLUENCE_SCORE: int = 4
 
+# ★★★ حل: تکنیکی تجزیے کے لیے گمشدہ سیٹنگز کلاس شامل کریں ★★★
+class TechnicalAnalysisSettings(BaseSettings):
+    """تکنیکی انڈیکیٹرز کے لیے پیرامیٹرز۔"""
+    EMA_SHORT_PERIOD: int = 10
+    EMA_LONG_PERIOD: int = 30
+    RSI_PERIOD: int = 14
+    STOCH_K: int = 14
+    STOCH_D: int = 3
+    SUPERTREND_ATR: int = 10
+    SUPERTREND_FACTOR: float = 3.0
+
+# --- تمام سیٹنگز کے نمونے بنانا ---
 app_settings = AppSettings()
 api_settings = APISettings()
 trading_settings = TradingSettings()
 strategy_settings = StrategySettings()
+tech_settings = TechnicalAnalysisSettings() # نئی کلاس کا نمونہ
 
+# ... (بقیہ لاگنگ چیکس میں کوئی تبدیلی نہیں) ...
 if not api_settings.twelve_data_keys_list:
     logger.critical("کوئی Twelve Data API کلید فراہم نہیں کی گئی۔ شکاری اور نگران انجن کام نہیں کریں گے۔")
 if not api_settings.MARKETAUX_API_KEY:
     logger.warning("MARKETAUX_API_KEY فراہم نہیں کیا گیا۔ خبروں کا ماڈیول کام نہیں کرے گا۔")
 if not api_settings.TELEGRAM_BOT_TOKEN or not api_settings.TELEGRAM_CHAT_ID:
     logger.warning("ٹیلیگرام کی سیٹنگز فراہم نہیں کی گئیں۔ الرٹس نہیں بھیجے جائیں گے۔")
-    
