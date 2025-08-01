@@ -1,155 +1,228 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trade History - ScalpMaster AI</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <style>
-        :root {
-            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
-            --text-primary: #c9d1d9; --text-secondary: #8b949e;
-            --accent-gold: #ffab00;
-            --status-tp_hit: #238636; --status-sl_hit: #da3633; --status-manual_close: #a37100;
-        }
-        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); }
-        body { margin: 0; padding: 0; }
-        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
-        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
-        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
-        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
-        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
-        .page-header { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin-bottom: 1.5rem; }
-        .table-container { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        .table-wrapper { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-        th { background-color: var(--secondary); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; font-size: 0.85rem; }
-        tbody tr:last-child td { border-bottom: none; }
-        tbody tr:hover { background-color: var(--secondary); }
-        .status-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; text-transform: uppercase; }
-        .status-tp_hit { background-color: var(--status-tp_hit); }
-        .status-sl_hit { background-color: var(--status-sl_hit); }
-        .status-manual_close { background-color: var(--status-manual_close); }
-        .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
-        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
-        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
-        .mobile-nav a.active { color: var(--accent-gold); }
-        .mobile-nav i { font-size: 1.2rem; }
-        @media (max-width: 768px) {
-            .navbar-desktop { display: none; }
-            .mobile-nav { display: flex; }
-            body { padding-bottom: 70px; }
-            .main-container { padding: 1rem; }
-            th, td { padding: 0.8rem 1rem; }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade History - ScalpMaster AI</title>
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- 🌑 Custom Styling -->
+  <style>
+    :root {
+      --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
+      --text-primary: #c9d1d9; --text-secondary: #8b949e;
+      --accent-gold: #ffab00;
+      --status-tp_hit: #238636; --status-sl_hit: #da3633; --status-manual_close: #a37100;
+    }
+
+    html {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text-primary);
+    }
+
+    body { margin: 0; padding: 0; }
+
+    /* 🔝 Header */
+    .header {
+      background-color: var(--primary);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .logo {
+      font-family: 'Teko', sans-serif;
+      font-size: 1.8rem;
+      color: var(--accent-gold);
+      letter-spacing: 1px;
+    }
+
+    .navbar-desktop a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      margin-left: 1.5rem;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+
+    .navbar-desktop a:hover,
+    .navbar-desktop a.active {
+      color: var(--text-primary);
+    }
+
+    .main-container {
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .page-header {
+      font-family: 'Teko', sans-serif;
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* 📊 Trade History Table */
+    .table-container {
+      background-color: var(--primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 1rem 1.5rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    th {
+      background-color: var(--secondary);
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-size: 0.85rem;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background-color: var(--secondary);
+    }
+
+    .status-tag {
+      padding: 0.3rem 0.8rem;
+      border-radius: 15px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      text-transform: uppercase;
+    }
+
+    .status-tp_hit { background-color: var(--status-tp_hit); }
+    .status-sl_hit { background-color: var(--status-sl_hit); }
+    .status-manual_close { background-color: var(--status-manual_close); }
+
+    /* 🚫 No Data Message */
+    .no-data-message {
+      background-color: var(--primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3rem;
+      text-align: center;
+      color: var(--text-secondary);
+    }
+
+    /* 📱 Mobile Bottom Nav */
+    .mobile-nav {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background-color: var(--primary);
+      border-top: 1px solid var(--border);
+      justify-content: space-around;
+      padding: 0.5rem 0;
+      z-index: 1000;
+    }
+
+    .mobile-nav a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+    }
+
+    .mobile-nav a.active {
+      color: var(--accent-gold);
+    }
+
+    .mobile-nav i {
+      font-size: 1.2rem;
+    }
+
+    @media (max-width: 768px) {
+      .navbar-desktop { display: none; }
+      .mobile-nav { display: flex; }
+    }
+  </style>
 </head>
+
 <body>
-    <header class="header">
-        <div class="logo">SCALPMASTER AI</div>
-        <nav class="navbar-desktop">
-            <a href="index.html">Dashboard</a>
-            <a href="history.html" class="active">History</a>
-            <a href="news.html">News</a>
-        </nav>
-    </header>
-
-    <main class="main-container">
-        <h2 class="page-header">Completed Trades History</h2>
-        <div class="table-container" id="history-container">
-            <div class="table-wrapper">
-                <table id="history-table" style="display: none;">
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Signal</th>
-                            <th>Entry Price</th>
-                            <th>Close Price</th>
-                            <th>Outcome</th>
-                            <th>Reason for Closure</th>
-                            <th>Close Time (UTC)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body"></tbody>
-                </table>
-            </div>
-            <div class="no-data-message" id="no-history-message">
-                <h3><i class="fas fa-hourglass-half"></i> Loading History...</h3>
-                <p>Please wait while we fetch the completed trades.</p>
-            </div>
-        </div>
-    </main>
-
-    <nav class="mobile-nav">
-        <a href="index.html"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
-        <a href="history.html" class="active"><i class="fas fa-history"></i><span>History</span></a>
-        <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
+  <!-- 🔝 Header -->
+  <header class="header">
+    <div class="logo">ScalpMaster AI</div>
+    <nav class="navbar-desktop">
+      <a href="index.html">Dashboard</a>
+      <a href="news.html">News</a>
+      <a href="history.html" class="active">History</a>
     </nav>
+  </header>
 
-    <script>
-        const historyBody = document.getElementById('history-body');
-        const noHistoryMessage = document.getElementById('no-history-message');
-        const historyTable = document.getElementById('history-table');
+  <!-- 📋 Trade History Content -->
+  <main class="main-container">
+    <h2 class="page-header">Trade History</h2>
 
-        async function fetchTradeHistory() {
-            try {
-                const response = await fetch('/api/history');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const trades = await response.json();
-                
-                historyBody.innerHTML = '';
+    <div class="table-container">
+      <div class="table-wrapper">
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Pair</th>
+              <th>Type</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>P/L</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- 🧠 JS se data insert hoga -->
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-                if (Array.isArray(trades) && trades.length > 0) {
-                    noHistoryMessage.style.display = 'none';
-                    historyTable.style.display = 'table';
-                    trades.forEach(trade => {
-                        const row = document.createElement('tr');
-                        
-                        // outcome اور reason_for_closure کے لیے کلاسز اور متن کو محفوظ طریقے سے حاصل کریں
-                        const outcome = trade.outcome || 'unknown';
-                        const outcomeClass = `status-${outcome.toLowerCase()}`;
-                        const outcomeText = (trade.outcome || 'N/A').replace(/_/g, ' ').toUpperCase();
-                        
-                        const reason = trade.reason_for_closure || 'N/A';
-                        const reasonText = reason.replace(/_/g, ' ');
+    <div class="no-data-message" id="no-history-message" style="display: none;">
+      No trade history available.
+    </div>
+  </main>
 
-                        const closePrice = typeof trade.close_price === 'number' ? trade.close_price.toFixed(5) : 'N/A';
-                        const entryPrice = typeof trade.entry_price === 'number' ? trade.entry_price.toFixed(5) : 'N/A';
-                        
-                        // تاریخ کو UTC میں دکھانے کے لیے 'Z' شامل کریں
-                        const closeTime = trade.closed_at ? new Date(trade.closed_at + 'Z').toLocaleString('en-GB', { timeZone: 'UTC' }) : 'N/A';
+  <!-- 📱 Mobile Nav -->
+  <nav class="mobile-nav">
+    <a href="index.html"><i class="fas fa-home"></i><span>Dashboard</span></a>
+    <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
+    <a href="history.html" class="active"><i class="fas fa-history"></i><span>History</span></a>
+  </nav>
 
-                        row.innerHTML = `
-                            <td><strong>${trade.symbol}</strong><br><small>${trade.timeframe}</small></td>
-                            <td>${trade.signal_type.toUpperCase()}</td>
-                            <td>${entryPrice}</td>
-                            <td>${closePrice}</td>
-                            <td><span class="status-tag ${outcomeClass}">${outcomeText}</span></td>
-                            <td style="text-transform: capitalize;">${reasonText}</td>
-                            <td>${closeTime}</td>
-                        `;
-                        historyBody.appendChild(row);
-                    });
-                } else {
-                    noHistoryMessage.innerHTML = '<h3><i class="fas fa-search"></i> No Data Found</h3><p>There are no completed trades in the history yet.</p>';
-                    noHistoryMessage.style.display = 'block';
-                    historyTable.style.display = 'none';
-                }
-            } catch (error) {
-                console.error('Error fetching trade history:', error);
-                noHistoryMessage.innerHTML = '<h3><i class="fas fa-exclamation-triangle"></i> Error</h3><p>Failed to load trade history. Please try again later.</p>';
-                noHistoryMessage.style.display = 'block';
-                historyTable.style.display = 'none';
-            }
-        }
-        
-        fetchTradeHistory();
-        // ہر 5 منٹ بعد ہسٹری کو اپ ڈیٹ کریں
-        setInterval(fetchTradeHistory, 5 * 60 * 1000);
-    </script>
+  <!-- ⚡ Script for table injection -->
+  <script src="/frontend/app.js"></script>
 </body>
 </html>
