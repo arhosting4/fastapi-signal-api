@@ -10,11 +10,11 @@ services:
     env: docker
     # گٹ ہب برانچ جس سے تعینات کرنا ہے
     branch: main
-    # صحت کی جانچ کا راستہ تاکہ Render کو معلوم ہو کہ سروس چل رہی ہے
+    # صحت کی جانچ کا راستہ
     healthCheckPath: /health
     # Dockerfile کا راستہ
     dockerfilePath: ./Dockerfile
-    # سروس کا پلان (ٹیسٹنگ کے لیے مفت)
+    # سروس کا پلان
     plan: free 
     
     # ماحولیاتی متغیرات
@@ -24,7 +24,13 @@ services:
         fromDatabase:
           name: scalpmaster-db
           property: connectionString
+      
+      # ★★★ حل: Render کو کنفیگریشن دوبارہ لوڈ کرنے پر مجبور کرنے کے لیے یہ لائن شامل کریں ★★★
+      - key: FORCE_RELOAD
+        value: "true" # یہ متغیر ہر ڈیپلائیمنٹ پر کیشے کو نظر انداز کرنے میں مدد کرے گا
+
       # یہ متغیرات Render کے ڈیش بورڈ میں محفوظ طریقے سے سیٹ کیے جائیں گے
+      # sync: false کا مطلب ہے کہ ان کی قدریں اس فائل میں نہیں لکھی جائیں گی
       - key: TWELVE_DATA_API_KEYS
         sync: false
       - key: MARKETAUX_API_KEY
@@ -42,6 +48,6 @@ databases:
   - name: scalpmaster-db
     databaseName: scalpmaster_db
     user: scalpmaster_user
-    # ڈیٹا بیس کا پلان (ٹیسٹنگ کے لیے مفت)
+    # ڈیٹا بیس کا پلان
     plan: free
     
