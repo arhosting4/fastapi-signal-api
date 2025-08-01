@@ -1,8 +1,8 @@
 # filename: database_crud.py
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func, cast, Date
-from datetime import datetime, date
+from sqlalchemy import desc, func
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, NamedTuple
 import logging
 
@@ -47,12 +47,14 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
             existing_signal.confidence = signal_data.get('confidence', existing_signal.confidence)
             existing_signal.reason = signal_data.get('reason', existing_signal.reason)
             existing_signal.component_scores = signal_data.get('component_scores', existing_signal.component_scores)
+            # ★★★ اہم تبدیلی: اپ ڈیٹ ہونے پر سگنل کو دوبارہ نیا بنا دیں ★★★
+            existing_signal.is_new = True
             db.commit()
             db.refresh(existing_signal)
             return SignalUpdateResult(signal=existing_signal, is_new=False)
         else:
             logger.info(f"نیا سگنل {symbol} بنایا جا رہا ہے۔")
-            signal_id = f"{symbol}_{signal_data.get('timeframe', '15min')}_{int(datetime.utcnow().timestamp())}"
+            signal_id = f"{symbol.replace('/', '')}_{signal_data.get('timeframe', '15min')}_{int(datetime.utcnow().timestamp())}"
             
             new_signal = ActiveSignal(
                 signal_id=signal_id,
@@ -64,7 +66,8 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
                 sl_price=signal_data.get('sl'),
                 confidence=signal_data.get('confidence'),
                 reason=signal_data.get('reason'),
-                component_scores=signal_data.get('component_scores')
+                component_scores=signal_data.get('component_scores'),
+                is_new=True # نیا سگنل ہمیشہ نیا ہوتا ہے
             )
             db.add(new_signal)
             db.commit()
@@ -79,7 +82,6 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
 def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str, close_price: float, reason_for_closure: str) -> Optional[CompletedTrade]:
     """
     ڈیٹا بیس سیشن میں مکمل شدہ ٹریڈ کا تفصیلی ریکارڈ شامل کرتا ہے، لیکن commit نہیں کرتا۔
-    commit کرنے کی ذمہ داری کال کرنے والے فنکشن کی ہے۔
     """
     existing_trade = db.query(CompletedTrade).filter(CompletedTrade.signal_id == signal.signal_id).first()
     if existing_trade:
@@ -107,16 +109,15 @@ def add_completed_trade(db: Session, signal: ActiveSignal, outcome: str, close_p
 def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_price: float, reason_for_closure: str) -> bool:
     """
     ایک فعال سگنل کو ڈیلیٹ کرتا ہے اور اسے مکمل شدہ ٹریڈز میں شامل کرتا ہے۔
-    یہ پورا عمل ایک واحد، اٹامک ٹرانزیکشن میں ہوتا ہے۔
     """
     try:
         signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
         
         if not signal_to_delete:
-            logger.warning(f"بند کرنے کے لیے فعال سگنل {signal_id} نہیں ملا۔ ہو سکتا ہے یہ پہلے ہی بند ہو چکا ہو۔")
+            logger.warning(f"بند کرنے کے لیے فعال سگنل {signal_id} نہیں ملا۔")
             return False
 
-        logger.info(f"فعال سگنل {signal_id} کو بند اور آرکائیو کیا جا رہا ہے۔ وجہ: {reason_for_closure}")
+        logger.info(f"فعال سگنل {signal_id} کو بند اور آرکائیو کیا جا رہا ہے۔")
         
         add_completed_trade(
             db=db,
@@ -129,7 +130,7 @@ def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_pr
         db.delete(signal_to_delete)
         db.commit()
         
-        logger.info(f"سگنل {signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔ ٹرانزیکشن مکمل۔")
+        logger.info(f"سگنل {signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔")
         return True
 
     except Exception as e:
@@ -142,82 +143,21 @@ def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
     trades = db.query(CompletedTrade).order_by(desc(CompletedTrade.closed_at)).limit(limit).all()
     return [trade.as_dict() for trade in trades]
 
-# ★★★ نیا فنکشن شامل کیا گیا ★★★
-def get_daily_stats(db: Session) -> Dict[str, Any]:
-    """
-    آج کے دن (UTC) کے لیے تجارتی اعداد و شمار کا حساب لگاتا ہے۔
-    """
-    try:
-        today_utc = datetime.utcnow().date()
-
-        live_signals_count = db.query(func.count(ActiveSignal.id)).scalar() or 0
-
-        tp_hits_today = db.query(func.count(CompletedTrade.id)).filter(
-            cast(CompletedTrade.closed_at, Date) == today_utc,
-            CompletedTrade.outcome == 'tp_hit'
-        ).scalar() or 0
-
-        sl_hits_today = db.query(func.count(CompletedTrade.id)).filter(
-            cast(CompletedTrade.closed_at, Date) == today_utc,
-            CompletedTrade.outcome == 'sl_hit'
-        ).scalar() or 0
-        
-        total_closed_today = tp_hits_today + sl_hits_today
-        
-        win_rate_today = (tp_hits_today / total_closed_today * 100) if total_closed_today > 0 else 0
-
-        return {
-            "live_signals": live_signals_count,
-            "tp_hits_today": tp_hits_today,
-            "sl_hits_today": sl_hits_today,
-            "win_rate_today": round(win_rate_today, 2)
-        }
-    except Exception as e:
-        logger.error(f"روزانہ کے اعداد و شمار حاصل کرنے میں خرابی: {e}", exc_info=True)
-        return {
-            "live_signals": 0,
-            "tp_hits_today": 0,
-            "sl_hits_today": 0,
-            "win_rate_today": 0
-        }
-
-def add_feedback_entry(db: Session, symbol: str, timeframe: str, feedback: str) -> Optional[FeedbackEntry]:
-    """دی گئی علامت اور ٹائم فریم کے لیے DB میں فیڈ بیک اندراج شامل کرتا ہے۔"""
-    try:
-        entry = FeedbackEntry(
-            symbol=symbol,
-            timeframe=timeframe,
-            feedback=feedback,
-            created_at=datetime.utcnow()
-        )
-        db.add(entry)
-        db.commit()
-        db.refresh(entry)
-        return entry
-    except Exception as e:
-        logger.error(f"فیڈ بیک اندراج شامل کرنے میں خرابی: {e}", exc_info=True)
-        db.rollback()
-        return None
-
-def get_feedback_stats_from_db(db: Session, symbol: str) -> Dict[str, Any]:
-    """کسی علامت کے لیے فیڈ بیک کے اعداد و شمار کا حساب لگاتا ہے۔"""
-    correct_count = db.query(func.count(FeedbackEntry.id)).filter(
-        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'correct'
+def get_daily_stats(db: Session) -> Dict[str, int]:
+    """آج کے TP اور SL ہٹس کی تعداد واپس کرتا ہے۔"""
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    tp_hits = db.query(func.count(CompletedTrade.id)).filter(
+        CompletedTrade.outcome == 'tp_hit',
+        CompletedTrade.closed_at >= today_start
     ).scalar() or 0
-
-    incorrect_count = db.query(func.count(FeedbackEntry.id)).filter(
-        FeedbackEntry.symbol == symbol, FeedbackEntry.feedback == 'incorrect'
+    
+    sl_hits = db.query(func.count(CompletedTrade.id)).filter(
+        CompletedTrade.outcome == 'sl_hit',
+        CompletedTrade.closed_at >= today_start
     ).scalar() or 0
-
-    total = correct_count + incorrect_count
-    accuracy = (correct_count / total) * 100 if total > 0 else 50.0
-
-    return {
-        "total": total,
-        "accuracy": round(accuracy, 2),
-        "correct": correct_count,
-        "incorrect": incorrect_count
-    }
+    
+    return {"tp_hits_today": tp_hits, "sl_hits_today": sl_hits}
 
 def update_news_cache_in_db(db: Session, news_data: Dict[str, Any]) -> None:
     """موجودہ کیش شدہ خبروں کو نئے مواد سے بدل دیتا ہے۔"""
@@ -238,3 +178,4 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
+        
