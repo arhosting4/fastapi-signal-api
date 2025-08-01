@@ -1,51 +1,89 @@
 # filename: reasonbot.py
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 def generate_reason(
-    symbol: str,
-    tech_score: float,
+    core_signal: str,
+    pattern_data: Dict[str, str],
+    risk_status: str,
+    news_data: Dict[str, Any],
     confidence: float,
-    pattern: str,
-    news: Dict[str, Any],
-    structure: Dict[str, str],
-    tp: float,
-    sl: float
+    market_structure: Dict[str, str],
+    *,
+    indicators: Dict[str, Any]
 ) -> str:
     """
     تمام تجزیاتی ماڈیولز سے حاصل کردہ ڈیٹا کی بنیاد پر ایک جامع اور انسانی فہم وجہ تیار کرتا ہے۔
-    ★★★ تجزیہ میں شامل ہیں: تکنیکی اسکور، اعتماد، پیٹرن، خبریں، مارکیٹ اسٹرکچر، TP/SL ★★★
     """
-    parts = []
+    reason_parts: List[str] = []
+    signal_action = "خریداری" if core_signal == "buy" else "فروخت"
+    
+    # 1. بنیادی تکنیکی تجزیہ
+    _add_technical_reason(reason_parts, signal_action, indicators)
+    
+    # 2. مارکیٹ کی ساخت اور پیٹرن کا تجزیہ
+    _add_structure_and_pattern_reason(reason_parts, core_signal, market_structure, pattern_data)
 
-    # 🔹 Symbol
-    parts.append(f"یہ سگنل {symbol} پر مبنی ہے۔")
+    # 3. رسک اور خبروں کا انتباہ
+    _add_risk_and_news_warning(reason_parts, risk_status, news_data)
 
-    # 🔹 Technical Score
-    if tech_score >= 50:
-        parts.append(f"تکنیکی اسکور {tech_score:.1f} ہے جو ایک مضبوط سگنل کی طرف اشارہ کرتا ہے۔")
-    else:
-        parts.append(f"تکنیکی اسکور {tech_score:.1f} قدرے کم ہے لیکن دیگر عوامل نے سگنل کو تقویت دی ہے۔")
+    # 4. اعتماد کا خلاصہ
+    if confidence < 75:
+        reason_parts.append(f"کم اعتماد ({confidence:.1f}%) کی وجہ سے احتیاط کی سفارش کی جاتی ہے۔")
 
-    # 🔹 Confidence
-    parts.append(f"ماڈل نے {confidence:.1f}% اعتماد کے ساتھ سگنل جاری کیا ہے۔")
+    return " ".join(reason_parts)
 
-    # 🔹 Pattern Recognition
-    if pattern:
-        parts.append(f"مارکیٹ میں '{pattern}' پیٹرن دیکھا گیا ہے، جو رجحان کی تصدیق کرتا ہے۔")
+def _add_technical_reason(parts: List[str], action: str, indicators: Dict[str, Any]):
+    """تکنیکی انڈیکیٹرز کی بنیاد پر وجہ کا حصہ تیار کرتا ہے۔"""
+    tech_score = indicators.get('technical_score', 0)
+    parts.append(f"مجموعی تکنیکی اسکور ({tech_score:.1f}) ایک مضبوط {action} کے رجحان کی نشاندہی کرتا ہے۔")
+    
+    # رفتار اور رجحان کا تجزیہ
+    macd_line = indicators.get('macd_line', 0)
+    macd_signal = indicators.get('macd_signal_line', 0)
+    supertrend_dir = indicators.get('supertrend_direction', 'N/A')
 
-    # 🔹 News Impact
-    if news and news.get("impact_score", 0) > 0:
-        sentiment = news.get("sentiment", "N/A")
-        parts.append(f"حالیہ خبروں کا اثر '{sentiment}' رہا ہے جس نے سگنل کو مزید مضبوط کیا۔")
+    if action == "خریداری":
+        if macd_line > macd_signal:
+            parts.append("MACD تیزی کی رفتار (bullish momentum) دکھا رہا ہے۔")
+        if supertrend_dir == "Up":
+            parts.append("Supertrend نے اوپر کے رجحان (uptrend) کی تصدیق کی ہے۔")
+    else:  # فروخت
+        if macd_line < macd_signal:
+            parts.append("MACD مندی کی رفتار (bearish momentum) دکھا رہا ہے۔")
+        if supertrend_dir == "Down":
+            parts.append("Supertrend نے نیچے کے رجحان (downtrend) کی تصدیق کی ہے۔")
 
-    # 🔹 Market Structure
-    if structure:
-        trend = structure.get("trend", "نامعلوم")
-        parts.append(f"مارکیٹ کا موجودہ رجحان '{trend}' پایا گیا ہے۔")
+def _add_structure_and_pattern_reason(
+    parts: List[str], 
+    signal: str, 
+    structure: Dict[str, str], 
+    pattern: Dict[str, str]
+):
+    """مارکیٹ کی ساخت اور کینڈل اسٹک پیٹرن کی بنیاد پر وجہ کا حصہ تیار کرتا ہے۔"""
+    trend = structure.get("trend", "غیر متعین")
+    # اگر رجحان سگنل کی سمت میں ہے
+    if (signal == "buy" and trend == "اوپر کا رجحان") or \
+       (signal == "sell" and trend == "نیچے کا رجحان"):
+        parts.append(f"مارکیٹ کی مجموعی ساخت ({trend}) بھی اس سگنل کی حمایت کرتی ہے۔")
+    
+    pattern_name = pattern.get("pattern", "کوئی خاص پیٹرن نہیں")
+    pattern_type = pattern.get("type", "neutral")
+    if pattern_type != "neutral":
+        parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) بھی دیکھا گیا ہے۔")
 
-    # 🔹 TP/SL
-    parts.append(f"منافع لینے کا ہدف (TP) {tp} اور نقصان روکنے کی حد (SL) {sl} مقرر کی گئی ہے۔")
-
-    # 🔚 Final Join
-    return " ".join(parts)
+def _add_risk_and_news_warning(
+    parts: List[str], 
+    risk: str, 
+    news: Dict[str, Any]
+):
+    """رسک اور خبروں کی بنیاد پر انتباہی پیغامات شامل کرتا ہے۔"""
+    news_reason = news.get('reason', '')
+    if risk == "Critical":
+        warning = f"**انتباہ: رسک انتہائی بلند (Critical) ہے۔**"
+        if "خبر" in news_reason:
+            warning += f" وجہ: اعلیٰ اثر والی خبر ('{news_reason.split(': ')[-1][:50]}...')"
+        parts.append(warning)
+    elif risk == "High":
+        parts.append("**نوٹ: مارکیٹ کے اتار چڑھاؤ یا خبروں کی وجہ سے رسک بلند (High) ہے۔**")
+    
