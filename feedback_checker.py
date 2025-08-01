@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import json
 from datetime import datetime
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
@@ -13,27 +12,19 @@ from models import SessionLocal, ActiveSignal
 from utils import get_real_time_quotes, fetch_twelve_data_ohlc
 from websocket_manager import manager
 from roster_manager import get_split_monitoring_roster
+from trainerai import learn_from_outcome # ★★★ نیا امپورٹ ★★★
 
 logger = logging.getLogger(__name__)
 
 async def check_active_signals_job():
-    """
-    یہ فنکشن اب دو اہم کام کرتا ہے:
-    1. روسٹر مینیجر سے نگرانی کی متحرک فہرست حاصل کرتا ہے۔
-    2. ان جوڑوں کی قیمتیں لا کر 'مرکزی یادداشت' کو اپ ڈیٹ کرتا ہے اور فعال سگنلز کو چیک کرتا ہے۔
-    ★★★ اب یہ "گریس پیریڈ" پروٹوکول کا بھی استعمال کرتا ہے۔ ★★★
-    """
     logger.info("🛡️ نگران انجن: نگرانی کا نیا، ذہین دور شروع...")
-    
     db = SessionLocal()
     try:
         active_signals_in_db = crud.get_all_active_signals_from_db(db)
-        
         if not active_signals_in_db:
             logger.info("🛡️ نگران انجن: کوئی فعال سگنل موجود نہیں۔")
             return
 
-        # --- گریس پیریڈ کی منطق ---
         signals_to_check_now = []
         made_grace_period_change = False
         for signal in active_signals_in_db:
@@ -44,19 +35,14 @@ async def check_active_signals_job():
             else:
                 signals_to_check_now.append(signal)
         
-        # ★★★ یہاں تبدیلی کی گئی ہے ★★★
-        # اگر کوئی بھی فلیگ تبدیل ہوا ہے، تو اسے ڈیٹا بیس میں محفوظ کریں
         if made_grace_period_change:
             db.commit()
         
         if not signals_to_check_now:
             logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں ہو سکتے ہیں)۔")
-            # یہاں سے stats_update بھیجنے کی ضرورت نہیں کیونکہ یہ کام اب فرنٹ اینڈ خود کر رہا ہے
             return
         
-        # --- ڈیٹا حاصل کرنے کی منطق ---
         symbols_to_check = {s.symbol for s in signals_to_check_now}
-        
         active_symbols_for_ohlc, inactive_symbols_for_quote = get_split_monitoring_roster(db, symbols_to_check)
         
         latest_quotes_memory: Dict[str, Dict[str, Any]] = {}
@@ -81,7 +67,6 @@ async def check_active_signals_job():
             return
 
         logger.info(f"✅ مرکزی یادداشت اپ ڈیٹ ہوئی۔ کل یادداشت میں {len(latest_quotes_memory)} جوڑوں کا ڈیٹا ہے۔")
-        
         logger.info(f"🛡️ نگران انجن: {len(signals_to_check_now)} اہل فعال سگنلز کو چیک کیا جا رہا ہے...")
         await check_signals_for_tp_sl(db, signals_to_check_now, latest_quotes_memory)
 
@@ -94,7 +79,6 @@ async def check_active_signals_job():
 
 
 async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quotes_memory: Dict[str, Any]):
-    """یہ فنکشن تمام فعال سگنلز کو مرکزی یادداشت سے چیک کرتا ہے۔"""
     signals_closed_count = 0
     for signal in signals:
         if signal.symbol not in quotes_memory:
@@ -129,6 +113,10 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
 
         if outcome:
             logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome.upper()} کے طور پر نشان زد کیا گیا ({reason}) ★★★")
+            
+            # ★★★ AI کو سیکھنے کا حکم دیں ★★★
+            await learn_from_outcome(db, signal, outcome)
+            
             success = crud.close_and_archive_signal(db, signal.signal_id, outcome, close_price, reason)
             if success:
                 signals_closed_count += 1
@@ -136,4 +124,4 @@ async def check_signals_for_tp_sl(db: Session, signals: List[ActiveSignal], quot
     
     if signals_closed_count > 0:
         logger.info(f"🛡️ نگران انجن: کل {signals_closed_count} سگنل بند کیے گئے۔")
-            
+
