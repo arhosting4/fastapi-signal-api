@@ -1,217 +1,141 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Market News - ScalpMaster AI</title>
-
-  <!-- 🔤 Fonts and Icons -->
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
-
-  <!-- 🎨 Styling -->
-  <style>
-    :root {
-      --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
-      --text-primary: #c9d1d9; --text-secondary: #8b949e; --accent-gold: #ffab00;
-    }
-
-    html {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--bg);
-      color: var(--text-primary);
-    }
-
-    body { margin: 0; padding: 0; }
-
-    /* 🔝 Header */
-    .header {
-      background-color: var(--primary);
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 1.5rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-
-    .logo {
-      font-family: 'Teko', sans-serif;
-      font-size: 1.8rem;
-      color: var(--accent-gold);
-      letter-spacing: 1px;
-    }
-
-    .navbar-desktop a {
-      color: var(--text-secondary);
-      text-decoration: none;
-      margin-left: 1.5rem;
-      font-weight: 500;
-    }
-
-    .navbar-desktop a:hover,
-    .navbar-desktop a.active {
-      color: var(--text-primary);
-    }
-
-    .main-container {
-      padding: 1.5rem;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
-    .page-header {
-      font-family: 'Teko', sans-serif;
-      font-size: 2rem;
-      color: var(--text-primary);
-      margin-bottom: 1.5rem;
-    }
-
-    /* 🗞️ News Cards Grid */
-    .news-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .news-card {
-      background-color: var(--primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      display: flex;
-      flex-direction: column;
-      transition: transform 0.3s, box-shadow 0.3s;
-      overflow: hidden;
-    }
-
-    .news-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-    }
-
-    .news-content {
-      padding: 1.5rem;
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .news-title {
-      font-size: 1.2rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-      color: var(--text-primary);
-      line-height: 1.4;
-    }
-
-    .news-meta {
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-      margin-bottom: 1rem;
-      font-weight: 500;
-    }
-
-    .news-snippet {
-      color: var(--text-secondary);
-      line-height: 1.6;
-      flex-grow: 1;
-      margin-bottom: 1rem;
-    }
-
-    .read-more {
-      color: var(--accent-gold);
-      text-decoration: none;
-      font-weight: 600;
-      align-self: flex-start;
-      transition: color 0.3s;
-      margin-top: auto;
-    }
-
-    .read-more:hover {
-      color: var(--text-primary);
-    }
-
-    .no-data-message {
-      background-color: var(--primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 3rem;
-      text-align: center;
-      color: var(--text-secondary);
-    }
-
-    /* 📱 Mobile Navigation */
-    .mobile-nav {
-      display: none;
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      background-color: var(--primary);
-      border-top: 1px solid var(--border);
-      justify-content: space-around;
-      padding: 0.5rem 0;
-      z-index: 1000;
-    }
-
-    .mobile-nav a {
-      color: var(--text-secondary);
-      text-decoration: none;
-      padding: 0.5rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.75rem;
-    }
-
-    .mobile-nav a.active {
-      color: var(--accent-gold);
-    }
-
-    .mobile-nav i {
-      font-size: 1.2rem;
-    }
-
-    @media (max-width: 768px) {
-      .navbar-desktop { display: none; }
-      .mobile-nav { display: flex; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market News - ScalpMaster AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
+            --text-primary: #c9d1d9; --text-secondary: #8b949e; --accent-gold: #ffab00;
+        }
+        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); }
+        body { margin: 0; padding: 0; }
+        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
+        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
+        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
+        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
+        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        .page-header { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin-bottom: 1.5rem; }
+        .news-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+        .news-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; transition: transform 0.3s, box-shadow 0.3s; overflow: hidden; }
+        .news-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        .news-content { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
+        .news-title { font-size: 1.2rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--text-primary); line-height: 1.4; }
+        .news-meta { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; font-weight: 500; }
+        .news-snippet { color: var(--text-secondary); line-height: 1.6; flex-grow: 1; margin-bottom: 1rem; }
+        .read-more { color: var(--accent-gold); text-decoration: none; font-weight: 600; align-self: flex-start; transition: color 0.3s; margin-top: auto; }
+        .read-more:hover { color: var(--text-primary); }
+        .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
+        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
+        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+        @media (max-width: 768px) {
+            .navbar-desktop { display: none; }
+            .mobile-nav { display: flex; }
+            body { padding-bottom: 70px; }
+            .main-container { padding: 1rem; }
+        }
+    </style>
 </head>
-
 <body>
-  <!-- 🔝 Header -->
-  <header class="header">
-    <div class="logo">ScalpMaster AI</div>
-    <nav class="navbar-desktop">
-      <a href="index.html">Dashboard</a>
-      <a href="news.html" class="active">News</a>
-      <a href="history.html">History</a>
+    <header class="header">
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html">Dashboard</a>
+            <a href="history.html">History</a>
+            <a href="news.html" class="active">News</a>
+        </nav>
+    </header>
+
+    <main class="main-container">
+        <h2 class="page-header">Latest Market News</h2>
+        <div class="news-grid" id="news-grid"></div>
+        <div class="no-data-message" id="no-news-message" style="display: block;">
+            <h3><i class="fas fa-sync-alt fa-spin"></i> Loading News...</h3>
+            <p>Please wait while we fetch the latest market news.</p>
+        </div>
+    </main>
+
+    <nav class="mobile-nav">
+        <a href="index.html"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+        <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
+        <a href="news.html" class="active"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
-  </header>
 
-  <!-- 📦 News Content -->
-  <main class="main-container">
-    <h2 class="page-header">Market News</h2>
-    <div class="news-grid" id="news-container">
-      <!-- 🔄 JS yahan dynamic news insert karega -->
-    </div>
-    <div class="no-data-message" id="no-news-message" style="display: none;">
-      No news articles available.
-    </div>
-  </main>
+    <script>
+        const newsGrid = document.getElementById('news-grid');
+        const noNewsMessage = document.getElementById('no-news-message');
 
-  <!-- 📱 Bottom Nav -->
-  <nav class="mobile-nav">
-    <a href="index.html"><i class="fas fa-home"></i><span>Dashboard</span></a>
-    <a href="news.html" class="active"><i class="fas fa-newspaper"></i><span>News</span></a>
-    <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
-  </nav>
+        async function fetchNews() {
+            try {
+                const response = await fetch('/api/news');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const newsData = await response.json();
+                newsGrid.innerHTML = '';
 
-  <!-- ⚡ Script -->
-  <script src="/frontend/app.js"></script>
+                let allArticles = [];
+                if (newsData && newsData.articles_by_symbol && typeof newsData.articles_by_symbol === 'object') {
+                    // تمام علامتوں سے خبروں کو ایک ہی فہرست میں جمع کریں
+                    for (const symbol in newsData.articles_by_symbol) {
+                        if (Array.isArray(newsData.articles_by_symbol[symbol])) {
+                            allArticles.push(...newsData.articles_by_symbol[symbol]);
+                        }
+                    }
+                }
+
+                // ڈپلیکیٹ خبروں کو URL کی بنیاد پر ہٹائیں
+                const uniqueArticles = Array.from(new Map(allArticles.map(item => [item['url'], item])).values());
+
+                // خبروں کو تازہ ترین کے مطابق ترتیب دیں
+                uniqueArticles.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+
+                if (uniqueArticles.length > 0) {
+                    noNewsMessage.style.display = 'none';
+                    newsGrid.style.display = 'grid';
+                    uniqueArticles.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = 'news-card';
+                        
+                        const snippet = item.snippet || item.title || 'No summary available.';
+                        const title = item.title || 'No Title';
+                        const source = item.source || 'Unknown Source';
+                        const url = item.url || '#';
+                        const publishedTime = item.published_at 
+                            ? new Date(item.published_at).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'
+                            : 'N/A';
+
+                        card.innerHTML = `
+                            <div class="news-content">
+                                <h3 class="news-title">${title}</h3>
+                                <p class="news-meta"><strong>${source}</strong> - ${publishedTime}</p>
+                                <p class="news-snippet">${snippet.substring(0, 150)}...</p>
+                                <a href="${url}" target="_blank" rel="noopener noreferrer" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
+                            </div>
+                        `;
+                        newsGrid.appendChild(card);
+                    });
+                } else {
+                    noNewsMessage.innerHTML = '<h3><i class="fas fa-search"></i> No News Found</h3><p>Could not retrieve market news at this time. Please check back later.</p>';
+                }
+            } catch (error) {
+                console.error('Error fetching news:', error);
+                noNewsMessage.innerHTML = '<h3><i class="fas fa-exclamation-triangle"></i> Error</h3><p>Failed to load news. Please try again later.</p>';
+            }
+        }
+        
+        // صفحہ لوڈ ہونے پر خبریں حاصل کریں
+        fetchNews();
+        // ہر 15 منٹ بعد خبروں کو خود بخود تازہ کریں
+        setInterval(fetchNews, 15 * 60 * 1000);
+    </script>
 </body>
 </html>
