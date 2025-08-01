@@ -17,11 +17,9 @@ async def send_telegram_alert(signal_data: Dict[str, Any]):
         return
 
     # ★★★ ذہین کلیدی نام کا انتخاب ★★★
-    # یہ چیک کرے گا کہ آیا 'signal' موجود ہے، اگر نہیں تو 'signal_type' استعمال کرے گا۔
     signal = (signal_data.get('signal') or signal_data.get('signal_type', 'N/A')).upper()
     symbol = signal_data.get('symbol', 'N/A')
     
-    # یہ قیمت، ٹی پی، اور ایس ایل کے لیے دونوں ممکنہ ناموں کو چیک کرے گا۔
     price = signal_data.get('price') or signal_data.get('entry_price', 0.0)
     tp = signal_data.get('tp') or signal_data.get('tp_price', 0.0)
     sl = signal_data.get('sl') or signal_data.get('sl_price', 0.0)
@@ -81,4 +79,4 @@ async def send_signal_update_alert(updated_signal: Dict[str, Any]):
         logger.info(f"{symbol} کے لیے ٹیلیگرام سگنل اپ ڈیٹ الرٹ کامیابی سے بھیجا گیا۔")
     except Exception as e:
         logger.error(f"ٹیلیگرام سگنل اپ ڈیٹ الرٹ بھیجنے میں ناکام: {e}", exc_info=True)
-        
+    
