@@ -1,5 +1,3 @@
-# filename: utils.py
-
 import os
 import httpx
 import logging
@@ -13,9 +11,11 @@ logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن سے متغیرات ---
 PRIMARY_TIMEFRAME = API_CONFIG["PRIMARY_TIMEFRAME"]
-# ★★★ کینڈل کی تعداد کو 101 کر دیا گیا ہے ★★★
-CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"] + 1 # ایک اضافی کینڈل حاصل کریں گے تاکہ نامکمل کو ہٹا سکیں
+CANDLE_COUNT = API_CONFIG["CANDLE_COUNT"] + 1  # ★ آخری نا مکمل کینڈل سے بچنے کے لیے ایک زائد لیا جاتا ہے ★
 
+# ==============================================================================
+# 🔁 Guardian API سے Live Quotes حاصل کریں
+# ==============================================================================
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
     دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین کوٹس حاصل کرتا ہے۔
@@ -26,93 +26,73 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
 
     api_key = key_manager.get_guardian_key()
     if not api_key:
-        logger.warning("نگرانی کے لیے کوئی API کلید دستیاب نہیں۔")
+        logger.warning("🚫 نگرانی کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
 
     symbol_str = ",".join(symbols)
     url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
-    
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=20)
 
         if response.status_code == 429:
-            data = response.json()
-            is_daily = "day" in data.get("message", "").lower()
-            key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
+            logger.warning("⚠️ API limit exceed ہو گیا ہے (429 Too Many Requests)")
             return None
 
-        response.raise_for_status()
         data = response.json()
-
-        quotes = {}
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict) and "symbol" in item:
-                    quotes[item["symbol"]] = item
-        elif isinstance(data, dict):
-            if "symbol" in data:
-                quotes[data["symbol"]] = data
-            else:
-                for symbol, details in data.items():
-                    if isinstance(details, dict) and details.get("status") != "error":
-                        quotes[symbol] = details
-        
-        return quotes
+        return data
 
     except Exception as e:
-        logger.error(f"کوٹس حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+        logger.error(f"❌ Guardian quotes fetch کرنے میں خرابی: {e}", exc_info=True)
         return None
 
-async def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
+# ==============================================================================
+# 📊 TwelveData API سے کینڈل ڈیٹا حاصل کریں (OHLC)
+# ==============================================================================
+def fetch_twelve_data_ohlc(symbol: str) -> Optional[List[Candle]]:
     """
-    TwelveData API سے OHLC کینڈلز لاتا ہے، ہر کینڈل میں علامت کا نام شامل کرتا ہے،
-    اور یقینی بناتا ہے کہ صرف مکمل شدہ کینڈلز واپس کی جائیں۔
+    کسی جوڑے کے لیے TwelveData API سے OHLC کینڈل ڈیٹا حاصل کرتا ہے۔
+    آخری نامکمل کینڈل کو ہٹا کر صاف ڈیٹا واپس کرتا ہے۔
     """
-    api_key = key_manager.get_hunter_key()
+
+    api_key = key_manager.get_main_key()
     if not api_key:
-        logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
+        logger.warning("🚫 TwelveData API کلید دستیاب نہیں۔")
         return None
-    
-    # ہم CANDLE_COUNT (101) کینڈلز کی درخواست کر رہے ہیں
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
-    
+
+    url = (
+        f"https://api.twelvedata.com/time_series?"
+        f"symbol={symbol}&interval={PRIMARY_TIMEFRAME}&outputsize={CANDLE_COUNT}&apikey={api_key}"
+    )
+
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=20)
-        
-        if response.status_code == 429:
-            data = response.json()
-            is_daily = "day" in data.get("message", "").lower()
-            key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
+        response = httpx.get(url, timeout=30)
+
+        if response.status_code != 200:
+            logger.warning(f"⚠️ TwelveData API response code: {response.status_code}")
             return None
 
-        response.raise_for_status()
         data = response.json()
-        
-        if "status" not in data or data.get("status") != "ok":
-            logger.warning(f"[{symbol}] کے لیے Twelve Data API نے خرابی واپس کی: {data.get('message', 'نامعلوم خرابی')}")
+        candles_raw = data.get("values", [])
+        if not candles_raw or len(candles_raw) < 3:
+            logger.info(f"⛔ کینڈل ڈیٹا ناکافی ہے: {symbol}")
             return None
 
-        validated_data = TwelveDataTimeSeries.model_validate(data)
-        
-        # ★★★ صرف مکمل شدہ کینڈلز کو یقینی بنانے کی منطق ★★★
-        # API سے آنے والی فہرست کو پہلے ترتیب دیں (نئی سے پرانی)
-        sorted_values = sorted(validated_data.values, key=lambda x: x.datetime, reverse=True)
-        
-        # سب سے حالیہ کینڈل (جو نامکمل ہو سکتی ہے) کو ہٹا دیں
-        # اور صرف 100 کینڈلز لیں
-        completed_candles_raw = sorted_values[1:101]
+        candles: List[Candle] = [
+            Candle(
+                datetime=entry["datetime"],
+                open=float(entry["open"]),
+                high=float(entry["high"]),
+                low=float(entry["low"]),
+                close=float(entry["close"]),
+                volume=float(entry.get("volume", 0.0)),
+            )
+            for entry in candles_raw
+        ]
 
-        enriched_candles = []
-        for candle in completed_candles_raw:
-            candle.symbol = symbol
-            enriched_candles.append(candle)
-
-        # کینڈلز کو واپس پرانی سے نئی کی ترتیب میں کریں تاکہ تجزیہ درست ہو
-        return enriched_candles[::-1]
+        return candles[:-1]  # آخری کینڈل عموماً incomplete ہوتا ہے
 
     except Exception as e:
-        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+        logger.error(f"❌ TwelveData کینڈل ڈیٹا fetch کرنے میں خرابی: {e}", exc_info=True)
         return None
-        
