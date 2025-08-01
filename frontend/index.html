@@ -1,167 +1,319 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dashboard - ScalpMaster AI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - ScalpMaster AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
+            --text-primary: #c9d1d9; --text-secondary: #8b949e; --accent-gold: #ffab00;
+            --signal-buy: #238636; --signal-sell: #da3633;
+        }
+        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); scroll-behavior: smooth; }
+        body { margin: 0; padding: 0; }
+        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
+        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
+        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
+        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
+        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; display: flex; align-items: center; gap: 1rem; transition: transform 0.3s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-card-icon { font-size: 2rem; width: 50px; height: 50px; display: grid; place-items: center; border-radius: 50%; flex-shrink: 0; }
+        .stat-card-icon.live { color: #58a6ff; background-color: rgba(88, 166, 255, 0.1); }
+        .stat-card-icon.tp { color: var(--signal-buy); background-color: rgba(35, 134, 54, 0.1); }
+        .stat-card-icon.sl { color: var(--signal-sell); background-color: rgba(218, 54, 51, 0.1); }
+        .stat-card-icon.winrate { color: var(--accent-gold); background-color: rgba(255, 171, 0, 0.1); }
+        .stat-card-info h3 { margin: 0; font-size: 1.8rem; font-weight: 700; }
+        .stat-card-info p { margin: 0; color: var(--text-secondary); }
 
-  <!-- 🚀 Fonts and Icons -->
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
-
-  <!-- 🎨 Custom Dark Theme Styling -->
-  <style>
-    :root {
-      --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
-      --text-primary: #c9d1d9; --text-secondary: #8b949e; --accent-gold: #ffab00;
-      --signal-buy: #238636; --signal-sell: #da3633;
-    }
-    html {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--bg);
-      color: var(--text-primary);
-    }
-    body { margin: 0; padding: 0; }
-
-    /* 🔝 Header */
-    .header {
-      background-color: var(--primary);
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 1.5rem;
-      display: flex; justify-content: space-between; align-items: center;
-      position: sticky; top: 0; z-index: 1000;
-    }
-    .logo {
-      font-family: 'Teko', sans-serif;
-      font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px;
-    }
-    .navbar-desktop a {
-      color: var(--text-secondary);
-      text-decoration: none;
-      margin-left: 1.5rem;
-      font-weight: 500;
-    }
-    .navbar-desktop a:hover,
-    .navbar-desktop a.active {
-      color: var(--text-primary);
-    }
-
-    /* 📦 Main Layout */
-    .main-container {
-      padding: 1.5rem;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
-    /* 📊 Stats Cards */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-    .stat-card {
-      background-color: var(--primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.5rem;
-      display: flex; align-items: center; gap: 1rem;
-      transition: transform 0.3s;
-    }
-    .stat-card:hover { transform: translateY(-5px); }
-    .stat-card-icon {
-      font-size: 2rem;
-      width: 50px; height: 50px;
-      display: grid; place-items: center;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .stat-card-icon.live {
-      color: #58a6ff; background-color: rgba(88, 166, 255, 0.1);
-    }
-    .stat-card-icon.tp {
-      color: var(--signal-buy); background-color: rgba(35, 134, 54, 0.1);
-    }
-    .stat-card-icon.sl {
-      color: var(--signal-sell); background-color: rgba(218, 54, 51, 0.1);
-    }
-    .stat-card-icon.winrate {
-      color: var(--accent-gold); background-color: rgba(255, 171, 0, 0.1);
-    }
-    .stat-card-info h3 {
-      margin: 0; font-size: 1.8rem; font-weight: 700;
-    }
-    .stat-card-info p {
-      margin: 0; color: var(--text-secondary);
-    }
-
-    /* 📡 Live Signals Header */
-    .signals-section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1.5rem;
-    }
-    .signals-section-header h2 {
-      font-family: 'Teko', sans-serif;
-      font-size: 2rem; margin: 0; color: var(--text-primary);
-    }
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 500;
-    }
-    .status-dot {
-      width: 12px; height: 12px;
-      border-radius: 50%;
-      background-color: var(--signal-sell);
-      animation: pulse-red 2s infinite;
-    }
-    @keyframes pulse-red {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
-    }
-  </style>
+        .signals-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+        .signals-section-header h2 { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin: 0; }
+        .status-indicator { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background-color: var(--signal-sell); animation: pulse-red 2s infinite; }
+        .status-dot.connected { background-color: var(--signal-buy); animation: pulse-green 2s infinite; }
+        @keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(35, 134, 54, 0); } 100% { box-shadow: 0 0 0 0 rgba(35, 134, 54, 0); } }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(218, 54, 51, 0); } 100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0); } }
+        
+        .signals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; }
+        .signal-card { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s; animation: fadeIn 0.5s ease-out; display: flex; flex-direction: column; }
+        .signal-card.closing { opacity: 0; transform: scale(0.9); }
+        .signal-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+        .signal-pair { font-size: 1.5rem; font-weight: 600; }
+        .signal-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; }
+        .tag-buy { background-color: var(--signal-buy); }
+        .tag-sell { background-color: var(--signal-sell); }
+        .confidence-circle { position: relative; width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent-gold) 0deg, var(--secondary) 0deg); margin-bottom: 1rem; flex-shrink: 0; }
+        .confidence-value { position: relative; font-size: 1.5rem; font-weight: 700; }
+        .signal-details { border-top: 1px solid var(--border); padding-top: 1rem; }
+        .signal-details p { display: flex; justify-content: space-between; margin: 0.5rem 0; color: var(--text-secondary); }
+        .signal-details span { color: var(--text-primary); font-weight: 500; }
+        .no-signals { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
+        .ai-reason-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); flex-grow: 1; }
+        .ai-reason-title { font-weight: 600; color: var(--accent-gold); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px; }
+        .ai-reason-text { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; }
+        .signal-card-footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; align-items: center; }
+        .signal-timestamp { font-size: 0.8rem; color: var(--text-secondary); }
+        .card-flash { animation: flash-animation 1s ease-out; }
+        @keyframes flash-animation { 0% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); } 50% { box-shadow: 0 0 15px 5px rgba(255, 171, 0, 0.5); } 100% { box-shadow: 0 0 0 0 rgba(255, 171, 0, 0); } }
+        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
+        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
+        .mobile-nav a.active { color: var(--accent-gold); }
+        .mobile-nav i { font-size: 1.2rem; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) { .navbar-desktop { display: none; } .mobile-nav { display: flex; } body { padding-bottom: 70px; } }
+    </style>
 </head>
-
 <body>
-  <!-- 🔝 Header Navigation -->
-  <header class="header">
-    <div class="logo">ScalpMaster AI</div>
-    <nav class="navbar-desktop">
-      <a href="index.html" class="active">Dashboard</a>
-      <a href="news.html">News</a>
-      <a href="history.html">History</a>
+
+    <header class="header">
+        <div class="logo">SCALPMASTER AI</div>
+        <nav class="navbar-desktop">
+            <a href="index.html" class="active">Dashboard</a>
+            <a href="history.html">History</a>
+            <a href="news.html">News</a>
+        </nav>
+    </header>
+
+    <main class="main-container">
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-card-icon live"><i class="fas fa-satellite-dish"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="live-signals-count">--</h3>
+                    <p>Live Signals</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-icon tp"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="tp-hits-count">--</h3>
+                    <p>Today's TP Hits</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-icon sl"><i class="fas fa-times-circle"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="sl-hits-count">--</h3>
+                    <p>Today's SL Hits</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-icon winrate"><i class="fas fa-trophy"></i></div>
+                <div class="stat-card-info">
+                    <h3 id="win-rate-percent">--%</h3>
+                    <p>Today's Win Rate</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="signals-section">
+            <div class="signals-section-header">
+                <h2>Live Signals</h2>
+                <div class="status-indicator">
+                    <div id="status-dot" class="status-dot"></div>
+                    <span id="status-text">Connecting...</span>
+                </div>
+            </div>
+            <div class="signals-grid" id="signals-grid"></div>
+            <div class="no-signals" id="no-signals-message" style="display: none;">
+                <h3><i class="fas fa-search"></i> Scanning Markets...</h3>
+                <p>No active signals at the moment. Waiting for high-confidence trading opportunities.</p>
+            </div>
+        </section>
+    </main>
+
+    <nav class="mobile-nav">
+        <a href="index.html" class="active"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+        <a href="history.html"><i class="fas fa-history"></i><span>History</span></a>
+        <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
     </nav>
-  </header>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const signalsGrid = document.getElementById('signals-grid');
+            const noSignalsMessage = document.getElementById('no-signals-message');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            
+            const liveSignalsCountEl = document.getElementById('live-signals-count');
+            const tpHitsCountEl = document.getElementById('tp-hits-count');
+            const slHitsCountEl = document.getElementById('sl-hits-count');
+            const winRatePercentEl = document.getElementById('win-rate-percent');
 
-  <!-- 📦 Content Area -->
-  <main class="main-container">
-    <!-- 📊 Statistics Cards Section -->
-    <section class="stats-grid" id="stats-cards">
-      <!-- JS dynamically inserts stats here -->
-    </section>
+            let signals = new Map();
 
-    <!-- 📡 Live Signal Table -->
-    <section>
-      <div class="signals-section-header">
-        <h2>Live Signals</h2>
-        <div class="status-indicator">
-          <div class="status-dot"></div>
-          <span>Active</span>
-        </div>
-      </div>
-      <div id="signal-table-container">
-        <!-- JS-injected table for real-time signals -->
-      </div>
-    </section>
-  </main>
+            function renderSignals() {
+                liveSignalsCountEl.textContent = signals.size;
+                if (signals.size === 0) {
+                    signalsGrid.style.display = 'none';
+                    noSignalsMessage.style.display = 'block';
+                } else {
+                    signalsGrid.innerHTML = '';
+                    signalsGrid.style.display = 'grid';
+                    noSignalsMessage.style.display = 'none';
+                    
+                    const sortedSignals = Array.from(signals.values()).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+                    sortedSignals.forEach(signal => {
+                        const card = createSignalCard(signal);
+                        signalsGrid.appendChild(card);
+                    });
+                }
+            }
 
-  <!-- ⚡ JavaScript Controller -->
-  <script src="/frontend/app.js"></script>
+            function createSignalCard(signal) {
+                const card = document.createElement('div');
+                card.className = 'signal-card';
+                card.id = `signal-${signal.signal_id}`;
+                
+                const signalType = (signal.signal_type || signal.signal).toLowerCase();
+                const entryPrice = signal.entry_price || signal.price;
+                const tpPrice = signal.tp_price || signal.tp;
+                const slPrice = signal.sl_price || signal.sl;
+                const confidence = parseFloat(signal.confidence);
+                const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
+                const timestamp = new Date(signal.updated_at || signal.created_at).toLocaleString();
+
+                card.innerHTML = `
+                    <div class="signal-card-header">
+                        <div>
+                            <p class="signal-pair">${signal.symbol}</p>
+                            <p style="color: var(--text-secondary); margin:0;">${signal.timeframe}</p>
+                        </div>
+                        <div class="signal-tag ${tagClass}">${signalType.toUpperCase()}</div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1.5rem;">
+                        <div class="confidence-circle" style="background: conic-gradient(var(--accent-gold) ${confidence * 3.6}deg, var(--secondary) 0deg);">
+                            <div class="confidence-value">${confidence.toFixed(0)}%</div>
+                        </div>
+                        <div class="signal-details" style="flex-grow: 1; border-top: none; padding-top: 0;">
+                            <p>Entry Price: <span>${entryPrice.toFixed(5)}</span></p>
+                            <p>Take Profit: <span>${tpPrice.toFixed(5)}</span></p>
+                            <p>Stop Loss: <span>${slPrice.toFixed(5)}</span></p>
+                        </div>
+                    </div>
+                    <div class="ai-reason-section">
+                        <p class="ai-reason-title"><i class="fas fa-brain"></i> AI Analysis</p>
+                        <p class="ai-reason-text">${signal.reason}</p>
+                    </div>
+                    <div class="signal-card-footer">
+                        <span class="signal-timestamp">Last update: ${timestamp}</span>
+                    </div>
+                `;
+                return card;
+            }
+
+            function removeSignalCard(signalId) {
+                const cardToRemove = document.getElementById(`signal-${signalId}`);
+                if (cardToRemove) {
+                    cardToRemove.classList.add('closing');
+                    setTimeout(() => {
+                        signals.delete(signalId);
+                        renderSignals();
+                    }, 500);
+                } else {
+                    if (signals.has(signalId)) {
+                        signals.delete(signalId);
+                        renderSignals();
+                    }
+                }
+            }
+
+            async function fetchDailyStats() {
+                try {
+                    const response = await fetch('/api/daily-stats');
+                    if (!response.ok) throw new Error('Failed to fetch daily stats');
+                    const stats = await response.json();
+                    
+                    tpHitsCountEl.textContent = stats.tp_hits_today;
+                    slHitsCountEl.textContent = stats.sl_hits_today;
+                    winRatePercentEl.textContent = `${stats.win_rate_today}%`;
+                } catch (error) {
+                    console.error('Error fetching daily stats:', error);
+                    tpHitsCountEl.textContent = 'N/A';
+                    slHitsCountEl.textContent = 'N/A';
+                    winRatePercentEl.textContent = 'N/A';
+                }
+            }
+
+            async function fetchActiveSignals() {
+                try {
+                    const response = await fetch('/api/active-signals');
+                    if (!response.ok) throw new Error('Failed to fetch active signals');
+                    const activeSignals = await response.json();
+                    
+                    signals.clear();
+                    activeSignals.forEach(signal => {
+                        signals.set(signal.signal_id, signal);
+                    });
+                    
+                    renderSignals();
+                } catch (error) {
+                    console.error('Error fetching active signals:', error);
+                    renderSignals(); // UI کو خالی حالت میں اپ ڈیٹ کریں
+                }
+            }
+
+            function connectWebSocket() {
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}/ws/live-signals`;
+                const socket = new WebSocket(wsUrl);
+
+                socket.onopen = () => {
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Live';
+                    console.log("WebSocket connected. Syncing state...");
+                    fetchActiveSignals();
+                    fetchDailyStats();
+                };
+
+                socket.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        const signalData = message.data;
+
+                        if (message.type === 'new_signal' || message.type === 'signal_updated') {
+                            signals.set(signalData.signal_id, signalData);
+                            renderSignals();
+                            const card = document.getElementById(`signal-${signalData.signal_id}`);
+                            if(card) {
+                                card.classList.remove('card-flash');
+                                void card.offsetWidth; // Trigger reflow
+                                card.classList.add('card-flash');
+                            }
+                        } else if (message.type === 'signal_closed') {
+                            if (signals.has(signalData.signal_id)) {
+                                removeSignalCard(signalData.signal_id);
+                            }
+                        }
+                        fetchDailyStats(); // ہر اپ ڈیٹ پر اعداد و شمار تازہ کریں
+                    } catch (e) {
+                        console.error("Error processing WebSocket message:", e);
+                    }
+                };
+
+                socket.onclose = () => {
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = 'Reconnecting...';
+                    setTimeout(connectWebSocket, 5000);
+                };
+
+                socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    socket.close();
+                };
+            }
+
+            connectWebSocket();
+            setInterval(fetchDailyStats, 60000); // ہر منٹ اعداد و شمار تازہ کریں
+        });
+    </script>
+
 </body>
 </html>
