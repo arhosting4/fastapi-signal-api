@@ -2,84 +2,45 @@
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
-from typing import AsyncGenerator
+from datetime import datetime
+from typing import List, Dict, Any
 
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
 # مقامی امپورٹس
-# بہتر ساخت کے لیے، ڈیٹا بیس سے متعلق تمام چیزیں ایک ہی جگہ پر
-from database import SessionLocal, create_db_and_tables, engine
 import database_crud as crud
-from schemas import ActiveSignalResponse, DailyStatsResponse, SystemStatusResponse, HistoryResponse, NewsResponse
+from config import app_settings, api_settings, trading_settings, strategy_settings # مرکزی کنفیگریشن
+# ★★★ غلطی کی درستگی: 'database' کی جگہ 'models' سے امپورٹ کریں ★★★
+from models import SessionLocal, create_db_and_tables, engine
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
-from key_manager import key_manager
-from config import api_settings # مرکزی کنفیگریشن
+from schemas import DailyStatsResponse, SystemStatusResponse, KeyStatusResponse, HistoryResponse, NewsResponse, ActiveSignalResponse
 
-# --- لاگنگ کی ترتیب ---
+# لاگنگ کی ترتیب
 logging.basicConfig(
-    level=api_settings.LOG_LEVEL.upper(),
-    format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s'
+    level=app_settings.LOG_LEVEL,
+    format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-
-# --- پس منظر کے کام اور لائف سائیکل مینیجر ---
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    ایپلیکیشن کے آغاز اور اختتام پر چلنے والے ایونٹس کو منظم کرتا ہے۔
-    """
-    logger.info("🚀 FastAPI سرور شروع ہو رہا ہے...")
-    
-    # ڈیٹا بیس کی تصدیق
-    create_db_and_tables()
-    logger.info("✅ ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
-
-    # شیڈیولر کی ترتیب
-    # یہ فرض کیا جاتا ہے کہ یہ صرف ایک ورکر کے ماحول میں چل رہا ہے۔
-    # متعدد ورکرز کے لیے، Redis یا DB پر مبنی لاک کی ضرورت ہوگی۔
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    
-    # کاموں کو ذہانت سے ترتیب دیں تاکہ API کی شرح کی حد سے بچا جا سکے
-    now = datetime.utcnow()
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=70), id="guardian_engine_job", next_run_time=now + timedelta(seconds=5))
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=180), id="hunter_engine_job", next_run_time=now + timedelta(seconds=40))
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job", next_run_time=now + timedelta(seconds=10))
-    
-    scheduler.start()
-    app.state.scheduler = scheduler
-    logger.info("★★★ پس منظر کے کاموں کا شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
-    
-    yield
-    
-    # ایپلیکیشن بند ہونے پر صفائی
-    logger.info("🛑 FastAPI سرور بند ہو رہا ہے۔")
-    if app.state.scheduler.running:
-        app.state.scheduler.shutdown()
-        logger.info("✅ شیڈیولر کامیابی سے بند ہو گیا۔")
-
-
-# --- FastAPI ایپ کی مثال ---
+# FastAPI ایپ
 app = FastAPI(
-    title="ScalpMaster AI API",
-    description="ایک ذہین ٹریڈنگ سگنل بوٹ جو مارکیٹ کا تجزیہ کرتا ہے اور ریئل ٹائم الرٹس فراہم کرتا ہے۔",
-    version="1.0.0",
-    lifespan=lifespan
+    title=app_settings.PROJECT_NAME,
+    version=app_settings.VERSION,
+    description="A self-learning AI bot for generating trading signals."
 )
 
-# CORS مڈل ویئر
+# CORS (Cross-Origin Resource Sharing)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # پروڈکشن میں اسے مخصوص ڈومینز تک محدود کریں
@@ -88,65 +49,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- انحصار (Dependency) ---
-def get_db() -> Session:
-    """
-    ہر درخواست کے لیے ایک نیا ڈیٹا بیس سیشن بناتا اور فراہم کرتا ہے۔
-    """
+# --- انحصار (Dependencies) ---
+
+def get_db():
+    """ڈیٹا بیس سیشن فراہم کرنے والا انحصار۔"""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
+# --- پس منظر کے کام (Background Tasks) ---
+
+async def start_background_tasks():
+    """
+    پس منظر کے کاموں (سگنل کی تلاش، نگرانی) کو شروع کرتا ہے۔
+    یہ فرض کرتا ہے کہ صرف ایک ورکر چل رہا ہے (Gunicorn میں -w 1)۔
+    """
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        logger.info("شیڈیولر پہلے سے چل رہا ہے۔ دوبارہ شروع نہیں کیا جا رہا۔")
+        return
+
+    logger.info(">>> پس منظر کے کام شروع ہو رہے ہیں...")
+    
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    app.state.scheduler = scheduler
+    
+    # کاموں کو مختلف اوقات میں شروع کریں تاکہ API کی شرح کی حدود سے بچا جا سکے
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=70), id="guardian_engine_job")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=180), id="hunter_engine_job")
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job", next_run_time=datetime.utcnow())
+    
+    scheduler.start()
+    logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
+
+# --- FastAPI ایونٹس ---
+
+@app.on_event("startup")
+async def startup_event():
+    """ایپلیکیشن شروع ہونے پر چلنے والا ایونٹ۔"""
+    logger.info(f"{app_settings.PROJECT_NAME} سرور شروع ہو رہا ہے...")
+    create_db_and_tables()
+    logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    asyncio.create_task(start_background_tasks())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """ایپلیکیشن بند ہونے پر چلنے والا ایونٹ۔"""
+    logger.info("FastAPI سرور بند ہو رہا ہے۔")
+    if hasattr(app.state, "scheduler") and app.state.scheduler.running:
+        app.state.scheduler.shutdown()
+        logger.info("شیڈیولر کامیابی سے بند ہو گیا۔")
+
 # --- API روٹس ---
 
-@app.get("/api/active-signals", response_model=List[ActiveSignalResponse])
+@app.get("/health", status_code=200, tags=["System"])
+async def health_check():
+    """سسٹم کی صحت کی جانچ کے لیے سادہ اینڈ پوائنٹ۔"""
+    return {"status": "ok"}
+
+@app.get("/api/active-signals", response_model=List[ActiveSignalResponse], tags=["Signals"])
 async def get_active_signals(db: Session = Depends(get_db)):
-    """تمام فعال ٹریڈنگ سگنلز کی فہرست واپس کرتا ہے۔"""
-    try:
-        signals = crud.get_all_active_signals_from_db(db)
-        return [s.as_dict() for s in signals]
-    except Exception as e:
-        logger.error(f"فعال سگنلز حاصل کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error while fetching signals.")
+    """تمام فعال ٹریڈنگ سگنلز واپس کرتا ہے۔"""
+    signals = crud.get_all_active_signals_from_db(db)
+    return signals
 
-@app.get("/api/daily-stats", response_model=DailyStatsResponse)
+@app.get("/api/daily-stats", response_model=DailyStatsResponse, tags=["Stats"])
 async def get_daily_stats_endpoint(db: Session = Depends(get_db)):
-    """آج کے اعداد و شمار (TP/SL ہٹس وغیرہ) واپس کرتا ہے۔"""
-    try:
-        return crud.get_daily_stats(db)
-    except Exception as e:
-        logger.error(f"روزانہ کے اعداد و شمار حاصل کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error while fetching stats.")
+    """آج کے اعداد و شمار (TP/SL ہٹس، ون ریٹ) واپس کرتا ہے۔"""
+    stats = crud.get_daily_stats(db)
+    return stats
 
-@app.get("/api/history", response_model=List[HistoryResponse])
+@app.get("/api/history", response_model=List[HistoryResponse], tags=["Stats"])
 async def get_history(db: Session = Depends(get_db)):
     """مکمل شدہ ٹریڈز کی تاریخ واپس کرتا ہے۔"""
-    try:
-        return crud.get_completed_trades(db)
-    except Exception as e:
-        logger.error(f"ہسٹری حاصل کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error while fetching history.")
+    trades = crud.get_completed_trades(db)
+    return trades
 
-@app.get("/api/news", response_model=Optional[NewsResponse])
+@app.get("/api/news", response_model=Optional[NewsResponse], tags=["Market Data"])
 async def get_news(db: Session = Depends(get_db)):
     """کیش شدہ مارکیٹ کی خبریں واپس کرتا ہے۔"""
-    try:
-        news = crud.get_cached_news(db)
-        if not news:
-            return None
-        return news
-    except Exception as e:
-        logger.error(f"خبریں حاصل کرنے میں خرابی: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error while fetching news.")
+    news_content = crud.get_cached_news(db)
+    return {"articles_by_symbol": news_content.get("articles_by_symbol", {})} if news_content else None
 
-@app.get("/api/system-status", response_model=SystemStatusResponse)
+@app.get("/api/system-status", response_model=SystemStatusResponse, tags=["System"])
 async def get_system_status():
-    """سسٹم کی موجودہ حالت کی تفصیلات فراہم کرتا ہے۔"""
-    scheduler = app.state.scheduler
-    scheduler_running = scheduler and scheduler.running
+    """سسٹم کی موجودہ حالت (شیڈیولر، ڈیٹا بیس، API کیز) واپس کرتا ہے۔"""
+    from key_manager import key_manager # صرف یہاں امپورٹ کریں تاکہ سرکلر انحصار سے بچا جا سکے
     
+    scheduler_running = hasattr(app.state, "scheduler") and app.state.scheduler.running
     db_status = "Disconnected"
     try:
         with engine.connect():
@@ -166,26 +157,22 @@ async def get_system_status():
         }
     }
 
-@app.get("/health", status_code=200, include_in_schema=False)
-async def health_check():
-    """صحت کی جانچ کا اینڈ پوائنٹ جو Render جیسے ہوسٹنگ پلیٹ فارمز کے لیے ہے۔"""
-    return {"status": "ok"}
+# --- WebSocket ---
 
 @app.websocket("/ws/live-signals")
 async def websocket_endpoint(websocket: WebSocket):
-    """ریئل ٹائم سگنل اپ ڈیٹس کے لیے WebSocket کنکشن۔"""
+    """لائیو سگنل اپ ڈیٹس کے لیے WebSocket کنکشن۔"""
     await manager.connect(websocket)
     try:
         while True:
-            # کلائنٹ سے آنے والے پیغامات کو سنتے رہیں
+            # کلائنٹ سے آنے والے پیغامات کو سنیں (اگر ضرورت ہو)
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception as e:
-        logger.warning(f"WebSocket میں ایک خرابی پیش آئی: {e}")
-        manager.disconnect(websocket)
+
+# --- اسٹیٹک فائلز ---
 
 # فرنٹ اینڈ فائلوں کو پیش کرنے کے لیے اسٹیٹک ڈائرکٹری کو ماؤنٹ کریں
 # یہ یقینی بنائیں کہ 'frontend' نامی فولڈر موجود ہے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-        
+    
