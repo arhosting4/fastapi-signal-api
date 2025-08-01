@@ -8,9 +8,9 @@ import asyncio
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 
-import database_crud as crud
+# ★★★ crud امپورٹ کو یہاں سے ہٹا دیا گیا ہے کیونکہ اب اس کی ضرورت نہیں ★★★
 from models import ActiveSignal
-from sentinel import check_news_at_time_of_trade # ★★★ نیا امپورٹ ★★★
+from sentinel import check_news_at_time_of_trade
 
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
@@ -27,6 +27,7 @@ def get_confidence(
 ) -> float:
     """
     مختلف عوامل کی بنیاد پر سگنل کے لیے اعتماد کا اسکور تیار کرتا ہے۔
+    ★★★ اب یہ فیڈ بیک کے اعداد و شمار کا استعمال نہیں کرتا۔ ★★★
     """
     base_confidence = 50 + ( (abs(technical_score) - 40) / 60 * 30 ) if abs(technical_score) >= 40 else 50
     
@@ -49,22 +50,21 @@ def get_confidence(
     if news_impact == "High":
         multiplier *= 0.90
 
-    feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
-    if feedback_stats and feedback_stats["total"] > 10:
-        accuracy = feedback_stats.get("accuracy", 50.0)
-        accuracy_multiplier = 0.80 + (accuracy / 250)
-        multiplier *= accuracy_multiplier
+    # ★★★ فیڈ بیک کی منطق کو یہاں سے مکمل طور پر ہٹا دیا گیا ہے ★★★
+    # feedback_stats = crud.get_feedback_stats_from_db(db, symbol)
+    # if feedback_stats and feedback_stats["total"] > 10:
+    #     accuracy = feedback_stats.get("accuracy", 50.0)
+    #     accuracy_multiplier = 0.80 + (accuracy / 250)
+    #     multiplier *= accuracy_multiplier
 
     confidence = base_confidence * multiplier
     confidence = max(10.0, min(99.0, confidence))
     
     return round(confidence, 2)
 
-# ★★★ مکمل طور پر نیا اور ذہین سیکھنے کا فنکشن ★★★
 async def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
     """
     ٹریڈ کے نتیجے سے سیکھتا ہے اور strategy_weights.json کو ذہانت سے اپ ڈیٹ کرتا ہے۔
-    یہ فنکشن اب ناکامی کی وجہ کا تجزیہ کرتا ہے (خبریں، رسک، وغیرہ)۔
     """
     try:
         symbol = signal.symbol
@@ -76,18 +76,16 @@ async def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
             logger.warning(f"{symbol} کے لیے کوئی کمپوننٹ اسکور نہیں ملا۔ سیکھنے کا عمل روکا جا رہا ہے۔")
             return
 
-        # ناکامی کی صورت میں وزن میں کمی کا عنصر
-        adjustment_factor = 0.05 # ڈیفالٹ کمی
+        adjustment_factor = 0.05
         
         if outcome == "sl_hit":
-            # ناکامی کی وجہ کا تجزیہ کریں
             trade_had_high_impact_news = await check_news_at_time_of_trade(
                 symbol, signal.created_at, signal.updated_at
             )
             
             if trade_had_high_impact_news:
                 logger.info(f"تجزیہ: ٹریڈ {symbol} خبروں کی وجہ سے ناکام ہو سکتی ہے۔ وزن میں کم کمی کی جائے گی۔")
-                adjustment_factor = 0.01 # صرف 1% کمی
+                adjustment_factor = 0.01
             else:
                 logger.info(f"تجزیہ: ٹریڈ {symbol} تکنیکی وجوہات کی بنا پر ناکام ہوئی۔ وزن میں معمول کے مطابق کمی کی جائے گی۔")
 
@@ -109,10 +107,10 @@ async def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
                                         (signal.signal_type == "sell" and score < 0)
 
                 if outcome == "tp_hit" and is_correct_prediction:
-                    weights[weight_key] *= (1 + 0.05) # کامیابی پر 5% اضافہ
+                    weights[weight_key] *= (1 + 0.05)
                     logger.info(f"✅ [{weight_key}] کا وزن بڑھایا گیا کیونکہ اس نے کامیاب ٹریڈ کی صحیح پیش گوئی کی تھی۔")
                 elif outcome == "sl_hit" and is_correct_prediction:
-                    weights[weight_key] *= (1 - adjustment_factor) # ناکامی پر متغیر کمی
+                    weights[weight_key] *= (1 - adjustment_factor)
                     logger.info(f"❌ [{weight_key}] کا وزن {adjustment_factor*100:.0f}% کم کیا گیا کیونکہ اس نے ناکام ٹریڈ کی غلط پیش گوئی کی تھی۔")
             
             total_weight = sum(weights.values())
@@ -134,4 +132,3 @@ async def learn_from_outcome(db: Session, signal: ActiveSignal, outcome: str):
         if weights_lock.locked():
             weights_lock.release()
             logger.info("وزن کی فائل کو ان لاک کر دیا گیا۔")
-                
