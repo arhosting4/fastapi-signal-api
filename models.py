@@ -2,7 +2,7 @@
 
 import os
 import logging
-from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func)
+from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime, JSON, func, Boolean)
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 from datetime import datetime
@@ -34,8 +34,6 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ★★★ JobLock ٹیبل کو یہاں سے ہٹا دیا گیا ہے ★★★
-
 class ActiveSignal(Base):
     __tablename__ = "active_signals"
     id = Column(Integer, primary_key=True, index=True)
@@ -51,6 +49,8 @@ class ActiveSignal(Base):
     component_scores = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # ★★★ نیا "گریس پیریڈ" کالم ★★★
+    is_new = Column(Boolean, default=True, nullable=False)
 
     def as_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
@@ -107,6 +107,5 @@ def create_db_and_tables():
         logger.info("ٹیبلز کامیابی سے بنائے یا تصدیق کیے گئے۔")
     except Exception as e:
         logger.error(f"ڈیٹا بیس بنانے میں ایک غیر متوقع خرابی: {e}", exc_info=True)
-        # اگر خرابی آتی ہے تو ایپ کو کریش ہونے سے روکنے کے لیے اسے پکڑیں
-        # پیداواری ماحول میں، آپ یہاں دوبارہ کوشش کرنے کی منطق شامل کر سکتے ہیں
         pass
+            
