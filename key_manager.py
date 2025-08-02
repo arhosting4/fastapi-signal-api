@@ -1,99 +1,93 @@
 # filename: key_manager.py
 
+import os
+import threading
+from datetime import datetime, timedelta
 import logging
-import time
-from collections import deque
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
-
-# مقامی امپورٹس
-from config import api_settings
 
 logger = logging.getLogger(__name__)
 
+class APIKey:
+    def __init__(self, key: str):
+        self.key = key
+        self.credits_today = 0
+        self.credits_minute = 0
+        self.last_minute = None
+        self.exhausted = False
+        self.cooldown_until = None
+
 class KeyManager:
     """
-    API کیز کو ایک مرکزی پول میں منظم کرتا ہے اور شرح کی حدود (rate limits) کو سنبھالتا ہے۔
-    یہ ورژن اصل ڈیزائن کی سادگی اور مضبوطی پر مبنی ہے۔
+    TwelveData API key pool manager.
+    Handles quota rotation, per-minute/day limit, thread safety, auto-failover/reset.
+    Only public access via get_hunter_key()/get_guardian_key().
     """
-    def __init__(self):
-        # تمام کیز کے لیے ایک ہی پول
-        self.keys: deque[str] = deque()
-        # محدود کیز اور ان کی پابندی کے خاتمے کا وقت
-        self.limited_keys: Dict[str, float] = {}
-        self._load_keys()
+    def __init__(self, keys, reset_hour_utc=0):
+        self.keys = [APIKey(k.strip()) for k in keys if k.strip()]
+        self.lock = threading.Lock()
+        self.reset_hour_utc = reset_hour_utc
+        self._last_daily_reset = None
+    
+    def _reset_daily(self):
+        now = datetime.utcnow()
+        if self._last_daily_reset != now.date() and now.hour == self.reset_hour_utc:
+            for k in self.keys:
+                k.credits_today = 0
+                k.exhausted = False
+                k.cooldown_until = None
+            self._last_daily_reset = now.date()
+            logger.info("API keys daily quota counters have been reset.")
+    
+    def _reset_minute(self):
+        now = datetime.utcnow().replace(second=0, microsecond=0)
+        for k in self.keys:
+            if k.last_minute != now:
+                k.credits_minute = 0
+                k.last_minute = now
 
-    def _load_keys(self):
-        """
-        ماحولیاتی متغیرات سے تمام کیز کو لوڈ کرتا ہے۔
-        """
-        # config.py سے کیز کی فہرست حاصل کریں
-        all_keys = api_settings.twelve_data_keys_list
-        unique_keys = sorted(list(set(all_keys)))
-        
-        if not unique_keys:
-            logger.critical("کوئی بھی Twelve Data API کلید فراہم نہیں کی گئی۔ سسٹم کام نہیں کر سکتا۔")
-            return
-
-        self.keys = deque(unique_keys)
-        logger.info(f"KeyManager شروع کیا گیا: کل {len(self.keys)} منفرد کیز کامیابی سے لوڈ ہو گئیں۔")
-
-    def get_key(self) -> Optional[str]:
-        """
-        پول سے ایک دستیاب API کلید راؤنڈ روبن طریقے سے فراہم کرتا ہے۔
-        """
-        if not self.keys:
-            logger.error("استعمال کے لیے کوئی API کیز دستیاب نہیں ہیں۔")
-            return None
-
-        # پول میں موجود تمام کیز کو ایک بار چیک کریں
-        for _ in range(len(self.keys)):
-            # قطار میں سب سے پہلی کلید حاصل کریں
-            key = self.keys[0]
-            # اسے قطار کے آخر میں بھیج دیں تاکہ اگلی بار دوسری کلید استعمال ہو
-            self.keys.rotate(-1)
-
-            # چیک کریں کہ آیا یہ کلید محدود ہے
-            if key in self.limited_keys:
-                # اگر پابندی کا وقت ختم ہو گیا ہے تو اسے دوبارہ فعال کریں
-                if time.time() > self.limited_keys[key]:
-                    del self.limited_keys[key]
-                    logger.info(f"کلید {key[:8]}... کی پابندی ختم ہو گئی۔ اسے دوبارہ دستیاب کیا جا رہا ہے۔")
-                    return key # کلید اب دستیاب ہے
-                else:
-                    # یہ کلید ابھی بھی محدود ہے، اگلی چیک کریں
+    def get_hunter_key(self):
+        """For OHLC/candles data fetches."""
+        self._reset_daily()
+        self._reset_minute()
+        with self.lock:
+            for k in self.keys:
+                if k.exhausted:
                     continue
-            else:
-                # یہ کلید محدود نہیں ہے، اسے استعمال کریں
-                return key
-        
-        # اگر لوپ مکمل ہو جائے اور کوئی بھی کلید دستیاب نہ ہو
-        logger.warning("تمام API کیز فی الحال عارضی طور پر محدود ہیں۔")
+                if k.cooldown_until and datetime.utcnow() < k.cooldown_until:
+                    continue
+                if k.credits_today >= 800:
+                    k.exhausted = True
+                    continue
+                if k.credits_minute >= 8:
+                    k.cooldown_until = datetime.utcnow() + timedelta(minutes=1)
+                    continue
+                k.credits_today += 1
+                k.credits_minute += 1
+                logger.debug(f"Hunter key selected: {k.key} (today={k.credits_today}, min={k.credits_minute})")
+                return k.key
+        logger.warning("All Hunter keys are currently unavailable (exhausted/cooldown).")
         return None
 
-    def report_key_issue(self, key: str, is_daily_limit: bool):
-        """
-        ایک کلید کو اس کی خرابی کی بنیاد پر محدود کے طور پر نشان زد کرتا ہے۔
-        """
-        if key in self.limited_keys:
-            return # یہ کلید پہلے ہی محدود ہے
+    def get_guardian_key(self):
+        """For quotes/monitor requests. Separated for future logic expansion."""
+        return self.get_hunter_key()
 
-        if is_daily_limit:
-            # اگر یومیہ حد ختم ہوئی ہے، تو اگلے دن UTC آدھی رات تک محدود کریں
-            now_utc = datetime.now(timezone.utc)
-            tomorrow_utc = now_utc + timedelta(days=1)
-            midnight_utc = tomorrow_utc.replace(hour=0, minute=0, second=1, microsecond=0)
-            expiry_timestamp = midnight_utc.timestamp()
-            self.limited_keys[key] = expiry_timestamp
-            logger.warning(f"کلید {key[:8]}... کی یومیہ حد ختم! اسے اگلے دن UTC کے آغاز تک محدود کیا جا رہا ہے۔")
-        else:
-            # اگر فی منٹ کی حد ختم ہوئی ہے، تو 65 سیکنڈ کے لیے محدود کریں
-            duration_seconds = 65
-            expiry_time = time.time() + duration_seconds
-            self.limited_keys[key] = expiry_time
-            expiry_dt = datetime.fromtimestamp(expiry_time)
-            logger.warning(f"کلید {key[:8]}... کی فی منٹ حد ختم! اسے {duration_seconds} سیکنڈ ({expiry_dt.isoformat()}) کے لیے محدود کیا جا رہا ہے۔")
+    def report_key_issue(self, key, is_daily_limit=False):
+        """Handles 429s: marks key as exhausted/cooldown as needed."""
+        with self.lock:
+            for k in self.keys:
+                if k.key == key:
+                    if is_daily_limit:
+                        k.exhausted = True
+                        logger.info(f"Key {key} marked exhausted (day quota).")
+                    else:
+                        k.cooldown_until = datetime.utcnow() + timedelta(minutes=1)
+                        logger.info(f"Key {key} cooldown for 1 minute (minute quota breach).")
+                    return
 
-# سنگلٹن مثال تاکہ پوری ایپلیکیشن میں ایک ہی مینیجر استعمال ہو
-key_manager = KeyManager()
-            
+def load_keys_from_env():
+    keys = os.getenv("TWELVEDATA_API_KEYS", "")
+    return keys.split(',') if keys else []
+
+key_manager = KeyManager(load_keys_from_env())
+                
