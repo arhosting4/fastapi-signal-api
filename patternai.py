@@ -1,73 +1,80 @@
 # filename: patternai.py
 
+from typing import Dict
+
 import pandas as pd
-from typing import Dict, Any
 
-def get_pattern_signal(df: pd.DataFrame) -> Dict[str, Any]:
+def detect_patterns(df: pd.DataFrame) -> Dict[str, str]:
     """
-    بنیادی اور معروف کینڈل اسٹک پیٹرنز (Engulfing, Doji, Hammer, Shooting Star) کی شناخت کرتا ہے۔
-    Input: candles (old→new), requires at least 3 bars.
-    Output: {"signal_type": "bullish"/"bearish"/"neutral", "reason": "..."}
-    استعمال: fusion_engine.py (signal strength/QA pipeline), مکمل roadmap compatibility!
-    """
-    if df is None or len(df) < 3:
-        return {"signal_type": "neutral", "reason": "ناکافی ڈیٹا پیٹرن شناخت کے لیے"}
-
-    recent = df.iloc[-3:]
-    bullish, bearish, reason = False, False, "کوئی پیٹرن نہ ملا"
-    first, second, third = recent.iloc[0], recent.iloc[1], recent.iloc[2]
-
-    # --- Bullish Engulfing Pattern ---
-    if (
-        first.close < first.open and
-        second.close > second.open and
-        second.close > first.open and
-        (second.close - second.open) > abs(first.open - first.close)
-    ):
-        bullish = True
-        reason = "Bullish Engulfing pattern"
-
-    # --- Bearish Engulfing Pattern ---
-    if (
-        first.close > first.open and
-        second.close < second.open and
-        second.open > first.close and
-        (second.open - second.close) > abs(first.open - first.close)
-    ):
-        bearish = True
-        reason = "Bearish Engulfing pattern"
-
-    # --- Doji (last two bars: trend indecision/caution) ---
-    for c in recent[-2:]:
-        body = abs(c.close - c.open)
-        rng = c.high - c.low
-        if rng > 0 and body / rng < 0.12:
-            reason = "Doji: Trend Caution"
-            if not bullish and not bearish:
-                return {"signal_type": "neutral", "reason": reason}
-
-    # --- Hammer (bullish reversal, recent bar) ---
-    if (
-        third.close > third.open and
-        (third.low < min(second.low, first.low)) and
-        (third.open - third.low) > (third.close - third.open) * 1.5
-    ):
-        bullish = True
-        reason = "Hammer pattern"
-
-    # --- Shooting Star (bearish reversal, recent bar) ---
-    if (
-        third.close < third.open and
-        (third.high > max(second.high, first.high)) and
-        (third.high - third.close) > (third.open - third.close) * 1.5
-    ):
-        bearish = True
-        reason = "Shooting Star pattern"
-
-    if bullish and not bearish:
-        return {"signal_type": "bullish", "reason": reason}
-    elif bearish and not bullish:
-        return {"signal_type": "bearish", "reason": reason}
-    else:
-        return {"signal_type": "neutral", "reason": "کوئی خاص reversal یا trend pattern نہ ملا"}
+    فراہم کردہ کینڈل اسٹک ڈیٹا فریم کی بنیاد پر عام کینڈل اسٹک پیٹرنز کی شناخت کرتا ہے۔
+    
+    Args:
+        df (pd.DataFrame): کینڈل اسٹک ڈیٹا جس میں 'open', 'high', 'low', 'close' کالم ہوں۔
         
+    Returns:
+        Dict[str, str]: ایک ڈکشنری جس میں شناخت شدہ 'pattern' اور اس کی 'type' ('bullish', 'bearish', 'neutral') ہو۔
+    """
+    if len(df) < 2:
+        return {"pattern": "ناکافی ڈیٹا", "type": "neutral"}
+
+    # تجزیے کے لیے آخری دو کینڈلز کا استعمال کریں
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    # --- Bullish پیٹرنز ---
+    
+    # Bullish Engulfing: ایک چھوٹی سرخ کینڈل کے بعد ایک بڑی سبز کینڈل جو پچھلی کینڈل کو مکمل طور پر نگل لے۔
+    is_bullish_engulfing = (
+        prev['close'] < prev['open'] and 
+        last['close'] > last['open'] and 
+        last['close'] >= prev['open'] and 
+        last['open'] <= prev['close']
+    )
+    if is_bullish_engulfing:
+        return {"pattern": "Bullish Engulfing", "type": "bullish"}
+
+    # Hammer: ایک چھوٹی باڈی اور لمبا نچلا سایہ، جو نیچے کے رجحان کے بعد ممکنہ تبدیلی کی نشاندہی کرتا ہے۔
+    body_size = abs(last['close'] - last['open'])
+    total_range = last['high'] - last['low']
+    
+    # اصلاح: صفر سے تقسیم (division by zero) سے بچنے کے لیے چیک
+    if total_range == 0:
+        # اگر رینج صفر ہے تو یہ ایک Doji ہو سکتا ہے، اسے نیچے ہینڈل کیا جائے گا
+        pass
+    else:
+        lower_wick = (min(last['open'], last['close'])) - last['low']
+        upper_wick = last['high'] - (max(last['open'], last['close']))
+        
+        is_hammer = (lower_wick >= body_size * 2) and (upper_wick < body_size)
+        if is_hammer:
+            return {"pattern": "Hammer", "type": "bullish"}
+
+    # --- Bearish پیٹرنز ---
+
+    # Bearish Engulfing: ایک چھوٹی سبز کینڈل کے بعد ایک بڑی سرخ کینڈل جو پچھلی کینڈل کو مکمل طور پر نگل لے۔
+    is_bearish_engulfing = (
+        prev['close'] > prev['open'] and 
+        last['close'] < last['open'] and 
+        last['close'] <= prev['open'] and 
+        last['open'] >= prev['close']
+    )
+    if is_bearish_engulfing:
+        return {"pattern": "Bearish Engulfing", "type": "bearish"}
+
+    # Shooting Star: ایک چھوٹی باڈی اور لمبا اوپری سایہ، جو اوپر کے رجحان کے بعد ممکنہ تبدیلی کی نشاندہی کرتا ہے۔
+    if total_range > 0:
+        lower_wick = (min(last['open'], last['close'])) - last['low']
+        upper_wick = last['high'] - (max(last['open'], last['close']))
+        
+        is_shooting_star = (upper_wick >= body_size * 2) and (lower_wick < body_size)
+        if is_shooting_star:
+            return {"pattern": "Shooting Star", "type": "bearish"}
+
+    # --- غیر جانبدار پیٹرنز ---
+
+    # Doji: اوپن اور کلوز قیمتیں تقریباً برابر، جو غیر یقینی صورتحال کی نشاندہی کرتا ہے۔
+    if total_range > 0 and body_size < total_range * 0.05:
+        return {"pattern": "Doji/Indecision", "type": "neutral"}
+
+    return {"pattern": "کوئی خاص پیٹرن نہیں", "type": "neutral"}
+            
