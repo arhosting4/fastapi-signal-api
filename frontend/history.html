@@ -1,163 +1,100 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trade History - ScalpMaster AI</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <title>Scalping Signals History</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        :root {
-            --bg: #0d1117; --primary: #161b22; --secondary: #21262d; --border: #30363d;
-            --text-primary: #c9d1d9; --text-secondary: #8b949e;
-            --accent-gold: #ffab00;
-            --status-tp_hit: #238636; --status-sl_hit: #da3633; --status-manual_close: #a37100;
-        }
-        html { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-primary); }
-        body { margin: 0; padding: 0; }
-        .header { background-color: var(--primary); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
-        .logo { font-family: 'Teko', sans-serif; font-size: 1.8rem; color: var(--accent-gold); letter-spacing: 1px; }
-        .navbar-desktop a { color: var(--text-secondary); text-decoration: none; margin-left: 1.5rem; font-weight: 500; transition: color 0.3s; }
-        .navbar-desktop a:hover, .navbar-desktop a.active { color: var(--text-primary); }
-        .main-container { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
-        .page-header { font-family: 'Teko', sans-serif; font-size: 2rem; color: var(--text-primary); margin-bottom: 1.5rem; }
-        .table-container { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        .table-wrapper { overflow-x: auto; }
+        body { font-family: Arial, sans-serif; background: #181a22; color: #f0f3f7; }
+        h1 { text-align: center; margin-top: 2rem; }
+        #history { max-width: 1000px; margin: 2rem auto; border-radius: 7px; background: #232631; border: 1px solid #333; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-        th { background-color: var(--secondary); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; font-size: 0.85rem; }
-        tbody tr:last-child td { border-bottom: none; }
-        tbody tr:hover { background-color: var(--secondary); }
-        .status-tag { padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.9rem; font-weight: 600; color: #fff; text-transform: uppercase; }
-        .status-tp_hit { background-color: var(--status-tp_hit); }
-        .status-sl_hit { background-color: var(--status-sl_hit); }
-        .status-manual_close { background-color: var(--status-manual_close); }
-        .no-data-message { background-color: var(--primary); border: 1px solid var(--border); border-radius: 8px; padding: 3rem; text-align: center; color: var(--text-secondary); }
-        .mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--primary); border-top: 1px solid var(--border); justify-content: space-around; padding: 0.5rem 0; z-index: 1000; }
-        .mobile-nav a { color: var(--text-secondary); text-decoration: none; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.75rem; }
-        .mobile-nav a.active { color: var(--accent-gold); }
-        .mobile-nav i { font-size: 1.2rem; }
-        @media (max-width: 768px) {
-            .navbar-desktop { display: none; }
-            .mobile-nav { display: flex; }
-            body { padding-bottom: 70px; }
-            .main-container { padding: 1rem; }
-            th, td { padding: 0.8rem 1rem; }
-        }
+        th, td { padding: 10px 8px; text-align: center; }
+        th { background: #344052; }
+        tr:nth-child(even) { background: #222433; }
+        .signal-buy { color: #3bef6b; font-weight: bold; }
+        .signal-sell { color: #f15555; font-weight: bold; }
+        .result-tp { background: #044b19; }
+        .result-sl { background: #4a0e09; }
+        .tier-badge { border-radius: 4px; padding: 2px 8px; font-size: 0.92em; }
+        .tier-1 { background: #055f23; }
+        .tier-2 { background: #21732a; }
+        .tier-3 { background: #998a12; }
+        .tier-4 { background: #cc7a19; }
+        .tier-5 { background: #a03223; }
     </style>
 </head>
 <body>
-    <header class="header">
-        <div class="logo">SCALPMASTER AI</div>
-        <nav class="navbar-desktop">
-            <a href="index.html">Dashboard</a>
-            <a href="history.html" class="active">History</a>
-            <a href="news.html">News</a>
-        </nav>
-    </header>
-
-    <main class="main-container">
-        <h2 class="page-header">Completed Trades History</h2>
-        <div class="table-container" id="history-container">
-            <div class="table-wrapper">
-                <table id="history-table" style="display: none;">
-                    <thead>
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Signal</th>
-                            <th>Entry Price</th>
-                            <th>Close Price</th>
-                            <th>Outcome</th>
-                            <th>Reason for Closure</th>
-                            <th>Close Time (UTC)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body"></tbody>
-                </table>
-            </div>
-            <div class="no-data-message" id="no-history-message">
-                <h3><i class="fas fa-hourglass-half"></i> Loading History...</h3>
-                <p>Please wait while we fetch the completed trades.</p>
-            </div>
-        </div>
-    </main>
-
-    <nav class="mobile-nav">
-        <a href="index.html"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
-        <a href="history.html" class="active"><i class="fas fa-history"></i><span>History</span></a>
-        <a href="news.html"><i class="fas fa-newspaper"></i><span>News</span></a>
-    </nav>
-
+    <h1>📜 Signal History</h1>
+    <div id="history">
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Signal</th>
+                    <th>Timeframe</th>
+                    <th>Entry</th>
+                    <th>TP</th>
+                    <th>SL</th>
+                    <th>Confidence</th>
+                    <th>Tier</th>
+                    <th>Result</th>
+                    <th>Created</th>
+                    <th>Closed</th>
+                </tr>
+            </thead>
+            <tbody id="his-rows"></tbody>
+        </table>
+    </div>
     <script>
-        const historyBody = document.getElementById('history-body');
-        const noHistoryMessage = document.getElementById('no-history-message');
-        const historyTable = document.getElementById('history-table');
-
-        async function fetchTradeHistory() {
-            try {
-                const response = await fetch('/api/history');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const trades = await response.json();
-                
-                historyBody.innerHTML = '';
-
-                if (Array.isArray(trades) && trades.length > 0) {
-                    noHistoryMessage.style.display = 'none';
-                    historyTable.style.display = 'table';
-                    
-                    trades.forEach(trade => {
-                        const row = document.createElement('tr');
-                        
-                        const outcome = trade.outcome || 'unknown';
-                        const outcomeClass = `status-${outcome.toLowerCase()}`;
-                        const outcomeText = (trade.outcome || 'N/A').replace(/_/g, ' ').toUpperCase();
-                        
-                        const reasonText = (trade.reason_for_closure || 'N/A').replace(/_/g, ' ');
-
-                        const formatPrice = (price) => typeof price === 'number' ? price.toFixed(5) : 'N/A';
-                        
-                        // تاریخ کو UTC میں دکھانے کے لیے ISO سٹرنگ کو Date آبجیکٹ میں تبدیل کریں
-                        const closeTime = trade.closed_at 
-                            ? new Date(trade.closed_at).toLocaleString('en-GB', { 
-                                  timeZone: 'UTC',
-                                  year: 'numeric', month: 'short', day: '2-digit',
-                                  hour: '2-digit', minute: '2-digit' 
-                              }) + ' UTC'
-                            : 'N/A';
-
-                        row.innerHTML = `
-                            <td><strong>${trade.symbol || 'N/A'}</strong><br><small>${trade.timeframe || 'N/A'}</small></td>
-                            <td>${(trade.signal_type || 'N/A').toUpperCase()}</td>
-                            <td>${formatPrice(trade.entry_price)}</td>
-                            <td>${formatPrice(trade.close_price)}</td>
-                            <td><span class="status-tag ${outcomeClass}">${outcomeText}</span></td>
-                            <td style="text-transform: capitalize;">${reasonText}</td>
-                            <td>${closeTime}</td>
-                        `;
-                        historyBody.appendChild(row);
-                    });
-                } else {
-                    noHistoryMessage.innerHTML = '<h3><i class="fas fa-search"></i> No Data Found</h3><p>There are no completed trades in the history yet.</p>';
-                    noHistoryMessage.style.display = 'block';
-                    historyTable.style.display = 'none';
-                }
-            } catch (error) {
-                console.error('Error fetching trade history:', error);
-                noHistoryMessage.innerHTML = '<h3><i class="fas fa-exclamation-triangle"></i> Error</h3><p>Failed to load trade history. Please try again later.</p>';
-                noHistoryMessage.style.display = 'block';
-                historyTable.style.display = 'none';
+        // Fetch and display signal history (assume REST API: /api/signal-history)
+        async function loadHistory() {
+            let resp = await fetch("/api/signal-history");
+            if (!resp.ok) return;
+            let data = await resp.json();
+            let rows = "";
+            for (const sig of data) {
+                let tierClass = getTierColorClass(sig.tier || '');
+                let trClass = (sig.signal === "buy" || sig.signal_type === "buy") ? "signal-buy" : "signal-sell";
+                let resultClass = (sig.result === "tp_hit") ? "result-tp" : (sig.result === "sl_hit" ? "result-sl" : "");
+                rows += `
+                <tr class="${trClass} ${resultClass}">
+                    <td>${sig.symbol}</td>
+                    <td>${sig.signal || sig.signal_type}</td>
+                    <td>${sig.timeframe}</td>
+                    <td>${sig.entry_price || sig.price}</td>
+                    <td>${sig.tp_price || sig.tp}</td>
+                    <td>${sig.sl_price || sig.sl}</td>
+                    <td>${sig.confidence}%</td>
+                    <td><span class="tier-badge ${tierClass}">${sig.tier || ''}</span></td>
+                    <td>${formatResult(sig.result)}</td>
+                    <td>${formatDate(sig.created_at || sig.timestamp)}</td>
+                    <td>${formatDate(sig.closed_at)}</td>
+                </tr>`;
             }
+            document.getElementById("his-rows").innerHTML = rows;
         }
-        
-        // صفحہ لوڈ ہونے پر ہسٹری حاصل کریں
-        fetchTradeHistory();
-        // ہر 5 منٹ بعد ہسٹری کو خود بخود تازہ کریں
-        setInterval(fetchTradeHistory, 5 * 60 * 1000);
+        function getTierColorClass(tierText) {
+            if (!tierText) return 'tier-5';
+            if (tierText.includes('Elite')) return 'tier-1';
+            if (tierText.includes('Strong')) return 'tier-2';
+            if (tierText.includes('Moderate')) return 'tier-3';
+            if (tierText.includes('Caution')) return 'tier-4';
+            return 'tier-5';
+        }
+        function formatResult(res) {
+            if (!res) return '';
+            if (res === "tp_hit") return "✅ TP Hit";
+            if (res === "sl_hit") return "❌ SL Hit";
+            return res;
+        }
+        function formatDate(dt) {
+            if (!dt) return '';
+            if (typeof dt === 'string')
+                return dt.replace('T', ' ').replace('Z','').split('.')[0];
+            return dt;
+        }
+        window.onload = loadHistory;
     </script>
 </body>
-  </html>
-  
+</html>
