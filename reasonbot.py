@@ -43,6 +43,7 @@ def _add_technical_reason(parts: List[str], action: str, indicators: Dict[str, A
     macd_signal = indicators.get('macd_signal_line', 0)
     supertrend_dir = indicators.get('supertrend_direction', 'N/A')
 
+    # اصلاح: وجہ کو مزید معلوماتی بنایا گیا ہے
     if action == "خریداری":
         if macd_line > macd_signal:
             parts.append("MACD تیزی کی رفتار (bullish momentum) دکھا رہا ہے۔")
@@ -86,4 +87,4 @@ def _add_risk_and_news_warning(
         parts.append(warning)
     elif risk == "High":
         parts.append("**نوٹ: مارکیٹ کے اتار چڑھاؤ یا خبروں کی وجہ سے رسک بلند (High) ہے۔**")
-    
+        
