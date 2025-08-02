@@ -2,94 +2,116 @@
 
 import asyncio
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, List
+
+import pandas as pd
 from sqlalchemy.orm import Session
 
-from sentinel import get_news_analysis_for_symbol
+# مقامی امپورٹس
+from config import api_settings, strategy_settings
+from level_analyzer import find_market_structure
+from patternai import detect_patterns
+from reasonbot import generate_reason
 from riskguardian import check_risk
-from strategybot import generate_technical_analysis_score, calculate_tp_sl
-from patternai import get_pattern_signal
+from schemas import Candle
+from sentinel import get_news_analysis_for_symbol
+from strategybot import calculate_tp_sl, generate_technical_analysis_score
 from tierbot import get_tier
 from trainerai import get_confidence
-from models import ActiveSignal
-import database_crud as crud
-from websocket_manager import manager as ws_manager
-from schemas import SignalData
 
 logger = logging.getLogger(__name__)
 
-async def run_full_pipeline(db: Session, symbol: str, df):
+async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
     """
-    مرکزی async سگنل pipeline: ہر symbol پر (hunter job سے) کال ہوتی ہے۔
-    ہر analysis (news, risk, strategy, pattern) کو اکٹھا کرے، confidence + tier نکالے، اور
-    اگرrequirements پوری ہوں تو DB + websocket پر سگنل publish کرے۔
+    تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
+    یہ تمام تجزیاتی کاموں کو متوازی طور پر چلاتا ہے تاکہ کارکردگی کو بہتر بنایا جا سکے۔
     """
-    # Async parallel analysis
-    news_task = get_news_analysis_for_symbol(symbol)
-    risk_task = asyncio.to_thread(check_risk, df)
-    strategy_task = asyncio.to_thread(generate_technical_analysis_score, df)
-    pattern_task = asyncio.to_thread(get_pattern_signal, df)
-    news_result, risk_result, strategy_result, pattern_result = await asyncio.gather(
-        news_task, risk_task, strategy_task, pattern_task
-    )
+    try:
+        # مرحلہ 1: ڈیٹا فریم کو مرکزی طور پر صرف ایک بار تیار کریں
+        if not candles or len(candles) < 34:
+            return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(candles)} کینڈلز)۔"}
 
-    logger.info(f"FusionEngine | [{symbol}] news: {news_result} | risk: {risk_result} | strategy: {strategy_result} | pattern: {pattern_result}")
+        df = pd.DataFrame([c.dict() for c in candles])
+        # یقینی بنائیں کہ عددی کالمز عددی ہیں
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
+        
+        if len(df) < 34:
+             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
-    risk_status = risk_result.get("status", "Normal")
-    news_impact = news_result.get("impact", "Clear")
-    technical_score = strategy_result.get("score", 0)
-    reason_all = "; ".join([
-        f"news: {news_result.get('reason','')}",
-        f"risk: {risk_result.get('reason','')}",
-        f"strategy: {strategy_result.get('reason','')}",
-        f"pattern: {pattern_result.get('reason','')}",
-    ])
-
-    core_signal = "buy" if technical_score > 0 else "sell"
-    pattern_signal_type = pattern_result.get("signal_type", "")
-
-    confidence = get_confidence(
-        db=db,
-        core_signal=core_signal,
-        technical_score=technical_score,
-        pattern_signal_type=pattern_signal_type,
-        risk_status=risk_status,
-        news_impact=news_impact,
-        symbol=symbol
-    )
-    tier = get_tier(confidence, risk_status)
-    logger.info(f"FusionEngine [{symbol}] Final confidence: {confidence} | Tier: {tier}")
-
-    # FIRE ONLY IF: enough confidence, no critical risk/news
-    if (confidence >= 60) and not (risk_status == "Critical" or news_impact == "High"):
-        tp_sl = calculate_tp_sl(df, core_signal)
-        if not tp_sl:
-            logger.warning(f"[{symbol}] TP/SL calculation failed; skipping signal.")
-            return
-
-        tp, sl = tp_sl
-        signal_data = SignalData(
-            signal_id=f"{symbol}_{df.iloc[-1]['datetime']}",
-            symbol=symbol,
-            timeframe="15min",
-            signal_type=core_signal,
-            entry_price=df['close'].iloc[-1],
-            tp_price=tp,
-            sl_price=sl,
-            confidence=confidence,
-            reason=reason_all,
-            timestamp=str(df.iloc[-1]['datetime'])
+        # مرحلہ 2: تمام تجزیاتی فنکشنز کو متوازی طور پر چلائیں
+        # اصلاح: asyncio.gather کا استعمال کارکردگی کو بہت بہتر بناتا ہے۔
+        # asyncio.to_thread کا استعمال یقینی بناتا ہے کہ sync فنکشنز async لوپ کو بلاک نہ کریں۔
+        tech_analysis_task = asyncio.to_thread(generate_technical_analysis_score, df)
+        pattern_task = asyncio.to_thread(detect_patterns, df)
+        risk_task = asyncio.to_thread(check_risk, df)
+        news_task = get_news_analysis_for_symbol(symbol)
+        market_structure_task = asyncio.to_thread(find_market_structure, df)
+        
+        # تمام کاموں کے مکمل ہونے کا انتظار کریں
+        tech_analysis, pattern_data, risk_assessment, news_data, market_structure = await asyncio.gather(
+            tech_analysis_task,
+            pattern_task,
+            risk_task,
+            news_task,
+            market_structure_task
         )
 
-        # DB save — you need to implement this helper in database_crud
-        if hasattr(crud, "save_signal_to_db"):
-            crud.save_signal_to_db(db, signal_data)
-        else:
-            logger.warning("save_signal_to_db not implemented in database_crud.py")
-
-        # Broadcast via websocket
-        await ws_manager.broadcast(signal_data.model_dump())
-        logger.info(f"FusionEngine | [{symbol}] Signal fired & broadcasted. Data: {signal_data.model_dump()}")
-    else:
-        logger.info(f"FusionEngine | [{symbol}] Signal blocked: low confidence or high risk/news. {reason_all}")
+        # مرحلہ 3: نتائج کی بنیاد پر بنیادی سگنل کا تعین کریں
+        technical_score = tech_analysis.get("score", 0)
+        indicators = tech_analysis.get("indicators", {})
         
+        core_signal = "wait"
+        if technical_score >= strategy_settings.SIGNAL_SCORE_THRESHOLD:
+            core_signal = "buy"
+        elif technical_score <= -strategy_settings.SIGNAL_SCORE_THRESHOLD:
+            core_signal = "sell"
+        
+        if core_signal == "wait":
+            return {"status": "no-signal", "reason": f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ سے کم ہے۔"}
+
+        # مرحلہ 4: بقیہ ڈیٹا کی بنیاد پر حتمی سگنل تیار کریں
+        final_risk_status = risk_assessment.get("status", "Normal")
+        if news_data.get("impact") == "High":
+            final_risk_status = "Critical" if final_risk_status == "High" else "High"
+        
+        confidence = get_confidence(
+            db, core_signal, technical_score, pattern_data.get("type", "neutral"),
+            final_risk_status, news_data.get("impact"), symbol
+        )
+        tier = get_tier(confidence, final_risk_status)
+        
+        tp_sl_data = calculate_tp_sl(df, core_signal)
+        if not tp_sl_data:
+            return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
+        
+        tp, sl = tp_sl_data
+
+        reason = generate_reason(
+            core_signal, pattern_data, final_risk_status,
+            news_data, confidence, market_structure, indicators=indicators
+        )
+
+        return {
+            "status": "ok",
+            "symbol": symbol,
+            "signal": core_signal,
+            "pattern": pattern_data.get("pattern"),
+            "risk": final_risk_status,
+            "news": news_data.get("impact"),
+            "reason": reason,
+            "confidence": round(confidence, 2),
+            "tier": tier,
+            "timeframe": api_settings.PRIMARY_TIMEFRAME,
+            "price": df['close'].iloc[-1],
+            "tp": round(tp, 5),
+            "sl": round(sl, 5),
+            "component_scores": indicators.get("component_scores", {})
+        }
+
+    except Exception as e:
+        logger.error(f"[{symbol}] کے لیے فیوژن انجن میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
+        return {"status": "error", "reason": f"AI فیوژن میں ایک غیر متوقع خرابی۔"}
+    
