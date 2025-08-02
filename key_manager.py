@@ -96,4 +96,4 @@ class KeyManager:
 
 # سنگلٹن مثال تاکہ پوری ایپلیکیشن میں ایک ہی مینیجر استعمال ہو
 key_manager = KeyManager()
-            
+    
