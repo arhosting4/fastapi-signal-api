@@ -32,6 +32,5 @@ def get_tier(confidence: float, risk_status: str) -> str:
     elif confidence >= 60:
         return "Tier 4 – Caution"
     else:
-        return "Tier 5 – Weak"```
-
-جب آپ تیار ہوں تو "next" لکھیں۔
+        return "Tier 5 – Weak"
+        
