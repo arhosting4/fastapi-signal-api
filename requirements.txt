@@ -1,11 +1,33 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-pydantic
-httpx
-apscheduler
-pytest
-pytest-asyncio
-python-dotenv
-pandas
-numpy
+# filename: requirements.txt
+
+# FastAPI اور ویب سرور
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+gunicorn==22.0.0
+
+# غیر مطابقت پذیر HTTP کلائنٹ
+httpx==0.27.0
+
+# ڈیٹا تجزیہ
+pandas==2.2.2
+numpy==1.23.5
+
+# ڈیٹا بیس (SQLAlchemy اور PostgreSQL ڈرائیور)
+sqlalchemy==2.0.31
+psycopg2-binary==2.9.9
+
+# پس منظر کے کاموں کا شیڈولر
+apscheduler==3.10.4
+
+# کنفیگریشن اور ماحولیاتی متغیرات
+python-dotenv==1.0.1
+pydantic-settings==2.3.4
+
+# ڈیٹا کی توثیق (fastapi کا انحصار)
+pydantic==2.8.2
+
+# WebSocket سپورٹ
+websockets==12.0
+
+# ڈیٹا بیس مائیگریشن (اختیاری لیکن تجویز کردہ)
+alembic==1.13.2
