@@ -1,53 +1,20 @@
-# filename: render.yaml
-
 services:
-  # ویب سروس جو FastAPI ایپلیکیشن کو چلائے گی
   - type: web
-    name: scalpmaster-ai-api
-    # تعیناتی کا علاقہ
-    region: oregon 
-    # تعیناتی کا ذریعہ: Docker
-    env: docker
-    # گٹ ہب برانچ جس سے تعینات کرنا ہے
-    branch: main
-    # صحت کی جانچ کا راستہ
-    healthCheckPath: /health
-    # Dockerfile کا راستہ
-    dockerfilePath: ./Dockerfile
-    # سروس کا پلان
-    plan: free 
-    
-    # ماحولیاتی متغیرات
+    name: scalping-signals-app
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port 10000
     envVars:
-      # ڈیٹا بیس کا URL خود بخود ڈیٹا بیس سروس سے حاصل کریں
-      - key: DATABASE_URL
-        fromDatabase:
-          name: scalpmaster-db
-          property: connectionString
-      
-      # ★★★ حل: Render کو کنفیگریشن دوبارہ لوڈ کرنے پر مجبور کرنے کے لیے یہ لائن شامل کریں ★★★
-      - key: FORCE_RELOAD
-        value: "true" # یہ متغیر ہر ڈیپلائیمنٹ پر کیشے کو نظر انداز کرنے میں مدد کرے گا
-
-      # یہ متغیرات Render کے ڈیش بورڈ میں محفوظ طریقے سے سیٹ کیے جائیں گے
-      # sync: false کا مطلب ہے کہ ان کی قدریں اس فائل میں نہیں لکھی جائیں گی
-      - key: TWELVE_DATA_API_KEYS
-        sync: false
       - key: MARKETAUX_API_KEY
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-      # لاگنگ کی سطح کو کنٹرول کرنے کے لیے
-      - key: LOG_LEVEL
-        value: INFO
-
-# ڈیٹا بیس سروس (PostgreSQL)
-databases:
-  - name: scalpmaster-db
-    databaseName: scalpmaster_db
-    user: scalpmaster_user
-    # ڈیٹا بیس کا پلان
+        value: <CHANGEME-YOUR-NEWS-API-KEY>
+      - key: TWELVEDATA_API_KEYS
+        value: <CHANGEME-API-K1,K2,K3...>
+      - key: DATABASE_URL
+        value: sqlite:///app.db
     plan: free
-    
+    autoDeploy: true
+    routes:
+      - type: http
+        source: /
+        destination: /
+        
