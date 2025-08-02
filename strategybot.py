@@ -1,39 +1,40 @@
 # filename: strategybot.py
 
+import pandas as pd
+import numpy as np
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import List, Tuple, Optional, Dict, Any
 
-import numpy as np
-import pandas as pd
-
-# مقامی امپورٹس
 from level_analyzer import find_optimal_tp_sl
-# ★★★ حل: 'tech_settings' کو صحیح طریقے سے امپورٹ کریں ★★★
-from config import tech_settings
+from config import TECHNICAL_ANALYSIS
 
 logger = logging.getLogger(__name__)
+
 WEIGHTS_FILE = "strategy_weights.json"
 
-# --- کنفیگریشن سے پیرامیٹرز ---
-EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
-EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
-RSI_PERIOD = tech_settings.RSI_PERIOD
-STOCH_K = tech_settings.STOCH_K
-STOCH_D = tech_settings.STOCH_D
-SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
-SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
+# --- Parameters from config ---
+EMA_SHORT_PERIOD = TECHNICAL_ANALYSIS["EMA_SHORT_PERIOD"]
+EMA_LONG_PERIOD = TECHNICAL_ANALYSIS["EMA_LONG_PERIOD"]
+RSI_PERIOD = TECHNICAL_ANALYSIS["RSI_PERIOD"]
+STOCH_K = TECHNICAL_ANALYSIS["STOCH_K"]
+STOCH_D = TECHNICAL_ANALYSIS["STOCH_D"]
+SUPERTREND_ATR = TECHNICAL_ANALYSIS["SUPERTREND_ATR"]
+SUPERTREND_FACTOR = TECHNICAL_ANALYSIS["SUPERTREND_FACTOR"]
 
-# ... (بقیہ کوڈ میں کوئی تبدیلی نہیں) ...
 def _load_weights() -> Dict[str, float]:
+    """Load current indicator weights from strategy_weights.json."""
     try:
         with open(WEIGHTS_FILE, 'r') as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        logger.warning(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ وزن استعمال کیا جا رہا ہے۔")
+        logger.warning(f"{WEIGHTS_FILE} missing/corrupted, using defaults.")
         return {
-            "ema_cross": 0.30, "rsi_position": 0.20, "stoch_position": 0.20,
-            "price_action": 0.10, "supertrend_confirm": 0.20
+            "ema_cross": 0.30,
+            "rsi_position": 0.20,
+            "stoch_position": 0.20,
+            "price_action": 0.10,
+            "supertrend_confirm": 0.20
         }
 
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
@@ -78,6 +79,10 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     return df
 
 def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Compute technical signal strength & explainability for all indicators and price action.
+    Returns: {"score": float, "indicators": {...}, "reason": "..."}
+    """
     if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
     close = df['close']
@@ -87,17 +92,21 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
     rsi = calculate_rsi(close, RSI_PERIOD)
     stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
     df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR)
+
     last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
     last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
     last_close, prev_close = close.iloc[-1], close.iloc[-2]
     in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
+
     if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
         return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
+
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
     rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
     stoch_score = 1 if last_stoch_k > 52 else (-1 if last_stoch_k < 48 else 0)
     price_action_score = 1 if last_close > prev_close else -1
     supertrend_score = 1 if in_uptrend else -1
+
     total_score = (
         (ema_score * WEIGHTS.get("ema_cross", 0.30)) +
         (rsi_score * WEIGHTS.get("rsi_position", 0.20)) +
@@ -105,6 +114,7 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
         (price_action_score * WEIGHTS.get("price_action", 0.10)) +
         (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.20))
     ) * 100
+
     indicators_data = {
         "ema_fast": round(last_ema_fast, 5), "ema_slow": round(last_ema_slow, 5),
         "rsi": round(last_rsi, 2), "stoch_k": round(last_stoch_k, 2),
@@ -116,15 +126,18 @@ def generate_technical_analysis_score(df: pd.DataFrame) -> Dict[str, Any]:
             "supertrend_confirm": supertrend_score
         }
     }
+
     return {"score": total_score, "indicators": indicators_data, "reason": "تجزیہ مکمل"}
 
 def calculate_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
+    """
+    خودکار TP/SL کیلکولیشن؛ مارکٹ اسٹرکچر کے مطابق۔
+    """
     if df.empty or len(df) < 34:
-        logger.warning("TP/SL کے حساب کے لیے ناکافی ڈیٹا۔")
         return None
     try:
         return find_optimal_tp_sl(df, signal_type)
     except Exception as e:
-        logging.error(f"TP/SL کیلکولیشن میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
+        logging.error(f"TP/SL calculation error: {e}", exc_info=True)
         return None
     
