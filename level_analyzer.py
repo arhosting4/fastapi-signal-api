@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن اور مستقل اقدار ---
 MIN_RISK_REWARD_RATIO = strategy_settings.MIN_RISK_REWARD_RATIO
-# کنفلونس زون کی کم سے کم طاقت
 MIN_CONFLUENCE_STRENGTH = 5 
 
 class Level(NamedTuple):
@@ -70,7 +69,7 @@ def _get_fibonacci_levels(df: pd.DataFrame) -> List[Level]:
         Level(price=recent_high - (price_range * 0.618), type='fib', weight=1),
     ]
 
-# --- مرکزی فنکشن ---
+# --- مرکزی فنکشنز ---
 
 def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
     """
@@ -81,7 +80,6 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
     last_close = df['close'].iloc[-1]
     atr = _calculate_atr(df)
     
-    # 1. تمام ذرائع سے لیولز کو شفاف طریقے سے اکٹھا کریں
     all_levels: List[Level] = []
     all_levels.extend(_get_pivot_points(df))
     all_levels.extend(_get_swing_levels(df))
@@ -91,15 +89,11 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
         logger.warning("تجزیے کے لیے کوئی تکنیکی لیولز نہیں ملے۔")
         return None
 
-    # 2. لیولز کو قیمت کے لحاظ سے ترتیب دیں
     all_levels.sort(key=lambda x: x.price)
     
-    # 3. متحرک کلسٹرنگ الگورتھم
-    # لیولز کے گروپس (کلسٹرز) بنائیں جو ATR کی بنیاد پر ایک دوسرے کے قریب ہوں
     clusters: List[List[Level]] = []
     if all_levels:
         current_cluster = [all_levels[0]]
-        # کلسٹر بنانے کے لیے ATR کا 1/4 حصہ فاصلے کے طور پر استعمال کریں
         cluster_distance = atr * 0.25
         
         for i in range(1, len(all_levels)):
@@ -114,21 +108,16 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
         logger.warning("کوئی کنفلونس زون نہیں ملا۔")
         return None
 
-    # 4. ہر کلسٹر کی طاقت کا حساب لگائیں
     strong_zones = []
     for cluster in clusters:
-        # طاقت = (مختلف اقسام کی تعداد) * (تمام لیولز کا کل وزن)
         num_types = len(set(level.type for level in cluster))
         total_weight = sum(level.weight for level in cluster)
         strength = num_types * total_weight
-        
-        # کلسٹر کی اوسط قیمت
         avg_price = np.mean([level.price for level in cluster])
         
         if strength >= MIN_CONFLUENCE_STRENGTH:
             strong_zones.append({'price': avg_price, 'strength': strength})
 
-    # 5. سگنل کی قسم کی بنیاد پر بہترین TP اور SL زونز کا انتخاب کریں
     support_zones = [z for z in strong_zones if z['price'] < last_close]
     resistance_zones = [z for z in strong_zones if z['price'] > last_close]
 
@@ -136,7 +125,6 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
         logger.warning(f"کافی سپورٹ ({len(support_zones)}) یا رزسٹنس ({len(resistance_zones)}) زونز نہیں ملے۔")
         return None
 
-    # سب سے طاقتور زون کو منتخب کریں
     best_support = max(support_zones, key=lambda x: x['strength'])
     best_resistance = max(resistance_zones, key=lambda x: x['strength'])
 
@@ -148,7 +136,6 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
         final_tp = best_support['price']
         final_sl = best_resistance['price']
 
-    # 6. رسک/ریوارڈ اور منطقی حیثیت کی حتمی جانچ
     try:
         reward = abs(final_tp - last_close)
         risk = abs(last_close - final_sl)
@@ -165,4 +152,29 @@ def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[flo
     logger.info(f"ذہین کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f}, SL={final_sl:.5f} (RR: {rr_ratio:.2f})")
     return final_tp, final_sl
 
-# (find_market_structure فنکشن کو یہاں بغیر تبدیلی کے شامل کیا جا سکتا ہے اگر ضرورت ہو)
+# اصلاح: گمشدہ فنکشن کو واپس شامل کیا گیا
+def find_market_structure(df: pd.DataFrame, window: int = 20) -> Dict[str, str]:
+    """
+    مارکیٹ کے حالیہ رجحان (trend) کا تعین کرتا ہے (اوپر، نیچے، یا رینجنگ)۔
+    """
+    if len(df) < window:
+        return {"trend": "غیر متعین", "reason": "ناکافی ڈیٹا۔"}
+    
+    df_copy = df.copy()
+    df_copy['swing_high'] = df_copy['high'][(df_copy['high'].shift(1) < df_copy['high']) & (df_copy['high'].shift(-1) < df_copy['high'])]
+    df_copy['swing_low'] = df_copy['low'][(df_copy['low'].shift(1) > df_copy['low']) & (df_copy['low'].shift(-1) > df_copy['low'])]
+    
+    recent_highs = df_copy['swing_high'].dropna().tail(2).values
+    recent_lows = df_copy['swing_low'].dropna().tail(2).values
+
+    if len(recent_highs) < 2 or len(recent_lows) < 2:
+        return {"trend": "رینجنگ", "reason": "کوئی واضح سوئنگ پوائنٹس نہیں"}
+    
+    trend = "رینجنگ"
+    if recent_highs[-1] > recent_highs[-2] and recent_lows[-1] > recent_lows[-2]:
+        trend = "اوپر کا رجحان"
+    elif recent_highs[-1] < recent_highs[-2] and recent_lows[-1] < recent_lows[-2]:
+        trend = "نیچے کا رجحان"
+        
+    return {"trend": trend, "reason": f"مارکیٹ کی ساخت {trend} کی نشاندہی کرتی ہے۔"}
+    
