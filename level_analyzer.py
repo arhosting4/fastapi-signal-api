@@ -1,162 +1,111 @@
 # filename: level_analyzer.py
 
 import logging
-from typing import List, Dict, Optional, Tuple, NamedTuple
+from typing import List, Dict, Optional, Tuple
+
 import pandas as pd
 import numpy as np
 
+# مقامی امپورٹس
 from config import strategy_settings
 
 logger = logging.getLogger(__name__)
 
-# --- کنفیگریشن اور مستقل اقدار ---
+# --- کنفیگریشن سے مستقل اقدار ---
 MIN_RISK_REWARD_RATIO = strategy_settings.MIN_RISK_REWARD_RATIO
-MIN_CONFLUENCE_STRENGTH = 5 
+MIN_CONFLUENCE_SCORE = strategy_settings.MIN_CONFLUENCE_SCORE
+LEVEL_SCORING_WEIGHTS = {
+    "pivots": 3,
+    "swings": 2,
+    "fibonacci": 2,
+    "psychological": 1
+}
+ATR_PERIOD_FOR_SL = 14  # ATR کی مدت جو SL بفر کے لیے استعمال ہوگی
+ATR_BUFFER_MULTIPLIER = 0.25  # ATR کا کتنا حصہ بفر کے طور پر استعمال کرنا ہے (25%)
 
-class Level(NamedTuple):
-    """ایک انفرادی تکنیکی لیول کی نمائندگی کرتا ہے۔"""
-    price: float
-    type: str
-    weight: int
+# --- نجی ہیلپر فنکشنز ---
 
-# --- لیول کیلکولیشن کے نجی فنکشنز ---
-
-def _calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
+def _calculate_atr(df: pd.DataFrame, period: int) -> float:
     """Average True Range (ATR) کا حساب لگاتا ہے۔"""
+    if len(df) < period:
+        return 0.0
+    
     df_copy = df.copy()
-    df_copy['h-l'] = df_copy['high'] - df_copy['low']
-    df_copy['h-pc'] = abs(df_copy['high'] - df_copy['close'].shift(1))
-    df_copy['l-pc'] = abs(df_copy['low'] - df_copy['close'].shift(1))
+    high, low, close = df_copy['high'], df_copy['low'], df_copy['close']
+    
+    df_copy['h-l'] = high - low
+    df_copy['h-pc'] = abs(high - close.shift(1))
+    df_copy['l-pc'] = abs(low - close.shift(1))
+    
     tr = df_copy[['h-l', 'h-pc', 'l-pc']].max(axis=1)
-    atr = tr.ewm(span=period, adjust=False).mean().iloc[-1]
-    return atr if pd.notna(atr) and atr > 0 else df['close'].iloc[-1] * 0.001
+    atr = tr.ewm(span=period, adjust=False).mean()
+    
+    return atr.iloc[-1] if not atr.empty else 0.0
 
-def _get_pivot_points(df: pd.DataFrame) -> List[Level]:
-    """کلاسک پیوٹ پوائنٹس کو لیولز کے طور پر واپس کرتا ہے۔"""
-    if len(df) < 2: return []
-    last = df.iloc[-2]
-    h, l, c = last['high'], last['low'], last['close']
-    pivot = (h + l + c) / 3
-    return [
-        Level(price=(2 * pivot) - l, type='pivot_r', weight=3),
-        Level(price=(2 * pivot) - h, type='pivot_s', weight=3),
-        Level(price=pivot + (h - l), type='pivot_r', weight=2),
-        Level(price=pivot - (h - l), type='pivot_s', weight=2),
-    ]
+def _calculate_pivot_points(df: pd.DataFrame) -> Dict[str, float]:
+    """کلاسک پیوٹ پوائنٹس کا حساب لگاتا ہے۔"""
+    last_candle = df.iloc[-2]
+    high, low, close = last_candle['high'], last_candle['low'], last_candle['close']
+    pivot = (high + low + close) / 3
+    return {
+        'p': pivot,
+        'r1': (2 * pivot) - low, 's1': (2 * pivot) - high,
+        'r2': pivot + (high - low), 's2': pivot - (high - low),
+    }
 
-def _get_swing_levels(df: pd.DataFrame, window: int = 10) -> List[Level]:
-    """حالیہ سوئنگ ہائی اور لو کو لیولز کے طور پر واپس کرتا ہے۔"""
-    if len(df) < window: return []
+def _find_swing_levels(df: pd.DataFrame, window: int = 10) -> Dict[str, List[float]]:
+    """حالیہ سوئنگ ہائی اور لو لیولز کی شناخت کرتا ہے۔"""
     highs = df['high'].rolling(window=window, center=True).max().dropna().unique()
     lows = df['low'].rolling(window=window, center=True).min().dropna().unique()
-    levels = []
-    for high in sorted(list(highs), reverse=True)[:3]:
-        levels.append(Level(price=high, type='swing_r', weight=2))
-    for low in sorted(list(lows))[:3]:
-        levels.append(Level(price=low, type='swing_s', weight=2))
-    return levels
+    return {"highs": sorted(list(highs), reverse=True)[:3], "lows": sorted(list(lows))[:3]}
 
-def _get_fibonacci_levels(df: pd.DataFrame) -> List[Level]:
-    """فبوناچی ریٹریسمنٹ لیولز واپس کرتا ہے۔"""
-    if len(df) < 34: return []
+def _get_fibonacci_levels(df: pd.DataFrame) -> Dict[str, float]:
+    """فبوناچی ریٹریسمنٹ لیولز کا حساب لگاتا ہے۔"""
     recent_high = df['high'].tail(34).max()
     recent_low = df['low'].tail(34).min()
     price_range = recent_high - recent_low
-    if price_range == 0: return []
-    return [
-        Level(price=recent_high - (price_range * 0.382), type='fib', weight=1),
-        Level(price=recent_high - (price_range * 0.500), type='fib', weight=2),
-        Level(price=recent_high - (price_range * 0.618), type='fib', weight=1),
-    ]
+    if price_range == 0: return {}
+    return {
+        'fib_23_6': recent_high - (price_range * 0.236),
+        'fib_38_2': recent_high - (price_range * 0.382),
+        'fib_50_0': recent_high - (price_range * 0.5),
+        'fib_61_8': recent_high - (price_range * 0.618),
+    }
 
-# --- مرکزی فنکشنز ---
+def _get_psychological_levels(price: float) -> Dict[str, float]:
+    """موجودہ قیمت کے قریب نفسیاتی لیولز کی شناخت کرتا ہے۔"""
+    if price > 1000: unit = 50.0
+    elif price > 10: unit = 0.50
+    else: unit = 0.0050
+    base = round(price / unit) * unit
+    return {'upper_psy': base + unit, 'lower_psy': base - unit}
 
-def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
-    """
-    ایک ذہین کلسٹرنگ الگورتھم کا استعمال کرتے ہوئے بہترین TP/SL کا تعین کرتا ہے۔
-    """
-    if len(df) < 34: return None
+def _cluster_levels(levels: List[float], proximity_percent: float, price: float) -> List[Tuple[float, int]]:
+    """قریبی لیولز کو کلسٹرز میں گروپ کرتا ہے اور ہر کلسٹر کا وزن شدہ اسکور دیتا ہے۔"""
+    if not levels:
+        return []
     
-    last_close = df['close'].iloc[-1]
-    atr = _calculate_atr(df)
+    proximity = price * proximity_percent
+    levels.sort()
     
-    all_levels: List[Level] = []
-    all_levels.extend(_get_pivot_points(df))
-    all_levels.extend(_get_swing_levels(df))
-    all_levels.extend(_get_fibonacci_levels(df))
+    clusters = []
+    current_cluster = [levels[0]]
     
-    if not all_levels:
-        logger.warning("تجزیے کے لیے کوئی تکنیکی لیولز نہیں ملے۔")
-        return None
-
-    all_levels.sort(key=lambda x: x.price)
+    for i in range(1, len(levels)):
+        if abs(levels[i] - current_cluster[-1]) <= proximity:
+            current_cluster.append(levels[i])
+        else:
+            clusters.append(current_cluster)
+            current_cluster = [levels[i]]
+    clusters.append(current_cluster)
     
-    clusters: List[List[Level]] = []
-    if all_levels:
-        current_cluster = [all_levels[0]]
-        cluster_distance = atr * 0.25
-        
-        for i in range(1, len(all_levels)):
-            if all_levels[i].price - current_cluster[-1].price <= cluster_distance:
-                current_cluster.append(all_levels[i])
-            else:
-                clusters.append(current_cluster)
-                current_cluster = [all_levels[i]]
-        clusters.append(current_cluster)
+    # ہر کلسٹر کا نمائندہ لیول (اوسط) اور اس کا اسکور (لیولز کی تعداد) واپس کریں
+    return [(np.mean(c), len(c)) for c in clusters]
 
-    if not clusters:
-        logger.warning("کوئی کنفلونس زون نہیں ملا۔")
-        return None
+# --- عوامی فنکشنز ---
 
-    strong_zones = []
-    for cluster in clusters:
-        num_types = len(set(level.type for level in cluster))
-        total_weight = sum(level.weight for level in cluster)
-        strength = num_types * total_weight
-        avg_price = np.mean([level.price for level in cluster])
-        
-        if strength >= MIN_CONFLUENCE_STRENGTH:
-            strong_zones.append({'price': avg_price, 'strength': strength})
-
-    support_zones = [z for z in strong_zones if z['price'] < last_close]
-    resistance_zones = [z for z in strong_zones if z['price'] > last_close]
-
-    if not support_zones or not resistance_zones:
-        logger.warning(f"کافی سپورٹ ({len(support_zones)}) یا رزسٹنس ({len(resistance_zones)}) زونز نہیں ملے۔")
-        return None
-
-    best_support = max(support_zones, key=lambda x: x['strength'])
-    best_resistance = max(resistance_zones, key=lambda x: x['strength'])
-
-    final_tp, final_sl = (0.0, 0.0)
-    if signal_type == 'buy':
-        final_tp = best_resistance['price']
-        final_sl = best_support['price']
-    else: # sell
-        final_tp = best_support['price']
-        final_sl = best_resistance['price']
-
-    try:
-        reward = abs(final_tp - last_close)
-        risk = abs(last_close - final_sl)
-        if risk == 0 or reward == 0: return None
-        
-        rr_ratio = reward / risk
-        if rr_ratio < MIN_RISK_REWARD_RATIO:
-            logger.warning(f"بہترین زون کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) بہت کم ہے۔")
-            return None
-            
-    except ZeroDivisionError:
-        return None
-        
-    logger.info(f"ذہین کنفلونس کی بنیاد پر TP/SL ملا: TP={final_tp:.5f}, SL={final_sl:.5f} (RR: {rr_ratio:.2f})")
-    return final_tp, final_sl
-
-# اصلاح: گمشدہ فنکشن کو واپس شامل کیا گیا
 def find_market_structure(df: pd.DataFrame, window: int = 20) -> Dict[str, str]:
-    """
-    مارکیٹ کے حالیہ رجحان (trend) کا تعین کرتا ہے (اوپر، نیچے، یا رینجنگ)۔
-    """
+    """مارکیٹ کے حالیہ رجحان کا تعین کرتا ہے۔"""
     if len(df) < window:
         return {"trend": "غیر متعین", "reason": "ناکافی ڈیٹا۔"}
     
@@ -177,4 +126,78 @@ def find_market_structure(df: pd.DataFrame, window: int = 20) -> Dict[str, str]:
         trend = "نیچے کا رجحان"
         
     return {"trend": trend, "reason": f"مارکیٹ کی ساخت {trend} کی نشاندہی کرتی ہے۔"}
+
+def find_optimal_tp_sl(df: pd.DataFrame, signal_type: str) -> Optional[Tuple[float, float]]:
+    """
+    مختلف تکنیکی لیولز کو ملا کر اور ان کا کنفلونس اسکور نکال کر بہترین TP/SL کا تعین کرتا ہے۔
+    یہ اب SL میں مارکیٹ کے شور سے بچنے کے لیے ATR بفر بھی شامل کرتا ہے۔
+    """
+    if len(df) < 34: 
+        return None
     
+    last_close = df['close'].iloc[-1]
+    
+    # تمام ممکنہ سپورٹ/رزسٹنس لیولز کو اکٹھا کریں
+    pivots = list(_calculate_pivot_points(df).values())
+    swings = _find_swing_levels(df)
+    fib_levels = list(_get_fibonacci_levels(df).values())
+    psy_levels = list(_get_psychological_levels(last_close).values())
+    
+    all_levels = set(pivots + swings['highs'] + swings['lows'] + fib_levels + psy_levels)
+    
+    potential_tp_levels: Dict[float, int] = {}
+    potential_sl_levels: Dict[float, int] = {}
+    
+    proximity = last_close * 0.0005 # قیمت کے قریب ہونے کی حد (0.05%)
+
+    for level in all_levels:
+        score = 0
+        if any(abs(level - p) < proximity for p in pivots): score += LEVEL_SCORING_WEIGHTS['pivots']
+        if any(abs(level - s) < proximity for s in swings['highs'] + swings['lows']): score += LEVEL_SCORING_WEIGHTS['swings']
+        if any(abs(level - f) < proximity for f in fib_levels): score += LEVEL_SCORING_WEIGHTS['fibonacci']
+        if any(abs(level - p) < proximity for p in psy_levels): score += LEVEL_SCORING_WEIGHTS['psychological']
+        
+        if score >= MIN_CONFLUENCE_SCORE:
+            if level > last_close:
+                if signal_type == 'buy': potential_tp_levels[level] = score
+                else: potential_sl_levels[level] = score
+            elif level < last_close:
+                if signal_type == 'sell': potential_tp_levels[level] = score
+                else: potential_sl_levels[level] = score
+
+    if not potential_tp_levels or not potential_sl_levels:
+        logger.warning(f"کافی مضبوط سپورٹ ({len(potential_sl_levels)}) یا رزسٹنس ({len(potential_tp_levels)}) زونز نہیں ملے۔")
+        return None
+
+    # سب سے زیادہ اسکور والے لیول کو منتخب کریں
+    final_tp = max(potential_tp_levels, key=potential_tp_levels.get) if signal_type == 'buy' else min(potential_tp_levels, key=potential_tp_levels.get)
+    final_sl_raw = min(potential_sl_levels, key=potential_sl_levels.get) if signal_type == 'buy' else max(potential_sl_levels, key=potential_sl_levels.get)
+
+    # --- ATR بفر کی منطق ---
+    atr = _calculate_atr(df, ATR_PERIOD_FOR_SL)
+    if atr > 0:
+        buffer = atr * ATR_BUFFER_MULTIPLIER
+        logger.info(f"ATR کی بنیاد پر SL بفر کا حساب لگایا گیا: {buffer:.5f}")
+        if signal_type == 'buy':
+            final_sl = final_sl_raw - buffer
+        else: # 'sell'
+            final_sl = final_sl_raw + buffer
+    else:
+        final_sl = final_sl_raw
+
+    # رسک/ریوارڈ تناسب کو چیک کریں
+    try:
+        reward = abs(final_tp - last_close)
+        risk = abs(last_close - final_sl)
+        if risk == 0: return None
+        
+        rr_ratio = reward / risk
+        if rr_ratio < MIN_RISK_REWARD_RATIO:
+            logger.warning(f"بہترین زون کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) بہت کم ہے۔")
+            return None
+            
+    except ZeroDivisionError:
+        return None
+        
+    logger.info(f"حتمی TP/SL ملا: TP={final_tp:.5f}, SL={final_sl:.5f} (RR: {rr_ratio:.2f})")
+    return final_tp, final_sl
