@@ -7,91 +7,88 @@ from typing import Any, Dict, List
 import pandas as pd
 from sqlalchemy.orm import Session
 
-# مقامی امپورٹس
 from config import api_settings, strategy_settings
 from level_analyzer import find_market_structure
 from patternai import detect_patterns
 from reasonbot import generate_reason
-from riskguardian import check_risk
+from riskguardian import get_market_regime # یہ اب استعمال نہیں ہوگا، لیکن درآمد رہ سکتا ہے
 from schemas import Candle
 from sentinel import get_news_analysis_for_symbol
-from strategybot import calculate_tp_sl, generate_technical_analysis_score
-from tierbot import get_tier
 from trainerai import get_confidence
+from utils import convert_candles_to_dataframe, fetch_twelve_data_ohlc
+
+# حکمت عملی کے ماڈیولز درآمد کریں
+from strategy_scalper import generate_scalping_analysis
+# مستقبل کے لیے: from strategy_swing import generate_swing_analysis
 
 logger = logging.getLogger(__name__)
 
-async def generate_final_signal(db: Session, symbol: str, candles: List[Candle]) -> Dict[str, Any]:
+async def generate_final_signal(
+    db: Session, 
+    symbol: str, 
+    candles: List[Candle], 
+    strategy: str,
+    symbol_personality: Dict
+) -> Dict[str, Any]:
     """
     تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
-    یہ تمام تجزیاتی کاموں کو متوازی طور پر چلاتا ہے تاکہ کارکردگی کو بہتر بنایا جا سکے۔
+    یہ منتخب حکمت عملی کی بنیاد پر کام کرتا ہے۔
     """
     try:
-        # مرحلہ 1: ڈیٹا فریم کو مرکزی طور پر صرف ایک بار تیار کریں
-        if not candles or len(candles) < 34:
-            return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(candles)} کینڈلز)۔"}
+        df = convert_candles_to_dataframe(candles)
+        if df.empty or len(df) < 34:
+            return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
-        df = pd.DataFrame([c.dict() for c in candles])
-        # یقینی بنائیں کہ عددی کالمز عددی ہیں
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
+        # مرحلہ 1: بنیادی حکمت عملی کا تجزیہ چلائیں
+        if strategy == "Scalper":
+            analysis = await asyncio.to_thread(generate_scalping_analysis, df, symbol_personality)
+        # elif strategy == "SwingTrader":
+        #     analysis = await asyncio.to_thread(generate_swing_analysis, df, symbol_personality)
+        else:
+            return {"status": "no-signal", "reason": f"نامعلوم حکمت عملی: {strategy}"}
+
+        if analysis.get("status") != "ok":
+            return analysis # اگر کوئی سگنل نہیں ہے تو واپس جائیں
+
+        core_signal = analysis.get("signal")
+        technical_score = analysis.get("score", 0)
         
-        if len(df) < 34:
-             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
-
-        # مرحلہ 2: تمام تجزیاتی فنکشنز کو متوازی طور پر چلائیں
-        # اصلاح: asyncio.gather کا استعمال کارکردگی کو بہت بہتر بناتا ہے۔
-        # asyncio.to_thread کا استعمال یقینی بناتا ہے کہ sync فنکشنز async لوپ کو بلاک نہ کریں۔
-        tech_analysis_task = asyncio.to_thread(generate_technical_analysis_score, df)
+        # مرحلہ 2: اضافی فلٹرز اور سیاق و سباق کا تجزیہ
+        # (یہ تمام حکمت عملیوں کے لیے مشترک ہے)
         pattern_task = asyncio.to_thread(detect_patterns, df)
-        risk_task = asyncio.to_thread(check_risk, df)
         news_task = get_news_analysis_for_symbol(symbol)
         market_structure_task = asyncio.to_thread(find_market_structure, df)
         
-        # تمام کاموں کے مکمل ہونے کا انتظار کریں
-        tech_analysis, pattern_data, risk_assessment, news_data, market_structure = await asyncio.gather(
-            tech_analysis_task,
-            pattern_task,
-            risk_task,
-            news_task,
-            market_structure_task
+        # کثیر ٹائم فریم کی تصدیق (صرف اسکیلپر کے لیے)
+        h1_trend_ok = True
+        if strategy == "Scalper":
+            h1_candles = await fetch_twelve_data_ohlc(symbol, "1h", 50)
+            if h1_candles:
+                h1_df = convert_candles_to_dataframe(h1_candles)
+                h1_ema_slow = h1_df['close'].ewm(span=50, adjust=False).mean()
+                last_h1_close = h1_df['close'].iloc[-1]
+                last_h1_ema = h1_ema_slow.iloc[-1]
+                
+                if (core_signal == "buy" and last_h1_close < last_h1_ema) or \
+                   (core_signal == "sell" and last_h1_close > last_h1_ema):
+                    h1_trend_ok = False
+            
+        if not h1_trend_ok:
+            return {"status": "no-signal", "reason": "H1 رجحان کے خلاف سگنل، مسترد کر دیا گیا۔"}
+
+        pattern_data, news_data, market_structure = await asyncio.gather(
+            pattern_task, news_task, market_structure_task
         )
 
-        # مرحلہ 3: نتائج کی بنیاد پر بنیادی سگنل کا تعین کریں
-        technical_score = tech_analysis.get("score", 0)
-        indicators = tech_analysis.get("indicators", {})
-        
-        core_signal = "wait"
-        if technical_score >= strategy_settings.SIGNAL_SCORE_THRESHOLD:
-            core_signal = "buy"
-        elif technical_score <= -strategy_settings.SIGNAL_SCORE_THRESHOLD:
-            core_signal = "sell"
-        
-        if core_signal == "wait":
-            return {"status": "no-signal", "reason": f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ سے کم ہے۔"}
-
-        # مرحلہ 4: بقیہ ڈیٹا کی بنیاد پر حتمی سگنل تیار کریں
-        final_risk_status = risk_assessment.get("status", "Normal")
-        if news_data.get("impact") == "High":
-            final_risk_status = "Critical" if final_risk_status == "High" else "High"
-        
+        # مرحلہ 3: حتمی سگنل تیار کریں
         confidence = get_confidence(
             db, core_signal, technical_score, pattern_data.get("type", "neutral"),
-            final_risk_status, news_data.get("impact"), symbol
+            news_data.get("impact"), symbol, symbol_personality
         )
-        tier = get_tier(confidence, final_risk_status)
         
-        tp_sl_data = calculate_tp_sl(df, core_signal)
-        if not tp_sl_data:
-            return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
-        
-        tp, sl = tp_sl_data
-
         reason = generate_reason(
-            core_signal, pattern_data, final_risk_status,
-            news_data, confidence, market_structure, indicators=indicators
+            core_signal, pattern_data, news_data, confidence, 
+            market_structure, indicators=analysis.get("indicators", {})
         )
 
         return {
@@ -99,19 +96,17 @@ async def generate_final_signal(db: Session, symbol: str, candles: List[Candle])
             "symbol": symbol,
             "signal": core_signal,
             "pattern": pattern_data.get("pattern"),
-            "risk": final_risk_status,
             "news": news_data.get("impact"),
             "reason": reason,
             "confidence": round(confidence, 2),
-            "tier": tier,
-            "timeframe": api_settings.PRIMARY_TIMEFRAME,
-            "price": df['close'].iloc[-1],
-            "tp": round(tp, 5),
-            "sl": round(sl, 5),
-            "component_scores": indicators.get("component_scores", {})
+            "timeframe": "15min" if strategy == "Scalper" else "1h",
+            "price": analysis.get("price"),
+            "tp": round(analysis.get("tp"), 5),
+            "sl": round(analysis.get("sl"), 5),
+            "component_scores": analysis.get("indicators", {}).get("component_scores", {})
         }
 
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے فیوژن انجن میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
         return {"status": "error", "reason": f"AI فیوژن میں ایک غیر متوقع خرابی۔"}
-    
+        
