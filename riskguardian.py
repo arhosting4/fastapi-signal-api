@@ -1,81 +1,68 @@
 # filename: riskguardian.py
 
-from typing import Dict
-
+import logging
+from typing import Dict, List
 import numpy as np
 import pandas as pd
 
-# --- مستقل اقدار ---
-ATR_LENGTH = 14
-# یہ اقدار اثاثے کی قیمت کا فیصد ہیں
-VOLATILITY_THRESHOLD_HIGH = 0.005  # 0.5%
-VOLATILITY_THRESHOLD_MODERATE = 0.002  # 0.2%
+logger = logging.getLogger(__name__)
 
-def _calculate_atr(df: pd.DataFrame, period: int) -> pd.Series:
-    """
-    Average True Range (ATR) کا حساب لگاتا ہے۔
-    یہ فنکشن ان پٹ ڈیٹا فریم کی ایک کاپی پر کام کرتا ہے۔
-    """
+ATR_LENGTH = 14
+
+def _calculate_atr(df: pd.DataFrame, period: int) -> float:
+    """ایک ڈیٹا فریم کے لیے آخری ATR قدر کا حساب لگاتا ہے۔"""
+    if len(df) < period + 1:
+        return 0.0
+        
     df_copy = df.copy()
     high, low, close = df_copy['high'], df_copy['low'], df_copy['close']
     
-    # True Range (TR) کا حساب
     df_copy['h-l'] = high - low
     df_copy['h-pc'] = abs(high - close.shift(1))
     df_copy['l-pc'] = abs(low - close.shift(1))
     
     tr = df_copy[['h-l', 'h-pc', 'l-pc']].max(axis=1)
-    
-    # Exponential Moving Average (EMA) کا استعمال کرتے ہوئے ATR کا حساب
     atr = tr.ewm(span=period, adjust=False).mean()
-    return atr
-
-def check_risk(df: pd.DataFrame) -> Dict[str, str]:
-    """
-    مارکیٹ کے اتار چڑھاؤ (volatility) کی بنیاد پر رسک کا اندازہ لگاتا ہے۔
     
-    Args:
-        df (pd.DataFrame): کینڈل اسٹک ڈیٹا۔
-        
-    Returns:
-        Dict[str, str]: ایک ڈکشنری جس میں رسک کی 'status' اور اس کی 'reason' ہو۔
+    return atr.iloc[-1] if not atr.empty and pd.notna(atr.iloc[-1]) else 0.0
+
+def get_market_regime(ohlc_data_map: Dict[str, pd.DataFrame]) -> Dict[str, any]:
     """
-    if len(df) < ATR_LENGTH + 1:
-        return {"status": "Normal", "reason": "رسک کی تشخیص کے لیے ناکافی ڈیٹا۔"}
-
-    # ATR کا حساب لگائیں
-    atr = _calculate_atr(df, ATR_LENGTH)
-
-    if atr.empty or pd.isna(atr.iloc[-1]):
-        return {"status": "Normal", "reason": "ATR کا حساب نہیں لگایا جا سکا"}
-    
-    current_atr = atr.iloc[-1]
-    # حالیہ 20 کینڈلز کی اوسط قیمت
-    avg_close = df['close'].iloc[-20:].mean()
-    
-    if avg_close == 0:
-        return {"status": "Normal", "reason": "قیمت کا ڈیٹا صفر ہے، رسک کا اندازہ نہیں لگایا جا سکتا۔"}
-
-    # متحرک حدوں کا حساب لگائیں
-    high_vol_threshold = VOLATILITY_THRESHOLD_HIGH * avg_close
-    moderate_vol_threshold = VOLATILITY_THRESHOLD_MODERATE * avg_close
-
-    # رسک کی سطح کا تعین کریں
-    if current_atr > high_vol_threshold:
-        return {"status": "High", "reason": f"زیادہ اتار چڑھاؤ (ATR: {current_atr:.4f})"}
-    elif current_atr > moderate_vol_threshold:
-        return {"status": "Moderate", "reason": f"درمیانہ اتار چڑھاؤ (ATR: {current_atr:.4f})"}
-
-    return {"status": "Normal", "reason": "مارکیٹ کے حالات مستحکم ہیں۔"}
-
-def get_dynamic_atr_multiplier(risk_status: str) -> float:
+    تمام بڑے جوڑوں کے اتار چڑھاؤ کا تجزیہ کرکے مارکیٹ کے مجموعی "موڈ" کا تعین کرتا ہے۔
+    یہ ایک VIX جیسے اسکور اور ایک حکمت عملی کی سفارش واپس کرتا ہے۔
     """
-    رسک کی حالت کی بنیاد پر ATR ضرب کا تعین کرتا ہے۔
-    (یہ فنکشن فی الحال استعمال نہیں ہو رہا، لیکن مستقبل میں متحرک SL کے لیے مفید ہو سکتا ہے)
-    """
-    if risk_status == "High":
-        return 1.5
-    if risk_status == "Moderate":
-        return 1.8
-    return 2.0
-    
+    if not ohlc_data_map:
+        logger.warning("مارکیٹ کے نظام کا تعین کرنے کے لیے کوئی OHLC ڈیٹا نہیں۔ ڈیفالٹ 'Scalper' موڈ۔")
+        return {"regime": "Calm", "strategy": "Scalper", "vix_score": 25}
+
+    normalized_atrs = []
+    for symbol, df in ohlc_data_map.items():
+        if df.empty or len(df) < ATR_LENGTH + 1:
+            continue
+            
+        avg_price = df['close'].iloc[-20:].mean()
+        if avg_price == 0:
+            continue
+            
+        atr = _calculate_atr(df, ATR_LENGTH)
+        normalized_atr = (atr / avg_price) * 100  # فیصد کے طور پر ATR
+        normalized_atrs.append(normalized_atr)
+
+    if not normalized_atrs:
+        logger.warning("کسی بھی جوڑے کے لیے ATR کا حساب نہیں لگایا جا سکا۔ ڈیفالٹ 'Scalper' موڈ۔")
+        return {"regime": "Calm", "strategy": "Scalper", "vix_score": 25}
+
+    # VIX اسکور: 0-100 کے پیمانے پر اوسط اتار چڑھاؤ
+    avg_volatility_percent = np.mean(normalized_atrs)
+    vix_score = min(100, int(avg_volatility_percent * 200)) # اسکیلنگ فیکٹر
+
+    logger.info(f"مارکیٹ کا تجزیہ: اوسط اتار چڑھاؤ = {avg_volatility_percent:.3f}%, VIX اسکور = {vix_score}")
+
+    if vix_score > 75:
+        return {"regime": "Stormy", "strategy": "Survivor", "vix_score": vix_score}
+    elif vix_score > 40:
+        return {"regime": "Volatile", "strategy": "SwingTrader", "vix_score": vix_score}
+    else:
+        return {"regime": "Calm", "strategy": "Scalper", "vix_score": vix_score}
+
+            
