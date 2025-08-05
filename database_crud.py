@@ -193,4 +193,18 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
     except SQLAlchemyError as e:
         logger.error(f"کیش شدہ خبریں بازیافت کرنے میں خرابی: {e}", exc_info=True)
         return None
-            
+
+def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
+    """
+    مخصوص منٹوں کے اندر ہوئے SL ہٹس کی فہرست واپس کرتا ہے۔
+    """
+    try:
+        time_filter = datetime.utcnow() - timedelta(minutes=minutes_ago)
+        return db.query(CompletedTrade).filter(
+            CompletedTrade.outcome == 'sl_hit',
+            CompletedTrade.closed_at >= time_filter
+        ).all()
+    except SQLAlchemyError as e:
+        logger.error(f"حالیہ SL ہٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
+        return []
+        
