@@ -1,7 +1,7 @@
 # filename: database_crud.py
 
 import logging
-from datetime import datetime, timedelta  # ★★★ خرابی کا حل یہاں ہے ★★★
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, NamedTuple
 
 from sqlalchemy.orm import Session
@@ -10,19 +10,15 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 # مقامی امپورٹس
 from models import ActiveSignal, CompletedTrade, CachedNews
-from schemas import DailyStatsResponse # Pydantic ماڈل کا استعمال
+from schemas import DailyStatsResponse
 
 logger = logging.getLogger(__name__)
 
 class SignalUpdateResult(NamedTuple):
-    """
-    add_or_update_active_signal فنکشن کے نتیجے کی نمائندگی کرتا ہے۔
-    """
     signal: ActiveSignal
     is_new: bool
 
 def get_all_active_signals_from_db(db: Session) -> List[ActiveSignal]:
-    """ڈیٹا بیس سے تمام فعال سگنلز کی فہرست واپس کرتا ہے۔"""
     try:
         return db.query(ActiveSignal).all()
     except SQLAlchemyError as e:
@@ -30,7 +26,6 @@ def get_all_active_signals_from_db(db: Session) -> List[ActiveSignal]:
         return []
 
 def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSignal]:
-    """کسی مخصوص علامت کے لیے فعال سگنل واپس کرتا ہے۔"""
     try:
         return db.query(ActiveSignal).filter(ActiveSignal.symbol == symbol).first()
     except SQLAlchemyError as e:
@@ -38,9 +33,6 @@ def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSign
         return None
 
 def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Optional[SignalUpdateResult]:
-    """
-    ڈیٹا بیس میں ایک نیا سگنل شامل کرتا ہے یا اگر اسی علامت کا سگنل پہلے سے موجود ہو تو اسے اپ ڈیٹ کرتا ہے۔
-    """
     symbol = signal_data.get("symbol")
     if not symbol:
         logger.error("سگنل ڈیٹا میں 'symbol' غائب ہے۔ سگنل شامل نہیں کیا جا سکتا۔")
@@ -94,9 +86,6 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         return None
 
 def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_price: float, reason_for_closure: str) -> bool:
-    """
-    ایک فعال سگنل کو ڈیلیٹ کرتا ہے اور اسے مکمل شدہ ٹریڈز میں شامل کرتا ہے۔
-    """
     signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
     
     if not signal_to_delete:
@@ -119,7 +108,8 @@ def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_pr
             outcome=outcome,
             confidence=signal_to_delete.confidence,
             reason=signal_to_delete.reason,
-            created_at=signal_to_delete.created_at, # created_at کو بھی شامل کریں
+            # ★★★ خرابی کا حل یہاں ہے ★★★
+            created_at=signal_to_delete.created_at, # یہ لائن یقینی بناتی ہے کہ صحیح ویلیو پاس ہو
             closed_at=datetime.utcnow()
         )
         db.add(completed_trade)
@@ -136,7 +126,6 @@ def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_pr
         return False
 
 def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
-    """سب سے حالیہ مکمل شدہ ٹریڈز واپس کرتا ہے۔"""
     try:
         trades = db.query(CompletedTrade).order_by(desc(CompletedTrade.closed_at)).limit(limit).all()
         return [trade.as_dict() for trade in trades]
@@ -145,7 +134,6 @@ def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
         return []
 
 def get_daily_stats(db: Session) -> DailyStatsResponse:
-    """آج کے TP اور SL ہٹس کی تعداد اور دیگر اعداد و شمار واپس کرتا ہے۔"""
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     try:
@@ -175,7 +163,6 @@ def get_daily_stats(db: Session) -> DailyStatsResponse:
         return DailyStatsResponse(tp_hits_today=0, sl_hits_today=0, live_signals=0, win_rate_today=0)
 
 def update_news_cache_in_db(db: Session, news_data: Dict[str, Any]) -> None:
-    """موجودہ کیش شدہ خبروں کو نئے مواد سے بدل دیتا ہے۔"""
     try:
         db.query(CachedNews).delete()
         new_news = CachedNews(content=news_data, updated_at=datetime.utcnow())
@@ -186,7 +173,6 @@ def update_news_cache_in_db(db: Session, news_data: Dict[str, Any]) -> None:
         db.rollback()
 
 def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
-    """ڈیٹا بیس سے تازہ ترین کیش شدہ خبریں حاصل کرتا ہے۔"""
     try:
         news = db.query(CachedNews).order_by(desc(CachedNews.updated_at)).first()
         return news.content if news else None
@@ -195,9 +181,6 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
         return None
 
 def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
-    """
-    مخصوص منٹوں کے اندر ہوئے SL ہٹس کی فہرست واپس کرتا ہے۔
-    """
     try:
         time_filter = datetime.utcnow() - timedelta(minutes=minutes_ago)
         return db.query(CompletedTrade).filter(
@@ -207,4 +190,4 @@ def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
     except SQLAlchemyError as e:
         logger.error(f"حالیہ SL ہٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
         return []
-                                
+                               
