@@ -1,7 +1,7 @@
 # filename: database_crud.py
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta  # ★★★ خرابی کا حل یہاں ہے ★★★
 from typing import Dict, Any, List, Optional, NamedTuple
 
 from sqlalchemy.orm import Session
@@ -10,12 +10,14 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 # مقامی امپورٹس
 from models import ActiveSignal, CompletedTrade, CachedNews
-from schemas import DailyStatsResponse
+from schemas import DailyStatsResponse # Pydantic ماڈل کا استعمال
 
 logger = logging.getLogger(__name__)
 
 class SignalUpdateResult(NamedTuple):
-    """add_or_update_active_signal فنکشن کے نتیجے کی نمائندگی کرتا ہے۔"""
+    """
+    add_or_update_active_signal فنکشن کے نتیجے کی نمائندگی کرتا ہے۔
+    """
     signal: ActiveSignal
     is_new: bool
 
@@ -36,7 +38,9 @@ def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSign
         return None
 
 def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Optional[SignalUpdateResult]:
-    """ڈیٹا بیس میں ایک نیا سگنل شامل کرتا ہے یا اگر اسی علامت کا سگنل پہلے سے موجود ہو تو اسے اپ ڈیٹ کرتا ہے۔"""
+    """
+    ڈیٹا بیس میں ایک نیا سگنل شامل کرتا ہے یا اگر اسی علامت کا سگنل پہلے سے موجود ہو تو اسے اپ ڈیٹ کرتا ہے۔
+    """
     symbol = signal_data.get("symbol")
     if not symbol:
         logger.error("سگنل ڈیٹا میں 'symbol' غائب ہے۔ سگنل شامل نہیں کیا جا سکتا۔")
@@ -47,14 +51,12 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
 
         if existing_signal:
             logger.info(f"موجودہ سگنل {symbol} کو اپ ڈیٹ کیا جا رہا ہے۔")
-            # موجودہ سگنل کی اقدار کو اپ ڈیٹ کریں
             existing_signal.signal_type = signal_data.get('signal', existing_signal.signal_type)
             existing_signal.tp_price = signal_data.get('tp', existing_signal.tp_price)
             existing_signal.sl_price = signal_data.get('sl', existing_signal.sl_price)
             existing_signal.confidence = signal_data.get('confidence', existing_signal.confidence)
             existing_signal.reason = signal_data.get('reason', existing_signal.reason)
             existing_signal.component_scores = signal_data.get('component_scores', existing_signal.component_scores)
-            # اصلاح: اپ ڈیٹ ہونے پر سگنل کو گریس پیریڈ میں ڈال دیں
             existing_signal.is_new = True
             
             db.commit()
@@ -75,7 +77,7 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
                 confidence=signal_data.get('confidence'),
                 reason=signal_data.get('reason'),
                 component_scores=signal_data.get('component_scores'),
-                is_new=True  # نیا سگنل ہمیشہ گریس پیریڈ میں ہوتا ہے
+                is_new=True
             )
             db.add(new_signal)
             db.commit()
@@ -92,7 +94,9 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         return None
 
 def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_price: float, reason_for_closure: str) -> bool:
-    """ایک فعال سگنل کو ڈیلیٹ کرتا ہے اور اسے مکمل شدہ ٹریڈز میں شامل کرتا ہے۔ یہ ایک ایٹمی (atomic) ٹرانزیکشن ہے۔"""
+    """
+    ایک فعال سگنل کو ڈیلیٹ کرتا ہے اور اسے مکمل شدہ ٹریڈز میں شامل کرتا ہے۔
+    """
     signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
     
     if not signal_to_delete:
@@ -102,7 +106,6 @@ def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_pr
     logger.info(f"فعال سگنل {signal_id} کو بند اور آرکائیو کیا جا رہا ہے۔ نتیجہ: {outcome}")
     
     try:
-        # مکمل شدہ ٹریڈ کا ریکارڈ بنائیں
         completed_trade = CompletedTrade(
             signal_id=signal_to_delete.signal_id,
             symbol=signal_to_delete.symbol,
@@ -116,11 +119,11 @@ def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_pr
             outcome=outcome,
             confidence=signal_to_delete.confidence,
             reason=signal_to_delete.reason,
+            created_at=signal_to_delete.created_at, # created_at کو بھی شامل کریں
             closed_at=datetime.utcnow()
         )
         db.add(completed_trade)
         
-        # فعال سگنل کو حذف کریں
         db.delete(signal_to_delete)
         
         db.commit()
@@ -169,15 +172,12 @@ def get_daily_stats(db: Session) -> DailyStatsResponse:
         )
     except SQLAlchemyError as e:
         logger.error(f"روزانہ کے اعداد و شمار حاصل کرنے میں خرابی: {e}", exc_info=True)
-        # ڈیفالٹ اقدار کے ساتھ واپس کریں
         return DailyStatsResponse(tp_hits_today=0, sl_hits_today=0, live_signals=0, win_rate_today=0)
 
 def update_news_cache_in_db(db: Session, news_data: Dict[str, Any]) -> None:
     """موجودہ کیش شدہ خبروں کو نئے مواد سے بدل دیتا ہے۔"""
     try:
-        # پرانی خبروں کو حذف کریں
         db.query(CachedNews).delete()
-        # نئی خبریں شامل کریں
         new_news = CachedNews(content=news_data, updated_at=datetime.utcnow())
         db.add(new_news)
         db.commit()
@@ -207,4 +207,4 @@ def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
     except SQLAlchemyError as e:
         logger.error(f"حالیہ SL ہٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
         return []
-        
+                                
