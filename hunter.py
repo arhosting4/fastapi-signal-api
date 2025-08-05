@@ -3,8 +3,9 @@
 import asyncio
 import logging
 from contextlib import contextmanager
-from typing import Generator, Dict, Any
+from typing import Generator, Dict, Any, Set
 import json
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 import pandas as pd
@@ -21,9 +22,12 @@ from riskguardian import get_market_regime
 
 logger = logging.getLogger(__name__)
 
-# --- کنفیگریشن سے مستقل اقدار ---
 FINAL_CONFIDENCE_THRESHOLD = strategy_settings.FINAL_CONFIDENCE_THRESHOLD
 PERSONALITIES_FILE = "asset_personalities.json"
+
+# --- کول ڈاؤن کے لیے عالمی متغیرات ---
+cooldown_roster: Dict[str, datetime] = {}
+COOLDOWN_PERIOD_MINUTES = 45
 
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
@@ -41,22 +45,40 @@ def load_asset_personalities() -> Dict:
         logger.error(f"{PERSONALITIES_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ شخصیت استعمال کی جائے گی۔")
         return {}
 
+def _update_cooldown_roster(db: Session):
+    """
+    حال ہی میں بند ہونے والے SL ہٹ ٹریڈز کی بنیاد پر کول ڈاؤن روسٹر کو اپ ڈیٹ کرتا ہے۔
+    """
+    global cooldown_roster
+    # پرانے اندراجات کو ہٹائیں
+    now = datetime.utcnow()
+    cooldown_roster = {
+        symbol: expiry for symbol, expiry in cooldown_roster.items() if now < expiry
+    }
+    
+    # نئے SL ہٹس شامل کریں
+    recent_sl_trades = crud.get_recent_sl_hits(db, minutes_ago=COOLDOWN_PERIOD_MINUTES)
+    for trade in recent_sl_trades:
+        if trade.symbol not in cooldown_roster:
+            expiry_time = trade.closed_at + timedelta(minutes=COOLDOWN_PERIOD_MINUTES)
+            cooldown_roster[trade.symbol] = expiry_time
+            logger.info(f"❄️ کول ڈاؤن پروٹوکول: {trade.symbol} کو {expiry_time.isoformat()} تک کول ڈاؤن پر رکھا گیا۔")
+
 async def hunt_for_signals_job():
-    """
-    یہ جاب وقفے وقفے سے چلتی ہے، مارکیٹ کے نظام کا تعین کرتی ہے اور مناسب حکمت عملی چلاتی ہے۔
-    """
     logger.info("🏹 شکاری انجن: نئے مواقع کی تلاش کا نیا دور شروع...")
     
     try:
         with get_db_session() as db:
-            pairs_to_analyze = get_hunting_roster(db)
-        
-        if not pairs_to_analyze:
-            logger.info("🏹 شکاری انجن: تجزیے کے لیے کوئی اہل جوڑا نہیں۔ تلاش کا دور ختم۔")
-            return
+            _update_cooldown_roster(db)
+            all_pairs = get_hunting_roster(db)
+            
+            # کول ڈاؤن پر موجود جوڑوں کو ہٹائیں
+            pairs_to_analyze = [p for p in all_pairs if p not in cooldown_roster]
+            
+            if not pairs_to_analyze:
+                logger.info("🏹 شکاری انجن: تجزیے کے لیے کوئی اہل جوڑا نہیں (سب فعال یا کول ڈاؤن پر ہیں)۔")
+                return
 
-        # مرحلہ 1: مارکیٹ کے نظام کا تعین کریں
-        # H1 ڈیٹا تمام جوڑوں کے لیے حاصل کریں تاکہ VIX اسکور کا حساب لگایا جا سکے
         h1_tasks = [fetch_twelve_data_ohlc(pair, "1h", 50) for pair in pairs_to_analyze]
         h1_results = await asyncio.gather(*h1_tasks)
         
@@ -74,7 +96,6 @@ async def hunt_for_signals_job():
             logger.info("🛑 سروائیور موڈ فعال: انتہائی غیر مستحکم مارکیٹ۔ ٹریڈنگ معطل۔")
             return
 
-        # مرحلہ 2: منتخب حکمت عملی کے مطابق تجزیہ کریں
         personalities = load_asset_personalities()
         
         tasks = [
@@ -89,13 +110,9 @@ async def hunt_for_signals_job():
     logger.info("🏹 شکاری انجن: تلاش کا دور مکمل ہوا۔")
 
 async def analyze_single_pair(pair: str, strategy: str, personalities: Dict):
-    """
-    ایک انفرادی جوڑے کا گہرا تجزیہ کرتا ہے اور اگر معیار پر پورا اترے تو سگنل بناتا ہے۔
-    """
     logger.info(f"🔬 [{pair}] کا گہرا تجزیہ حکمت عملی '{strategy}' کے تحت شروع کیا جا رہا ہے...")
     
     try:
-        # اثاثہ کی شخصیت حاصل کریں
         symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
 
         with get_db_session() as db:
@@ -103,19 +120,16 @@ async def analyze_single_pair(pair: str, strategy: str, personalities: Dict):
                 logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
                 return
 
-            # حکمت عملی کے مطابق ڈیٹا حاصل کریں
             timeframe = "15min" if strategy == "Scalper" else "1h"
             candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
             
             if not candles or len(candles) < 34:
-                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
+                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا۔")
                 return
 
-            # فیوژن انجن سے حتمی تجزیہ حاصل کریں
             analysis_result = await generate_final_signal(db, pair, candles, strategy, symbol_personality)
         
         if not analysis_result:
-            logger.error(f"🔬 [{pair}] تجزیہ ناکام: فیوژن انجن نے کوئی نتیجہ واپس نہیں کیا۔")
             return
 
         if analysis_result.get("status") == "ok":
@@ -124,7 +138,10 @@ async def analyze_single_pair(pair: str, strategy: str, personalities: Dict):
                            f"اعتماد = {confidence:.2f}%")
             logger.info(log_message)
             
-            if confidence >= FINAL_CONFIDENCE_THRESHOLD:
+            # سروائیور موڈ کی سخت حد
+            threshold = 90.0 if strategy == "Survivor" else FINAL_CONFIDENCE_THRESHOLD
+
+            if confidence >= threshold:
                 with get_db_session() as db:
                     update_result = crud.add_or_update_active_signal(db, analysis_result)
                 
@@ -139,11 +156,10 @@ async def analyze_single_pair(pair: str, strategy: str, personalities: Dict):
                     asyncio.create_task(alert_task(signal_obj))
                     asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
             else:
-                logger.info(f"📉 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) تھریشولڈ ({FINAL_CONFIDENCE_THRESHOLD}%) سے کم ہے۔")
+                logger.info(f"📉 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) تھریشولڈ ({threshold}%) سے کم ہے۔")
                 
         elif analysis_result.get("status") != "no-signal":
             logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
 
     except Exception as e:
         logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
-                
