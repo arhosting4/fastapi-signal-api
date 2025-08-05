@@ -4,7 +4,8 @@ import logging
 from datetime import datetime
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, Integer, JSON,
-                        String, create_engine)
+                        String, create_engine, event)
+from sqlalchemy.exc import DisconnectionError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # مقامی امپورٹس
@@ -14,17 +15,11 @@ logger = logging.getLogger(__name__)
 
 # --- ڈیٹا بیس کنکشن ---
 
-# اصلاح: DATABASE_URL کو استعمال کرنے سے پہلے اسے سٹرنگ میں تبدیل کریں
-# pydantic کا PostgresDsn ایک خاص آبجیکٹ واپس کرتا ہے، سٹرنگ نہیں
 db_url_str = str(api_settings.DATABASE_URL)
-
-# چیک کریں کہ آیا ڈیٹا بیس SQLite ہے یا PostgreSQL
 is_sqlite = db_url_str.startswith("sqlite")
 
-# کنکشن کی ترتیبات
 engine_args = {}
 if not is_sqlite:
-    # PostgreSQL کے لیے پولنگ کی ترتیبات
     engine_args = {
         "pool_size": 10,
         "max_overflow": 2,
@@ -32,18 +27,13 @@ if not is_sqlite:
         "pool_pre_ping": True,
     }
 
-# ڈیٹا بیس انجن بنائیں
 engine = create_engine(
     db_url_str,
-    # SQLite کے لیے تھریڈ سیفٹی
     connect_args={"check_same_thread": False} if is_sqlite else {},
     **engine_args
 )
 
-# ڈیٹا بیس سیشن
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# SQLAlchemy کا بنیادی ماڈل
 Base = declarative_base()
 
 # --- ڈیٹا بیس ماڈلز ---
@@ -66,9 +56,7 @@ class ActiveSignal(Base):
     is_new = Column(Boolean, default=True, nullable=False)
 
     def as_dict(self):
-        """ماڈل آبجیکٹ کو ڈکشنری میں تبدیل کرتا ہے۔"""
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        # datetime آبجیکٹس کو ISO فارمیٹ سٹرنگ میں تبدیل کریں
         for key, value in d.items():
             if isinstance(value, datetime):
                 d[key] = value.isoformat()
@@ -89,11 +77,14 @@ class CompletedTrade(Base):
     outcome = Column(String, index=True)
     confidence = Column(Float)
     reason = Column(String)
+    # ★★★ خرابی کا حل یہاں ہے ★★★
+    created_at = Column(DateTime, default=datetime.utcnow) # یہ لائن شامل کی گئی ہے
     closed_at = Column(DateTime, default=datetime.utcnow)
     
     def as_dict(self):
-        """ماڈل آبجیکٹ کو ڈکشنری میں تبدیل کرتا ہے۔"""
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        if isinstance(d.get('created_at'), datetime):
+            d['created_at'] = d['created_at'].isoformat()
         if isinstance(d.get('closed_at'), datetime):
             d['closed_at'] = d['closed_at'].isoformat()
         return d
@@ -115,4 +106,4 @@ def create_db_and_tables():
     except Exception as e:
         logger.critical(f"ڈیٹا بیس بنانے میں ایک سنگین خرابی پیش آئی: {e}", exc_info=True)
         raise
-    
+  
