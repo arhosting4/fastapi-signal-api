@@ -2,111 +2,107 @@ import logging
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
-def _find_significant_swings(df: pd.DataFrame, window: int = 50) -> Dict[str, float]:
-    """
-    فراہم کردہ ونڈو میں سب سے نمایاں سوئنگ ہائی اور لو کو تلاش کرتا ہے۔
-    """
-    recent_data = df.tail(window)
-    significant_high = recent_data['high'].max()
-    significant_low = recent_data['low'].min()
-    
-    return {"high": significant_high, "low": significant_low}
+# ==============================================================================
+# ماڈل 1: رینج ٹریڈنگ کے لیے سپلائی/ڈیمانڈ
+# ==============================================================================
+def find_supply_demand_zones(df: pd.DataFrame, window: int = 100) -> Dict[str, Optional[Tuple[float, float]]]:
+    # ... (یہ فنکشن پچھلے جواب سے بغیر تبدیلی کے لیا گیا ہے)
+    recent_df = df.tail(window)
+    atr = (recent_df['high'] - recent_df['low']).ewm(span=14).mean().iloc[-1]
+    demand_zone, supply_zone = None, None
+    rally_candles = recent_df[ (recent_df['close'] - recent_df['open']) > atr ]
+    if not rally_candles.empty:
+        base_candle = recent_df.loc[rally_candles.index[-1] - 1] if rally_candles.index[-1] - 1 in recent_df.index else None
+        if base_candle is not None: demand_zone = (base_candle['high'], base_candle['low'])
+    drop_candles = recent_df[ (recent_df['open'] - recent_df['close']) > atr ]
+    if not drop_candles.empty:
+        base_candle = recent_df.loc[drop_candles.index[-1] - 1] if drop_candles.index[-1] - 1 in recent_df.index else None
+        if base_candle is not None: supply_zone = (base_candle['high'], base_candle['low'])
+    return {"supply": supply_zone, "demand": demand_zone}
 
-def find_market_structure(df: pd.DataFrame, window: int = 20) -> Dict[str, str]:
-    """
-    مارکیٹ کی ساخت (اوپر/نیچے کا رجحان یا رینجنگ) کا تعین کرتا ہے۔
-    (اس فنکشن میں کوئی تبدیلی نہیں کی گئی)
-    """
-    if len(df) < window:
-        return {"trend": "غیر متعین", "reason": "ناکافی ڈیٹا۔"}
-    
-    df_copy = df.copy()
-    df_copy['swing_high'] = df_copy['high'][(df_copy['high'].shift(1) < df_copy['high']) & (df_copy['high'].shift(-1) < df_copy['high'])]
-    df_copy['swing_low'] = df_copy['low'][(df_copy['low'].shift(1) > df_copy['low']) & (df_copy['low'].shift(-1) > df_copy['low'])]
-    
-    recent_highs = df_copy['swing_high'].dropna().tail(2).values
-    recent_lows = df_copy['swing_low'].dropna().tail(2).values
-    
-    if len(recent_highs) < 2 or len(recent_lows) < 2:
-        return {"trend": "رینجنگ", "reason": "کوئی واضح سوئنگ پوائنٹس نہیں"}
-        
-    trend = "رینجنگ"
-    if recent_highs[-1] > recent_highs[-2] and recent_lows[-1] > recent_lows[-2]:
-        trend = "اوپر کا رجحان"
-    elif recent_highs[-1] < recent_highs[-2] and recent_lows[-1] < recent_lows[-2]:
-        trend = "نیچے کا رجحان"
-        
-    return {"trend": trend, "reason": f"مارکیٹ کی ساخت {trend} کی نشاندہی کرتی ہے۔"}
-
-def find_intelligent_range_tp_sl(df: pd.DataFrame, signal_type: str, symbol_personality: Dict) -> Optional[Tuple[float, float]]:
-    """
-    ایک ذہین تجارتی رینج کی بنیاد پر TP/SL کا تعین کرتا ہے۔
-    """
-    if len(df) < 50:  # نمایاں سوئنگ کے لیے کم از کم 50 کینڈلز کی ضرورت ہے
-        logger.warning("نمایاں سوئنگ لیولز تلاش کرنے کے لیے ناکافی ڈیٹا۔")
-        return None
-    
+def calculate_range_tp_sl(df: pd.DataFrame, signal_type: str, symbol_personality: Dict) -> Optional[Tuple[float, float]]:
     last_close = df['close'].iloc[-1]
+    zones = find_supply_demand_zones(df)
+    demand_zone, supply_zone = zones.get("demand"), zones.get("supply")
+    if not demand_zone or not supply_zone: return None
     
-    # 1. نمایاں سوئنگ پوائنٹس کی شناخت کریں
-    swings = _find_significant_swings(df, window=50)
-    trading_range_high = swings['high']
-    trading_range_low = swings['low']
-
-    # 2. ATR کا حساب لگائیں
-    tr = pd.concat([df['high'] - df['low'], abs(df['high'] - df['close'].shift()), abs(df['low'] - df['close'].shift())], axis=1).max(axis=1)
-    atr = tr.ewm(span=14, adjust=False).mean().iloc[-1]
-    
-    if atr == 0:
-        logger.warning("ATR صفر ہے، TP/SL کا حساب نہیں لگایا جا سکتا۔")
-        return None
-
-    # اثاثہ کی شخصیت سے پیرامیٹرز حاصل کریں
-    sl_atr_multiplier = symbol_personality.get("volatility_multiplier", 1.5)
-    min_rr_ratio = symbol_personality.get("min_rr_ratio", 1.5)
-
-    # 3. TP اور SL کا ذہین تعین
+    equilibrium = (supply_zone[0] + demand_zone[1]) / 2
     take_profit, stop_loss = None, None
 
-    if signal_type == 'buy':
-        # TP: تجارتی رینج کے اوپری حصے سے تھوڑا پہلے
-        take_profit = trading_range_high - (atr * 0.2)
-        # SL: تجارتی رینج کے نچلے حصے سے تھوڑا نیچے
-        stop_loss = trading_range_low - (atr * sl_atr_multiplier)
+    if signal_type == 'buy' and last_close < equilibrium:
+        stop_loss, take_profit = demand_zone[1], supply_zone[1]
+    elif signal_type == 'sell' and last_close > equilibrium:
+        stop_loss, take_profit = supply_zone[0], demand_zone[0]
+    else:
+        return None
+
+    min_rr = symbol_personality.get("rr_calm", 1.0)
+    risk = abs(last_close - stop_loss)
+    reward = abs(take_profit - last_close)
+    if risk == 0 or (reward / risk) < min_rr: return None
     
-    elif signal_type == 'sell':
-        # TP: تجارتی رینج کے نچلے حصے سے تھوڑا پہلے
-        take_profit = trading_range_low + (atr * 0.2)
-        # SL: تجارتی رینج کے اوپری حصے سے تھوڑا اوپر
-        stop_loss = trading_range_high + (atr * sl_atr_multiplier)
-
-    # 4. منطقی جانچ اور رسک/ریوارڈ کی تصدیق
-    if take_profit is None or stop_loss is None:
-        return None
-
-    # یقینی بنائیں کہ TP اور SL انٹری قیمت کے صحیح سمت میں ہیں
-    if (signal_type == 'buy' and (take_profit <= last_close or stop_loss >= last_close)) or \
-       (signal_type == 'sell' and (take_profit >= last_close or stop_loss <= last_close)):
-        logger.warning(f"[{signal_type}] سگنل کے لیے غیر منطقی TP/SL کی سطحیں۔ TP: {take_profit}, SL: {stop_loss}, قیمت: {last_close}")
-        return None
-
-    try:
-        reward = abs(take_profit - last_close)
-        risk = abs(last_close - stop_loss)
-        if risk == 0: return None
-        
-        rr_ratio = reward / risk
-        if rr_ratio < min_rr_ratio:
-            logger.warning(f"ذہین رینج کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) کم از کم ({min_rr_ratio}) سے کم ہے۔ سگنل مسترد۔")
-            return None
-            
-    except ZeroDivisionError:
-        return None
-        
-    logger.info(f"ذہین رینج کی بنیاد پر TP/SL ملا: TP={take_profit:.5f}, SL={stop_loss:.5f} (RR: {rr_ratio:.2f})")
     return take_profit, stop_loss
+
+# ==============================================================================
+# ماڈل 2: رجحان کی پیروی (Trend Following)
+# ==============================================================================
+def calculate_trend_tp_sl(df: pd.DataFrame, signal_type: str, symbol_personality: Dict) -> Optional[Tuple[float, float]]:
+    last_close = df['close'].iloc[-1]
+    atr = (df['high'] - df['low']).ewm(span=14).mean().iloc[-1]
     
+    # SL کا تعین: حالیہ سوئنگ لو/ہائی کے پیچھے
+    recent_swings = df.tail(20)
+    stop_loss = None
+    if signal_type == 'buy':
+        swing_low = recent_swings['low'].min()
+        stop_loss = swing_low - (atr * 0.2)
+    else: # sell
+        swing_high = recent_swings['high'].max()
+        stop_loss = swing_high + (atr * 0.2)
+
+    # TP کا تعین: مقررہ RR کی بنیاد پر
+    min_rr = symbol_personality.get("rr_volatile", 1.5)
+    risk = abs(last_close - stop_loss)
+    if risk == 0: return None
+    
+    take_profit = last_close + (risk * min_rr) if signal_type == 'buy' else last_close - (risk * min_rr)
+    
+    return take_profit, stop_loss
+
+# ==============================================================================
+# مرکزی فنکشن: جو مارکیٹ کی حالت کا تعین کرتا ہے
+# ==============================================================================
+def find_market_state_and_get_tp_sl(df: pd.DataFrame, signal_type: str, symbol_personality: Dict) -> Optional[Tuple[float, float]]:
+    """
+    مارکیٹ کی حالت (رجحان یا رینج) کا تعین کرتا ہے اور مناسب TP/SL حکمت عملی کا انتخاب کرتا ہے۔
+    """
+    # 1. مارکیٹ کی حالت کا تعین کریں
+    ema_20 = df['close'].ewm(span=20, adjust=False).mean()
+    ema_50 = df['close'].ewm(span=50, adjust=False).mean()
+    last_close = df['close'].iloc[-1]
+    
+    market_state = "Ranging"
+    if last_close > ema_20.iloc[-1] and ema_20.iloc[-1] > ema_50.iloc[-1]:
+        market_state = "Uptrend"
+    elif last_close < ema_20.iloc[-1] and ema_20.iloc[-1] < ema_50.iloc[-1]:
+        market_state = "Downtrend"
+
+    logger.info(f"مارکیٹ کی حالت کی تشخیص: {market_state}")
+
+    # 2. مناسب حکمت عملی منتخب کریں
+    if market_state == "Uptrend" and signal_type == 'buy':
+        logger.info("رجحان کی حکمت عملی (Trend Strategy) فعال کی گئی۔")
+        return calculate_trend_tp_sl(df, signal_type, symbol_personality)
+    elif market_state == "Downtrend" and signal_type == 'sell':
+        logger.info("رجحان کی حکمت عملی (Trend Strategy) فعال کی گئی۔")
+        return calculate_trend_tp_sl(df, signal_type, symbol_personality)
+    elif market_state == "Ranging":
+        logger.info("رینج کی حکمت عملی (Range Strategy) فعال کی گئی۔")
+        return calculate_range_tp_sl(df, signal_type, symbol_personality)
+    else:
+        logger.info(f"سگنل ({signal_type}) مارکیٹ کی حالت ({market_state}) سے مطابقت نہیں رکھتا۔ مسترد۔")
+        return None
+                          
