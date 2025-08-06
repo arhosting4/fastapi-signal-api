@@ -36,19 +36,20 @@ async def generate_final_signal(
             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
         # مرحلہ 1: بنیادی حکمت عملی کا تجزیہ چلائیں
-        # اب یہ ہمیشہ اسکیلپنگ تجزیہ ہی چلائے گا
         analysis = await asyncio.to_thread(generate_scalping_analysis, df, symbol_personality, market_regime)
 
         if analysis.get("status") != "ok":
-            return analysis # اگر کوئی سگنل نہیں ہے تو واپس جائیں
+            return analysis
 
         core_signal = analysis.get("signal")
         technical_score = analysis.get("score", 0)
         
         # مرحلہ 2: اضافی فلٹرز اور سیاق و سباق کا تجزیہ
-        pattern_task = asyncio.to_thread(detect_patterns, df)
-        news_task = get_news_analysis_for_symbol(symbol)
-        market_structure_task = asyncio.to_thread(find_market_structure, df)
+        # ★★★ خرابی کا حل یہاں ہے ★★★
+        # ہر کام کو ایک ٹاسک کے طور پر بنائیں
+        pattern_task = asyncio.create_task(asyncio.to_thread(detect_patterns, df))
+        news_task = asyncio.create_task(get_news_analysis_for_symbol(symbol))
+        market_structure_task = asyncio.create_task(asyncio.to_thread(find_market_structure, df))
         
         # کثیر ٹائم فریم کی تصدیق
         h1_candles = await fetch_twelve_data_ohlc(symbol, "1h", 50)
@@ -67,6 +68,7 @@ async def generate_final_signal(
         if not h1_trend_ok:
             return {"status": "no-signal", "reason": "H1 رجحان کے خلاف سگنل، مسترد کر دیا گیا۔"}
 
+        # تمام ٹاسک کے مکمل ہونے کا انتظار کریں
         pattern_data, news_data, market_structure = await asyncio.gather(
             pattern_task, news_task, market_structure_task
         )
@@ -90,7 +92,7 @@ async def generate_final_signal(
             "news": news_data.get("impact"),
             "reason": reason,
             "confidence": round(confidence, 2),
-            "timeframe": "15min", # ٹائم فریم اب ہمیشہ 15 منٹ ہے
+            "timeframe": "15min",
             "price": analysis.get("price"),
             "tp": round(analysis.get("tp"), 5),
             "sl": round(analysis.get("sl"), 5),
