@@ -1,148 +1,89 @@
-# filename: strategy_scalper.py
+# filename: strategies/strategy_scalper.py
 
-import json
 import logging
-from typing import Any, Dict, Optional, Tuple
-
-import numpy as np
+from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 
-from level_analyzer import find_optimal_tp_sl_for_scalping
-from config import tech_settings
+# مقامی امپورٹس
+from strategies.base_strategy import BaseStrategy
+from level_analyzer import find_optimal_tp_sl, find_market_structure
+from patternai import detect_patterns
+from reasonbot import generate_reason
+from trainerai import get_confidence
+from config import api_settings, strategy_settings
+
+# تکنیکی تجزیہ کے فنکشنز
+from technicals.indicators import calculate_rsi, calculate_stoch, calculate_supertrend, calculate_ema
+from technicals.score_calculator import get_technical_score
 
 logger = logging.getLogger(__name__)
-WEIGHTS_FILE = "strategy_weights.json"
 
-# --- کنفیگریشن سے پیرامیٹرز ---
-EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
-EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
-RSI_PERIOD = tech_settings.RSI_PERIOD
-STOCH_K = tech_settings.STOCH_K
-STOCH_D = tech_settings.STOCH_D
-SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
-SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
+class ScalperStrategy(BaseStrategy):
+    """
+    اسکیلپنگ کے لیے ایک حکمت عملی جو کم ٹائم فریم پر تیز رفتار حرکتوں کو پکڑنے پر توجہ مرکوز کرتی ہے۔
+    یہ متحرک پیرامیٹرز کا استعمال کرتی ہے۔
+    """
+    name = "Scalper"
 
-# ... (بقیہ کوڈ میں کوئی بڑی تبدیلی نہیں، صرف نام اور معمولی ایڈجسٹمنٹ) ...
+    def analyze(self, db_session, symbol: str, m15_df: pd.DataFrame, h1_df: pd.DataFrame, market_params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        متحرک مارکیٹ پیرامیٹرز کی بنیاد پر تجزیہ کرتا ہے۔
+        """
+        if len(m15_df) < 34 or len(h1_df) < 20:
+            return self.result("no-signal", "تجزیے کے لیے ناکافی ڈیٹا۔")
 
-def _load_weights() -> Dict[str, float]:
-    try:
-        with open(WEIGHTS_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        logger.warning(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ وزن استعمال کیا جا رہا ہے۔")
-        return {
-            "ema_cross": 0.30, "rsi_position": 0.20, "stoch_position": 0.20,
-            "price_action": 0.10, "supertrend_confirm": 0.20
-        }
-
-def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
-    delta = data.diff(1)
-    gain = delta.where(delta > 0, 0).fillna(0)
-    loss = -delta.where(delta < 0, 0).fillna(0)
-    avg_gain = gain.ewm(com=period - 1, adjust=False).mean()
-    avg_loss = loss.ewm(com=period - 1, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0, 1e-9)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50)
-
-def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
-    low_k = low.rolling(window=k).min()
-    high_k = high.rolling(window=k).max()
-    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
-    stoch_d = stoch_k.rolling(window=d).mean()
-    stoch_df = pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
-    return stoch_df.fillna(50)
-
-def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
-    high, low, close = df['high'], df['low'], df['close']
-    tr1 = pd.DataFrame(high - low)
-    tr2 = pd.DataFrame(abs(high - close.shift(1)))
-    tr3 = pd.DataFrame(abs(low - close.shift(1)))
-    tr = pd.concat([tr1, tr2, tr3], axis=1, join='inner').max(axis=1)
-    atr = tr.ewm(alpha=1/atr_period, adjust=False).mean()
-    df['upperband'] = (high + low) / 2 + (multiplier * atr)
-    df['lowerband'] = (high + low) / 2 - (multiplier * atr)
-    df['in_uptrend'] = True
-    for i in range(1, len(df)):
-        if close.iloc[i] > df['upperband'].iloc[i-1]:
-            df.loc[df.index[i], 'in_uptrend'] = True
-        elif close.iloc[i] < df['lowerband'].iloc[i-1]:
-            df.loc[df.index[i], 'in_uptrend'] = False
-        else:
-            df.loc[df.index[i], 'in_uptrend'] = df['in_uptrend'].iloc[i-1]
-        if df['in_uptrend'].iloc[i] and df['lowerband'].iloc[i] < df['lowerband'].iloc[i-1]:
-            df.loc[df.index[i], 'lowerband'] = df['lowerband'].iloc[i-1]
-        if not df['in_uptrend'].iloc[i] and df['upperband'].iloc[i] > df['upperband'].iloc[i-1]:
-            df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
-    return df
-
-def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
-    """اسکیلپنگ حکمت عملی کی بنیاد پر تکنیکی تجزیہ کرتا ہے۔"""
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
-        return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
-    
-    close = df['close']
-    WEIGHTS = _load_weights()
-    ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
-    ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
-    rsi = calculate_rsi(close, RSI_PERIOD)
-    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
-    df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR)
-    
-    last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
-    last_rsi, last_stoch_k = rsi.iloc[-1], stoch['STOCHk'].iloc[-1]
-    last_close, prev_close = close.iloc[-1], close.iloc[-2]
-    in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
-    
-    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi, last_stoch_k]):
-        return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
+        # 1. تکنیکی تجزیہ (15 منٹ کے ڈیٹا پر)
+        tech_analysis = get_technical_score(m15_df)
+        technical_score = tech_analysis.get("score", 0)
         
-    ema_score = 1 if last_ema_fast > last_ema_slow else -1
-    rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
-    stoch_score = 1 if last_stoch_k > 52 else (-1 if last_stoch_k < 48 else 0)
-    price_action_score = 1 if last_close > prev_close else -1
-    supertrend_score = 1 if in_uptrend else -1
-    
-    total_score = (
-        (ema_score * WEIGHTS.get("ema_cross", 0.30)) +
-        (rsi_score * WEIGHTS.get("rsi_position", 0.20)) +
-        (stoch_score * WEIGHTS.get("stoch_position", 0.20)) +
-        (price_action_score * WEIGHTS.get("price_action", 0.10)) +
-        (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.20))
-    ) * 100
-    
-    core_signal = "wait"
-    if total_score > 40: core_signal = "buy"
-    elif total_score < -40: core_signal = "sell"
+        core_signal = "wait"
+        if technical_score >= strategy_settings.SIGNAL_SCORE_THRESHOLD:
+            core_signal = "buy"
+        elif technical_score <= -strategy_settings.SIGNAL_SCORE_THRESHOLD:
+            core_signal = "sell"
+        
+        if core_signal == "wait":
+            return self.result("no-signal", f"تکنیکی اسکور ({technical_score:.2f}) تھریشولڈ سے کم ہے۔")
 
-    if core_signal == "wait":
-        return {"status": "no-signal", "reason": f"تکنیکی اسکور ({total_score:.2f}) تھریشولڈ سے کم ہے۔"}
+        # 2. بڑے ٹائم فریم (1 گھنٹہ) کی تصدیق
+        h1_structure = find_market_structure(h1_df)
+        h1_trend = h1_structure.get("trend", "غیر متعین")
 
-    tp_sl_data = find_optimal_tp_sl_for_scalping(df, core_signal, symbol_personality)
-    if not tp_sl_data:
-        return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
+        if (core_signal == "buy" and h1_trend == "نیچے کا رجحان") or \
+           (core_signal == "sell" and h1_trend == "اوپر کا رجحان"):
+            return self.result("no-signal", f"H1 رجحان ({h1_trend}) سگنل کی سمت کے خلاف ہے۔")
 
-    tp, sl = tp_sl_data
-    
-    indicators_data = {
-        "ema_fast": round(last_ema_fast, 5), "ema_slow": round(last_ema_slow, 5),
-        "rsi": round(last_rsi, 2), "stoch_k": round(last_stoch_k, 2),
-        "supertrend_direction": "Up" if in_uptrend else "Down",
-        "technical_score": round(total_score, 2),
-        "component_scores": {
-            "ema_cross": ema_score, "rsi_position": rsi_score,
-            "stoch_position": stoch_score, "price_action": price_action_score,
-            "supertrend_confirm": supertrend_score
-        }
-    }
-    
-    return {
-        "status": "ok",
-        "signal": core_signal,
-        "score": total_score,
-        "price": last_close,
-        "tp": tp,
-        "sl": sl,
-        "indicators": indicators_data
-    }
-    
+        # 3. متحرک پیرامیٹرز کے ساتھ TP/SL کا حساب
+        # ★★★ اہم تبدیلی: متحرک پیرامیٹرز کو پاس کیا جا رہا ہے ★★★
+        tp_sl_data = find_optimal_tp_sl(m15_df, core_signal, market_params)
+        if not tp_sl_data:
+            return self.result("no-signal", "بہترین TP/SL کا حساب نہیں لگایا جا سکا (متحرک شرائط سخت ہو سکتی ہیں)۔")
+        
+        tp, sl = tp_sl_data
+
+        # 4. بقیہ تجزیہ
+        pattern_data = detect_patterns(m15_df)
+        
+        confidence = get_confidence(
+            db_session, core_signal, technical_score, pattern_data.get("type", "neutral"),
+            market_params.get("risk_level", "Medium"), "Clear", symbol
+        )
+        
+        reason = generate_reason(
+            core_signal, pattern_data, market_params.get("risk_level", "Medium"),
+            {"impact": "Clear"}, confidence, h1_structure, indicators=tech_analysis.get("indicators", {})
+        )
+
+        return {
+            "status": "ok",
+            "symbol": symbol,
+            "signal": core_signal,
+            "confidence": round(confidence, 2),
+            "reason": reason,
+            "timeframe": "15min",
+            "price": m15_df['close'].iloc[-1],
+            "tp": round(tp, 5),
+            "sl": round(sl, 5),
+            "component_scores": tech_analysis.get("indicators", {}).get("component_scores", {})
+            }
+        
