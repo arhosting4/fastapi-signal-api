@@ -5,7 +5,9 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from level_analyzer import find_optimal_tp_sl_for_scalping
+# ★★★ تبدیلی یہاں ہے ★★★
+# پرانے فنکشن کی جگہ نیا فنکشن امپورٹ کریں
+from level_analyzer import find_intelligent_range_tp_sl
 from config import tech_settings
 
 logger = logging.getLogger(__name__)
@@ -19,22 +21,16 @@ SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
 SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
 
 def _load_weights() -> Dict[str, float]:
-    """
-    وزن کی فائل لوڈ کرتا ہے۔ Stochastic کو ہٹا دیا گیا ہے۔
-    """
     try:
         with open(WEIGHTS_FILE, 'r') as f:
             weights = json.load(f)
-            # یقینی بنائیں کہ stochastic موجود نہیں ہے
             weights.pop("stoch_position", None)
-            # وزن کو دوبارہ نارملائز کریں
             total_weight = sum(weights.values())
             if total_weight > 0:
                 return {key: value / total_weight for key, value in weights.items()}
             return weights
     except (FileNotFoundError, json.JSONDecodeError):
         logger.warning(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ وزن استعمال کیا جا رہا ہے۔")
-        # Stochastic کے بغیر ڈیفالٹ وزن
         return {
             "ema_cross": 0.40, 
             "rsi_position": 0.30,
@@ -76,10 +72,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     return df
 
 def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, market_regime: Dict) -> Dict[str, Any]:
-    """
-    اسکیلپنگ حکمت عملی کی بنیاد پر تکنیکی تجزیہ کرتا ہے۔ Stochastic کو ہٹا دیا گیا ہے۔
-    """
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
+    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 50): # کم از کم 50 کینڈلز کی ضرورت
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
     
     close = df['close']
@@ -110,7 +103,6 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
     ) * 100
     
     core_signal = "wait"
-    # غیر مستحکم مارکیٹ میں سگنل کے لیے زیادہ اسکور کی ضرورت ہوگی
     score_threshold = 45 if market_regime['regime'] == 'Volatile' else 40
 
     if total_score > score_threshold: core_signal = "buy"
@@ -119,9 +111,11 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
     if core_signal == "wait":
         return {"status": "no-signal", "reason": f"تکنیکی اسکور ({total_score:.2f}) مطلوبہ حد ({score_threshold}) سے کم ہے۔"}
 
-    tp_sl_data = find_optimal_tp_sl_for_scalping(df, core_signal, symbol_personality)
+    # ★★★ تبدیلی یہاں ہے ★★★
+    # نئے ذہین فنکشن کو کال کریں
+    tp_sl_data = find_intelligent_range_tp_sl(df, core_signal, symbol_personality)
     if not tp_sl_data:
-        return {"status": "no-signal", "reason": "بہترین TP/SL کا حساب نہیں لگایا جا سکا"}
+        return {"status": "no-signal", "reason": "بہترین TP/SL رینج کا حساب نہیں لگایا جا سکا"}
 
     tp, sl = tp_sl_data
     
@@ -145,5 +139,5 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
         "tp": tp,
         "sl": sl,
         "indicators": indicators_data
-            }
+    }
     
