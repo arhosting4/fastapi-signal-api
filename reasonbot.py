@@ -1,5 +1,3 @@
-# filename: reasonbot.py
-
 from typing import Dict, Any, List
 
 def generate_reason(
@@ -38,20 +36,18 @@ def _add_technical_reason(parts: List[str], action: str, indicators: Dict[str, A
     tech_score = indicators.get('technical_score', 0)
     parts.append(f"مجموعی تکنیکی اسکور ({tech_score:.1f}) ایک مضبوط {action} کے رجحان کی نشاندہی کرتا ہے۔")
     
-    # رفتار اور رجحان کا تجزیہ
-    macd_line = indicators.get('macd_line', 0)
-    macd_signal = indicators.get('macd_signal_line', 0)
+    # رفتار اور رجحان کا تجزیہ (Stochastic کے بغیر)
+    rsi = indicators.get('rsi', 50)
     supertrend_dir = indicators.get('supertrend_direction', 'N/A')
 
-    # اصلاح: وجہ کو مزید معلوماتی بنایا گیا ہے
     if action == "خریداری":
-        if macd_line > macd_signal:
-            parts.append("MACD تیزی کی رفتار (bullish momentum) دکھا رہا ہے۔")
+        if rsi > 50:
+            parts.append("RSI تیزی کی رفتار (bullish momentum) دکھا رہا ہے۔")
         if supertrend_dir == "Up":
             parts.append("Supertrend نے اوپر کے رجحان (uptrend) کی تصدیق کی ہے۔")
     else:  # فروخت
-        if macd_line < macd_signal:
-            parts.append("MACD مندی کی رفتار (bearish momentum) دکھا رہا ہے۔")
+        if rsi < 50:
+            parts.append("RSI مندی کی رفتار (bearish momentum) دکھا رہا ہے۔")
         if supertrend_dir == "Down":
             parts.append("Supertrend نے نیچے کے رجحان (downtrend) کی تصدیق کی ہے۔")
 
@@ -63,7 +59,6 @@ def _add_structure_and_pattern_reason(
 ):
     """مارکیٹ کی ساخت اور کینڈل اسٹک پیٹرن کی بنیاد پر وجہ کا حصہ تیار کرتا ہے۔"""
     trend = structure.get("trend", "غیر متعین")
-    # اگر رجحان سگنل کی سمت میں ہے
     if (signal == "buy" and trend == "اوپر کا رجحان") or \
        (signal == "sell" and trend == "نیچے کا رجحان"):
         parts.append(f"مارکیٹ کی مجموعی ساخت ({trend}) بھی اس سگنل کی حمایت کرتی ہے۔")
@@ -80,11 +75,9 @@ def _add_risk_and_news_warning(
 ):
     """رسک اور خبروں کی بنیاد پر انتباہی پیغامات شامل کرتا ہے۔"""
     news_reason = news.get('reason', '')
-    if risk == "Critical":
-        warning = f"**انتباہ: رسک انتہائی بلند (Critical) ہے۔**"
+    if risk == "High" or risk == "Critical":
+        warning = f"**انتباہ: مارکیٹ کا رسک بلند ('{risk}') ہے۔**"
         if "خبر" in news_reason:
             warning += f" وجہ: اعلیٰ اثر والی خبر ('{news_reason.split(': ')[-1][:50]}...')"
         parts.append(warning)
-    elif risk == "High":
-        parts.append("**نوٹ: مارکیٹ کے اتار چڑھاؤ یا خبروں کی وجہ سے رسک بلند (High) ہے۔**")
         
