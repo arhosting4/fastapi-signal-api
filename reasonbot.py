@@ -19,7 +19,7 @@ def generate_reason(
     
     # 2. کینڈل اسٹک پیٹرن کا تجزیہ
     pattern_name = pattern_data.get("pattern", "کوئی خاص پیٹرن نہیں")
-    pattern_type = pattern.get("type", "neutral")
+    pattern_type = pattern_data.get("type", "neutral")
     if pattern_type != "neutral" and pattern_type != "indecision":
         reason_parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) بھی دیکھا گیا ہے۔")
 
@@ -47,4 +47,4 @@ def _add_technical_reason(parts: List[str], action: str, indicators: Dict[str, A
         parts.append("Supertrend نے اوپر کے رجحان (uptrend) کی تصدیق کی ہے۔")
     elif action == "فروخت" and supertrend_dir == "Down":
         parts.append("Supertrend نے نیچے کے رجحان (downtrend) کی تصدیق کی ہے۔")
-        
+                                                             
