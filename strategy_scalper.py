@@ -1,13 +1,12 @@
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-import numpy as np
 import pandas as pd
 
 # ★★★ تبدیلی یہاں ہے ★★★
-# پرانے فنکشن کی جگہ نیا فنکشن امپورٹ کریں
-from level_analyzer import find_intelligent_range_tp_sl
+# پرانے فنکشن کی جگہ نیا مرکزی فنکشن امپورٹ کریں
+from level_analyzer import find_market_state_and_get_tp_sl
 from config import tech_settings
 
 logger = logging.getLogger(__name__)
@@ -72,7 +71,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     return df
 
 def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, market_regime: Dict) -> Dict[str, Any]:
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 50): # کم از کم 50 کینڈلز کی ضرورت
+    if len(df) < 100:
         return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
     
     close = df['close']
@@ -111,11 +110,11 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
     if core_signal == "wait":
         return {"status": "no-signal", "reason": f"تکنیکی اسکور ({total_score:.2f}) مطلوبہ حد ({score_threshold}) سے کم ہے۔"}
 
-    # ★★★ تبدیلی یہاں ہے ★★★
-    # نئے ذہین فنکشن کو کال کریں
+    # ★★★ یہ ہے وہ تبدیلی جو پچھلی بار رہ گئی تھی ★★★
+    # نئے ذہین مرکزی فنکشن کو کال کریں
     tp_sl_data = find_market_state_and_get_tp_sl(df, core_signal, symbol_personality)
     if not tp_sl_data:
-        return {"status": "no-signal", "reason": "بہترین TP/SL رینج کا حساب نہیں لگایا جا سکا"}
+        return {"status": "no-signal", "reason": "موجودہ مارکیٹ کی حالت کے لیے کوئی موزوں TP/SL حکمت عملی نہیں ملی۔"}
 
     tp, sl = tp_sl_data
     
@@ -139,5 +138,5 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
         "tp": tp,
         "sl": sl,
         "indicators": indicators_data
-    }
-    
+            }
+                
