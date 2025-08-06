@@ -2,31 +2,31 @@
   "DEFAULT": {
     "volatility_multiplier": 1.5,
     "news_sensitivity": 1.0,
-    "min_rr_ratio": 1.5
+    "min_rr_ratio": 1.2
   },
   "XAU/USD": {
     "volatility_multiplier": 2.0,
     "news_sensitivity": 1.8,
-    "min_rr_ratio": 2.0
+    "min_rr_ratio": 1.5
   },
   "EUR/USD": {
     "volatility_multiplier": 1.2,
     "news_sensitivity": 1.2,
-    "min_rr_ratio": 1.5
+    "min_rr_ratio": 1.2
   },
   "GBP/USD": {
     "volatility_multiplier": 1.4,
     "news_sensitivity": 1.5,
-    "min_rr_ratio": 1.5
+    "min_rr_ratio": 1.2
   },
   "BTC/USD": {
     "volatility_multiplier": 2.5,
     "news_sensitivity": 1.0,
-    "min_rr_ratio": 2.5
+    "min_rr_ratio": 1.5
   },
   "ETH/USD": {
     "volatility_multiplier": 2.8,
     "news_sensitivity": 1.0,
-    "min_rr_ratio": 2.5
+    "min_rr_ratio": 1.5
   }
 }
