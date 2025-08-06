@@ -1,100 +1,67 @@
 # filename: riskguardian.py
 
 import logging
-from typing import Dict, Any, List
-import pandas as pd
+from typing import Dict, List
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# --- مستقل اقدار ---
-ATR_PERIOD = 14
-VIX_LOW_THRESHOLD = 20  # کم رسک کی حد
-VIX_HIGH_THRESHOLD = 45 # زیادہ رسک کی حد
+ATR_LENGTH = 14
 
-def _calculate_atr_and_vix(df: pd.DataFrame) -> (float, float):
-    """
-    ATR اور ایک سادہ VIX (Volatility Index) جیسے اسکور کا حساب لگاتا ہے۔
-    """
-    if len(df) < ATR_PERIOD + 1:
-        return 0.0, 50.0 # ڈیفالٹ درمیانہ رسک
-
-    # ATR کا حساب
-    high_low = df['high'] - df['low']
-    high_close = np.abs(df['high'] - df['close'].shift())
-    low_close = np.abs(df['low'] - df['close'].shift())
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = tr.ewm(span=ATR_PERIOD, adjust=False).mean().iloc[-1]
-    
-    # قیمت کا فیصد کے طور پر ATR
-    avg_price = df['close'].iloc[-ATR_PERIOD:].mean()
-    if avg_price == 0:
-        return 0.0, 50.0
-    
-    atr_percentage = (atr / avg_price) * 100
-
-    # VIX جیسا اسکور (0-100)
-    # یہ اسکور ATR فیصد کو ایک معیاری پیمانے پر لاتا ہے
-    # 0.1% ATR کو 20 VIX، 0.5% کو 60 VIX سمجھا جا سکتا ہے
-    vix_score = np.clip((atr_percentage * 100), 5, 95)
-
-    return atr_percentage, vix_score
-
-def get_market_analysis(all_pairs_data: Dict[str, List[pd.DataFrame]]) -> Dict[str, Any]:
-    """
-    تمام بڑے جوڑوں کے ڈیٹا کی بنیاد پر مارکیٹ کے مجموعی رسک کا تجزیہ کرتا ہے۔
-    """
-    if not all_pairs_data:
-        return {
-            "risk_level": "Medium",
-            "reason": "مارکیٹ ڈیٹا دستیاب نہیں، درمیانے رسک کا اندازہ۔",
-            "parameters": {"rr_ratio": 1.5, "confluence_score": 5}
-        }
-
-    vix_scores = []
-    total_atr_perc = 0
-    count = 0
-
-    for symbol, dataframes in all_pairs_data.items():
-        if dataframes:
-            # تجزیے کے لیے 1 گھنٹے کا ٹائم فریم استعمال کریں
-            df_1h = dataframes[0] 
-            if not df_1h.empty:
-                atr_perc, vix = _calculate_atr_and_vix(df_1h)
-                vix_scores.append(vix)
-                total_atr_perc += atr_perc
-                count += 1
-
-    if not vix_scores:
-        return {
-            "risk_level": "Medium",
-            "reason": "VIX کا حساب لگانے کے لیے ڈیٹا ناکافی، درمیانے رسک کا اندازہ۔",
-            "parameters": {"rr_ratio": 1.5, "confluence_score": 5}
-        }
-
-    avg_vix = np.mean(vix_scores)
-    avg_atr_perc = total_atr_perc / count if count > 0 else 0
-    
-    reason = f"اوسط اتار چڑھاؤ = {avg_atr_perc:.3f}%, VIX اسکور = {int(avg_vix)}"
-    logger.info(f"🛡️ رسک گارڈین تجزیہ: {reason}")
-
-    # رسک کی سطح اور پیرامیٹرز کا تعین کریں
-    if avg_vix < VIX_LOW_THRESHOLD:
-        return {
-            "risk_level": "Low",
-            "reason": f"کم رسک ماحول ({reason})",
-            "parameters": {"rr_ratio": 1.2, "confluence_score": 4} # نرم شرائط
-        }
-    elif avg_vix > VIX_HIGH_THRESHOLD:
-        return {
-            "risk_level": "High",
-            "reason": f"زیادہ رسک ماحول ({reason})",
-            "parameters": {"rr_ratio": 2.0, "confluence_score": 6} # سخت شرائط
-        }
-    else:
-        return {
-            "risk_level": "Medium",
-            "reason": f"معمولی رسک ماحول ({reason})",
-            "parameters": {"rr_ratio": 1.5, "confluence_score": 5} # معیاری شرائط
-    }
+def _calculate_atr(df: pd.DataFrame, period: int) -> float:
+    """ایک ڈیٹا فریم کے لیے آخری ATR قدر کا حساب لگاتا ہے۔"""
+    if len(df) < period + 1:
+        return 0.0
         
+    df_copy = df.copy()
+    high, low, close = df_copy['high'], df_copy['low'], df_copy['close']
+    
+    df_copy['h-l'] = high - low
+    df_copy['h-pc'] = abs(high - close.shift(1))
+    df_copy['l-pc'] = abs(low - close.shift(1))
+    
+    tr = df_copy[['h-l', 'h-pc', 'l-pc']].max(axis=1)
+    atr = tr.ewm(span=period, adjust=False).mean()
+    
+    return atr.iloc[-1] if not atr.empty and pd.notna(atr.iloc[-1]) else 0.0
+
+def get_market_regime(ohlc_data_map: Dict[str, pd.DataFrame]) -> Dict[str, any]:
+    """
+    تمام بڑے جوڑوں کے اتار چڑھاؤ کا تجزیہ کرکے مارکیٹ کے مجموعی "موڈ" کا تعین کرتا ہے۔
+    یہ ایک VIX جیسے اسکور اور ایک حکمت عملی کی سفارش واپس کرتا ہے۔
+    """
+    if not ohlc_data_map:
+        logger.warning("مارکیٹ کے نظام کا تعین کرنے کے لیے کوئی OHLC ڈیٹا نہیں۔ ڈیفالٹ 'Scalper' موڈ۔")
+        return {"regime": "Calm", "strategy": "Scalper", "vix_score": 25}
+
+    normalized_atrs = []
+    for symbol, df in ohlc_data_map.items():
+        if df.empty or len(df) < ATR_LENGTH + 1:
+            continue
+            
+        avg_price = df['close'].iloc[-20:].mean()
+        if avg_price == 0:
+            continue
+            
+        atr = _calculate_atr(df, ATR_LENGTH)
+        normalized_atr = (atr / avg_price) * 100  # فیصد کے طور پر ATR
+        normalized_atrs.append(normalized_atr)
+
+    if not normalized_atrs:
+        logger.warning("کسی بھی جوڑے کے لیے ATR کا حساب نہیں لگایا جا سکا۔ ڈیفالٹ 'Scalper' موڈ۔")
+        return {"regime": "Calm", "strategy": "Scalper", "vix_score": 25}
+
+    # VIX اسکور: 0-100 کے پیمانے پر اوسط اتار چڑھاؤ
+    avg_volatility_percent = np.mean(normalized_atrs)
+    vix_score = min(100, int(avg_volatility_percent * 200)) # اسکیلنگ فیکٹر
+
+    logger.info(f"مارکیٹ کا تجزیہ: اوسط اتار چڑھاؤ = {avg_volatility_percent:.3f}%, VIX اسکور = {vix_score}")
+
+    if vix_score > 75:
+        return {"regime": "Stormy", "strategy": "Survivor", "vix_score": vix_score}
+    elif vix_score > 40:
+        return {"regime": "Volatile", "strategy": "SwingTrader", "vix_score": vix_score}
+    else:
+        return {"regime": "Calm", "strategy": "Scalper", "vix_score": vix_score}
+
