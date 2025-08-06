@@ -113,7 +113,7 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
 
     # ★★★ تبدیلی یہاں ہے ★★★
     # نئے ذہین فنکشن کو کال کریں
-    tp_sl_data = find_intelligent_range_tp_sl(df, core_signal, symbol_personality)
+    tp_sl_data = find_market_state_and_get_tp_sl(df, core_signal, symbol_personality)
     if not tp_sl_data:
         return {"status": "no-signal", "reason": "بہترین TP/SL رینج کا حساب نہیں لگایا جا سکا"}
 
