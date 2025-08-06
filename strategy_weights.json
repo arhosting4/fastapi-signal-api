@@ -1,7 +1,6 @@
 {
-    "ema_cross": 0.30,
-    "rsi_position": 0.20,
-    "stoch_position": 0.20,
+    "ema_cross": 0.40,
+    "rsi_position": 0.30,
     "price_action": 0.10,
     "supertrend_confirm": 0.20
 }
