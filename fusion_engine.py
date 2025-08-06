@@ -10,10 +10,6 @@ from reasonbot import generate_reason
 from sentinel import get_news_analysis_for_symbol
 from trainerai import get_confidence
 from utils import convert_candles_to_dataframe, fetch_twelve_data_ohlc
-
-# ★★★ تبدیلی یہاں ہے ★★★
-# اب ہم level_analyzer سے کچھ بھی براہ راست امپورٹ نہیں کریں گے
-# کیونکہ strategy_scalper اب خود ہی level_analyzer کو ہینڈل کرے گا
 from strategy_scalper import generate_scalping_analysis
 
 logger = logging.getLogger(__name__)
@@ -26,14 +22,16 @@ async def generate_final_signal(
     market_regime: Dict
 ) -> Dict[str, Any]:
     """
-    تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
+    ایک سادہ اور موثر طریقے سے تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر
+    ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
     """
     try:
         df = convert_candles_to_dataframe(candles)
-        if df.empty or len(df) < 100:
+        if df.empty or len(df) < 50:
             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
-        # مرحلہ 1: بنیادی حکمت عملی کا تجزیہ چلائیں (جو اب خود ہی TP/SL کا تعین کرے گی)
+        # مرحلہ 1: بنیادی حکمت عملی کا تجزیہ چلائیں
+        # یہ اب خود ہی ایک حقیقت پسندانہ TP/SL کا تعین کرے گا
         analysis = generate_scalping_analysis(df, symbol_personality, market_regime)
 
         if analysis.get("status") != "ok":
@@ -56,8 +54,6 @@ async def generate_final_signal(
             news_data.get("impact"), symbol, symbol_personality
         )
         
-        # ★★★ تبدیلی یہاں ہے ★★★
-        # اب ہم market_structure کو یہاں پاس نہیں کریں گے
         reason = generate_reason(
             core_signal, pattern_data, news_data, confidence, 
             indicators=analysis.get("indicators", {})
