@@ -85,5 +85,5 @@ class ScalperStrategy(BaseStrategy):
             "tp": round(tp, 5),
             "sl": round(sl, 5),
             "component_scores": tech_analysis.get("indicators", {}).get("component_scores", {})
-            }
+    }
         
