@@ -1,31 +1,30 @@
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-def _find_swing_levels(df: pd.DataFrame, window: int = 10) -> Dict[str, List[float]]:
+def _find_significant_swings(df: pd.DataFrame, window: int = 50) -> Dict[str, float]:
     """
-    ڈیٹا فریم میں حالیہ سوئنگ ہائی اور لو لیولز کو تلاش کرتا ہے۔
+    فراہم کردہ ونڈو میں سب سے نمایاں سوئنگ ہائی اور لو کو تلاش کرتا ہے۔
     """
-    # 'center=True' اس بات کو یقینی بناتا ہے کہ ایک پوائنٹ کو سوئنگ سمجھنے کے لیے اس کے دونوں طرف کینڈلز ہوں
-    highs = df['high'].rolling(window=window, center=True).max().dropna().unique()
-    lows = df['low'].rolling(window=window, center=True).min().dropna().unique()
+    recent_data = df.tail(window)
+    significant_high = recent_data['high'].max()
+    significant_low = recent_data['low'].min()
     
-    # تازہ ترین 3 لیولز واپس کریں
-    return {"highs": sorted(list(highs), reverse=True)[:3], "lows": sorted(list(lows))[:3]}
+    return {"high": significant_high, "low": significant_low}
 
 def find_market_structure(df: pd.DataFrame, window: int = 20) -> Dict[str, str]:
     """
     مارکیٹ کی ساخت (اوپر/نیچے کا رجحان یا رینجنگ) کا تعین کرتا ہے۔
+    (اس فنکشن میں کوئی تبدیلی نہیں کی گئی)
     """
     if len(df) < window:
         return {"trend": "غیر متعین", "reason": "ناکافی ڈیٹا۔"}
     
     df_copy = df.copy()
-    # سوئنگ پوائنٹس کی شناخت کریں
     df_copy['swing_high'] = df_copy['high'][(df_copy['high'].shift(1) < df_copy['high']) & (df_copy['high'].shift(-1) < df_copy['high'])]
     df_copy['swing_low'] = df_copy['low'][(df_copy['low'].shift(1) > df_copy['low']) & (df_copy['low'].shift(-1) > df_copy['low'])]
     
@@ -36,77 +35,78 @@ def find_market_structure(df: pd.DataFrame, window: int = 20) -> Dict[str, str]:
         return {"trend": "رینجنگ", "reason": "کوئی واضح سوئنگ پوائنٹس نہیں"}
         
     trend = "رینجنگ"
-    # ہائر ہائی اور ہائر لو = اوپر کا رجحان
     if recent_highs[-1] > recent_highs[-2] and recent_lows[-1] > recent_lows[-2]:
         trend = "اوپر کا رجحان"
-    # لوئر ہائی اور لوئر لو = نیچے کا رجحان
     elif recent_highs[-1] < recent_highs[-2] and recent_lows[-1] < recent_lows[-2]:
         trend = "نیچے کا رجحان"
         
     return {"trend": trend, "reason": f"مارکیٹ کی ساخت {trend} کی نشاندہی کرتی ہے۔"}
 
-def find_optimal_tp_sl_for_scalping(df: pd.DataFrame, signal_type: str, symbol_personality: Dict) -> Optional[Tuple[float, float]]:
+def find_intelligent_range_tp_sl(df: pd.DataFrame, signal_type: str, symbol_personality: Dict) -> Optional[Tuple[float, float]]:
     """
-    اسکیلپنگ کے لیے بہترین TP/SL کا تعین کرتا ہے، جو سوئنگ لیولز اور ATR پر مبنی ہے۔
+    ایک ذہین تجارتی رینج کی بنیاد پر TP/SL کا تعین کرتا ہے۔
     """
-    if len(df) < 34: return None
+    if len(df) < 50:  # نمایاں سوئنگ کے لیے کم از کم 50 کینڈلز کی ضرورت ہے
+        logger.warning("نمایاں سوئنگ لیولز تلاش کرنے کے لیے ناکافی ڈیٹا۔")
+        return None
     
     last_close = df['close'].iloc[-1]
     
-    # ATR کا حساب لگائیں
+    # 1. نمایاں سوئنگ پوائنٹس کی شناخت کریں
+    swings = _find_significant_swings(df, window=50)
+    trading_range_high = swings['high']
+    trading_range_low = swings['low']
+
+    # 2. ATR کا حساب لگائیں
     tr = pd.concat([df['high'] - df['low'], abs(df['high'] - df['close'].shift()), abs(df['low'] - df['close'].shift())], axis=1).max(axis=1)
     atr = tr.ewm(span=14, adjust=False).mean().iloc[-1]
     
+    if atr == 0:
+        logger.warning("ATR صفر ہے، TP/SL کا حساب نہیں لگایا جا سکتا۔")
+        return None
+
     # اثاثہ کی شخصیت سے پیرامیٹرز حاصل کریں
-    volatility_multiplier = symbol_personality.get("volatility_multiplier", 1.5)
+    sl_atr_multiplier = symbol_personality.get("volatility_multiplier", 1.5)
     min_rr_ratio = symbol_personality.get("min_rr_ratio", 1.5)
-    
-    # اسٹاپ لاس کا تعین ATR کی بنیاد پر کریں
-    sl_distance = atr * volatility_multiplier
-    
+
+    # 3. TP اور SL کا ذہین تعین
+    take_profit, stop_loss = None, None
+
     if signal_type == 'buy':
-        stop_loss = last_close - sl_distance
-    else: # sell
-        stop_loss = last_close + sl_distance
-
-    # ٹیک پرافٹ کا تعین اگلے سوئنگ لیول کی بنیاد پر کریں
-    swing_levels = _find_swing_levels(df)
+        # TP: تجارتی رینج کے اوپری حصے سے تھوڑا پہلے
+        take_profit = trading_range_high - (atr * 0.2)
+        # SL: تجارتی رینج کے نچلے حصے سے تھوڑا نیچے
+        stop_loss = trading_range_low - (atr * sl_atr_multiplier)
     
-    potential_tp = None
-    if signal_type == 'buy' and swing_levels['highs']:
-        # قریب ترین سوئنگ ہائی تلاش کریں جو موجودہ قیمت سے اوپر ہو
-        valid_highs = [h for h in swing_levels['highs'] if h > last_close]
-        if valid_highs:
-            potential_tp = min(valid_highs)
-    elif signal_type == 'sell' and swing_levels['lows']:
-        # قریب ترین سوئنگ لو تلاش کریں جو موجودہ قیمت سے نیچے ہو
-        valid_lows = [l for l in swing_levels['lows'] if l < last_close]
-        if valid_lows:
-            potential_tp = max(valid_lows)
+    elif signal_type == 'sell':
+        # TP: تجارتی رینج کے نچلے حصے سے تھوڑا پہلے
+        take_profit = trading_range_low + (atr * 0.2)
+        # SL: تجارتی رینج کے اوپری حصے سے تھوڑا اوپر
+        stop_loss = trading_range_high + (atr * sl_atr_multiplier)
 
-    # اگر کوئی مناسب سوئنگ لیول نہیں ملتا تو رسک/ریوارڈ کی بنیاد پر TP سیٹ کریں
-    if potential_tp is None:
-        potential_tp = last_close + (sl_distance * min_rr_ratio) if signal_type == 'buy' else last_close - (sl_distance * min_rr_ratio)
+    # 4. منطقی جانچ اور رسک/ریوارڈ کی تصدیق
+    if take_profit is None or stop_loss is None:
+        return None
 
-    # رسک/ریوارڈ تناسب کی تصدیق کریں
+    # یقینی بنائیں کہ TP اور SL انٹری قیمت کے صحیح سمت میں ہیں
+    if (signal_type == 'buy' and (take_profit <= last_close or stop_loss >= last_close)) or \
+       (signal_type == 'sell' and (take_profit >= last_close or stop_loss <= last_close)):
+        logger.warning(f"[{signal_type}] سگنل کے لیے غیر منطقی TP/SL کی سطحیں۔ TP: {take_profit}, SL: {stop_loss}, قیمت: {last_close}")
+        return None
+
     try:
-        reward = abs(potential_tp - last_close)
+        reward = abs(take_profit - last_close)
         risk = abs(last_close - stop_loss)
         if risk == 0: return None
         
         rr_ratio = reward / risk
         if rr_ratio < min_rr_ratio:
-            logger.warning(f"تجویز کردہ TP/SL کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) کم از کم ({min_rr_ratio}) سے کم ہے۔")
-            # اگر RR کم ہے تو SL کو تھوڑا قریب لائیں تاکہ RR بہتر ہو سکے، لیکن ATR سے کم نہیں
-            new_risk = reward / min_rr_ratio
-            if signal_type == 'buy':
-                stop_loss = max(stop_loss, last_close - new_risk)
-            else:
-                stop_loss = min(stop_loss, last_close + new_risk)
-
+            logger.warning(f"ذہین رینج کا رسک/ریوارڈ تناسب ({rr_ratio:.2f}) کم از کم ({min_rr_ratio}) سے کم ہے۔ سگنل مسترد۔")
+            return None
+            
     except ZeroDivisionError:
         return None
         
-    logger.info(f"بہترین TP/SL ملا: TP={potential_tp:.5f}, SL={stop_loss:.5f}")
-    return potential_tp, stop_loss
+    logger.info(f"ذہین رینج کی بنیاد پر TP/SL ملا: TP={take_profit:.5f}, SL={stop_loss:.5f} (RR: {rr_ratio:.2f})")
+    return take_profit, stop_loss
     
