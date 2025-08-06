@@ -1,12 +1,11 @@
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
-# ★★★ تبدیلی یہاں ہے ★★★
-# پرانے فنکشن کی جگہ نیا مرکزی فنکشن امپورٹ کریں
-from level_analyzer import find_market_state_and_get_tp_sl
+# نیا، آسان اور فیصلہ کن فنکشن امپورٹ کریں
+from level_analyzer import find_trade_setup_tp_sl
 from config import tech_settings
 
 logger = logging.getLogger(__name__)
@@ -20,10 +19,13 @@ SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
 SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
 
 def _load_weights() -> Dict[str, float]:
+    """
+    وزن کو فائل سے لوڈ کرتا ہے اور انہیں نارملائز کرتا ہے۔
+    """
     try:
         with open(WEIGHTS_FILE, 'r') as f:
             weights = json.load(f)
-            weights.pop("stoch_position", None)
+            weights.pop("stoch_position", None) # پرانے وزن کو ہٹا دیں
             total_weight = sum(weights.values())
             if total_weight > 0:
                 return {key: value / total_weight for key, value in weights.items()}
@@ -38,6 +40,9 @@ def _load_weights() -> Dict[str, float]:
         }
 
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
+    """
+    RSI کا حساب لگاتا ہے۔
+    """
     delta = data.diff(1)
     gain = delta.where(delta > 0, 0).fillna(0)
     loss = -delta.where(delta < 0, 0).fillna(0)
@@ -48,6 +53,9 @@ def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     return rsi.fillna(50)
 
 def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
+    """
+    Supertrend کا حساب لگاتا ہے۔
+    """
     high, low, close = df['high'], df['low'], df['close']
     tr1 = pd.DataFrame(high - low)
     tr2 = pd.DataFrame(abs(high - close.shift(1)))
@@ -71,9 +79,13 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     return df
 
 def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, market_regime: Dict) -> Dict[str, Any]:
-    if len(df) < 100:
-        return {"score": 0, "indicators": {}, "reason": "ناکافی ڈیٹا"}
+    """
+    ایک واحد، مضبوط حکمت عملی کی بنیاد پر مکمل تکنیکی تجزیہ کرتا ہے۔
+    """
+    if len(df) < 50:
+        return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
     
+    # 1. تکنیکی انڈیکیٹرز اور اسکور کا حساب لگائیں
     close = df['close']
     WEIGHTS = _load_weights()
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
@@ -87,7 +99,7 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
     in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
     
     if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi]):
-        return {"score": 0, "indicators": {}, "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
+        return {"status": "no-signal", "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
         
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
     rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
@@ -101,8 +113,9 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
         (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.20))
     ) * 100
     
+    # 2. بنیادی سگنل بنائیں
     core_signal = "wait"
-    score_threshold = 45 if market_regime['regime'] == 'Volatile' else 40
+    score_threshold = 40 # تھریشولڈ کو تھوڑا کم کر دیا تاکہ زیادہ سگنل ملیں
 
     if total_score > score_threshold: core_signal = "buy"
     elif total_score < -score_threshold: core_signal = "sell"
@@ -110,21 +123,23 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
     if core_signal == "wait":
         return {"status": "no-signal", "reason": f"تکنیکی اسکور ({total_score:.2f}) مطلوبہ حد ({score_threshold}) سے کم ہے۔"}
 
-    # ★★★ یہ ہے وہ تبدیلی جو پچھلی بار رہ گئی تھی ★★★
-    # نئے ذہین مرکزی فنکشن کو کال کریں
-    tp_sl_data = find_market_state_and_get_tp_sl(df, core_signal, symbol_personality)
+    # 3. TP/SL کے لیے نئے "ریپٹر" فنکشن کو کال کریں
+    tp_sl_data = find_trade_setup_tp_sl(df, core_signal, symbol_personality)
     if not tp_sl_data:
-        return {"status": "no-signal", "reason": "موجودہ مارکیٹ کی حالت کے لیے کوئی موزوں TP/SL حکمت عملی نہیں ملی۔"}
+        return {"status": "no-signal", "reason": "موجودہ مارکیٹ کی حالت اس حکمت عملی کے لیے موزوں نہیں۔"}
 
     tp, sl = tp_sl_data
     
+    # 4. حتمی نتیجہ تیار کریں
     indicators_data = {
-        "ema_fast": round(last_ema_fast, 5), "ema_slow": round(last_ema_slow, 5),
+        "ema_fast": round(last_ema_fast, 5),
+        "ema_slow": round(last_ema_slow, 5),
         "rsi": round(last_rsi, 2),
         "supertrend_direction": "Up" if in_uptrend else "Down",
         "technical_score": round(total_score, 2),
         "component_scores": {
-            "ema_cross": ema_score, "rsi_position": rsi_score,
+            "ema_cross": ema_score,
+            "rsi_position": rsi_score,
             "price_action": price_action_score,
             "supertrend_confirm": supertrend_score
         }
@@ -138,5 +153,5 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
         "tp": tp,
         "sl": sl,
         "indicators": indicators_data
-            }
-                
+    }
+    
