@@ -9,7 +9,7 @@ from patternai import detect_patterns
 from reasonbot import generate_reason
 from sentinel import get_news_analysis_for_symbol
 from trainerai import get_confidence
-from utils import convert_candles_to_dataframe, fetch_twelve_data_ohlc
+from utils import convert_candles_to_dataframe
 from strategy_scalper import generate_scalping_analysis
 
 logger = logging.getLogger(__name__)
@@ -30,16 +30,13 @@ async def generate_final_signal(
         if df.empty or len(df) < 50:
             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
-        # مرحلہ 1: بنیادی حکمت عملی کا تجزیہ چلائیں
-        # یہ اب خود ہی ایک حقیقت پسندانہ TP/SL کا تعین کرے گا
         analysis = generate_scalping_analysis(df, symbol_personality, market_regime)
 
         if analysis.get("status") != "ok":
-            return analysis # اگر کوئی سگنل نہیں ہے تو واپس جائیں
+            return analysis
 
         core_signal = analysis.get("signal")
         
-        # مرحلہ 2: اضافی فلٹرز اور سیاق و سباق کا تجزیہ
         pattern_task = asyncio.to_thread(detect_patterns, df)
         news_task = get_news_analysis_for_symbol(symbol)
         
@@ -47,15 +44,19 @@ async def generate_final_signal(
             pattern_task, news_task
         )
 
-        # مرحلہ 3: حتمی سگنل تیار کریں
         confidence = get_confidence(
             db, core_signal, analysis.get("score", 0),
             pattern_data.get("type", "neutral"),
             news_data.get("impact"), symbol, symbol_personality
         )
         
+        # ★★★ یہ ہے وہ لائن جہاں غلطی تھی ★★★
+        # اب ہم صحیح متغیر 'pattern_data' کو پاس کر رہے ہیں
         reason = generate_reason(
-            core_signal, pattern_data, news_data, confidence, 
+            core_signal, 
+            pattern_data=pattern_data,  # صحیح متغیر کا نام
+            news_data=news_data, 
+            confidence=confidence, 
             indicators=analysis.get("indicators", {})
         )
 
