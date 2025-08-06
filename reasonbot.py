@@ -9,7 +9,7 @@ def generate_reason(
     indicators: Dict[str, Any]
 ) -> str:
     """
-    تمام تجزیاتی ماڈیولز سے حاصل کردہ ڈیٹا کی بنیاد پر ایک جامع اور انسانی فہم وجہ تیار کرتا ہے۔
+    ایک سادہ اور واضح وجہ تیار کرتا ہے۔
     """
     reason_parts: List[str] = []
     signal_action = "خریداری" if core_signal == "buy" else "فروخت"
@@ -17,10 +17,10 @@ def generate_reason(
     # 1. بنیادی تکنیکی تجزیہ
     _add_technical_reason(reason_parts, signal_action, indicators)
     
-    # 2. پیٹرن کا تجزیہ
+    # 2. کینڈل اسٹک پیٹرن کا تجزیہ
     pattern_name = pattern_data.get("pattern", "کوئی خاص پیٹرن نہیں")
-    pattern_type = pattern_data.get("type", "neutral")
-    if pattern_type != "neutral":
+    pattern_type = pattern.get("type", "neutral")
+    if pattern_type != "neutral" and pattern_type != "indecision":
         reason_parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) بھی دیکھا گیا ہے۔")
 
     # 3. خبروں کا انتباہ
@@ -35,7 +35,9 @@ def generate_reason(
     return " ".join(reason_parts)
 
 def _add_technical_reason(parts: List[str], action: str, indicators: Dict[str, Any]):
-    """تکنیکی انڈیکیٹرز کی بنیاد پر وجہ کا حصہ تیار کرتا ہے۔"""
+    """
+    تکنیکی انڈیکیٹرز کی بنیاد پر وجہ کا حصہ تیار کرتا ہے۔
+    """
     tech_score = indicators.get('technical_score', 0)
     parts.append(f"مجموعی تکنیکی اسکور ({tech_score:.1f}) ایک مضبوط {action} کے رجحان کی نشاندہی کرتا ہے۔")
     
