@@ -1,12 +1,13 @@
+# filename: strategy_scalper.py
+
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
-# ★★★ تبدیلی یہاں ہے ★★★
-# نئے، ذہین اور سادہ "فورٹریس" فنکشن کو امپورٹ کریں
-from level_analyzer import find_fortress_tp_sl
+# اب ہم level_analyzer سے دونوں فنکشنز درآمد کریں گے
+from level_analyzer import find_trend_tp_sl, find_reversal_tp_sl
 from config import tech_settings
 
 logger = logging.getLogger(__name__)
@@ -16,34 +17,26 @@ WEIGHTS_FILE = "strategy_weights.json"
 EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
 EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
 RSI_PERIOD = tech_settings.RSI_PERIOD
+STOCH_K = tech_settings.STOCH_K
+STOCH_D = tech_settings.STOCH_D
 SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
 SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
 
+# --- وزن لوڈ کرنے کا فنکشن ---
 def _load_weights() -> Dict[str, float]:
-    """
-    وزن کو فائل سے لوڈ کرتا ہے اور انہیں نارملائز کرتا ہے۔
-    """
     try:
         with open(WEIGHTS_FILE, 'r') as f:
-            weights = json.load(f)
-            weights.pop("stoch_position", None) # پرانے وزن کو ہٹا دیں
-            total_weight = sum(weights.values())
-            if total_weight > 0:
-                return {key: value / total_weight for key, value in weights.items()}
-            return weights
+            return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         logger.warning(f"{WEIGHTS_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ وزن استعمال کیا جا رہا ہے۔")
+        # اب ہم ریورسل کے لیے بھی وزن شامل کریں گے
         return {
-            "ema_cross": 0.40, 
-            "rsi_position": 0.30,
-            "price_action": 0.10, 
-            "supertrend_confirm": 0.20
+            "ema_cross": 0.25, "rsi_position": 0.15, "price_action": 0.10,
+            "supertrend_confirm": 0.25, "bollinger_touch": 0.15, "stoch_reversal": 0.10
         }
 
+# --- انڈیکیٹر کیلکولیشن فنکشنز (کوئی تبدیلی نہیں) ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
-    """
-    RSI کا حساب لگاتا ہے۔
-    """
     delta = data.diff(1)
     gain = delta.where(delta > 0, 0).fillna(0)
     loss = -delta.where(delta < 0, 0).fillna(0)
@@ -53,10 +46,15 @@ def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50)
 
+def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int, d: int) -> pd.DataFrame:
+    low_k = low.rolling(window=k).min()
+    high_k = high.rolling(window=k).max()
+    stoch_k = 100 * (close - low_k) / (high_k - low_k).replace(0, 1e-9)
+    stoch_d = stoch_k.rolling(window=d).mean()
+    stoch_df = pd.DataFrame({'STOCHk': stoch_k, 'STOCHd': stoch_d})
+    return stoch_df.fillna(50)
+
 def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
-    """
-    Supertrend کا حساب لگاتا ہے۔
-    """
     high, low, close = df['high'], df['low'], df['close']
     tr1 = pd.DataFrame(high - low)
     tr2 = pd.DataFrame(abs(high - close.shift(1)))
@@ -79,14 +77,32 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
     return df
 
-def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, market_regime: Dict) -> Dict[str, Any]:
+# --- نیا مرکزی فنکشن ---
+def generate_adaptive_analysis(df: pd.DataFrame, market_regime: str, symbol_personality: Dict) -> Dict[str, Any]:
     """
-    ایک سادہ، مضبوط حکمت عملی کی بنیاد پر مکمل تکنیکی تجزیہ کرتا ہے۔
+    مارکیٹ کے نظام کی بنیاد پر انکولی تکنیکی تجزیہ کرتا ہے۔
+    یہ صحیح حکمت عملی (ٹرینڈ یا ریورسل) کا انتخاب کرتا ہے۔
     """
-    if len(df) < 50:
+    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
-    
-    # 1. تکنیکی اسکور کا حساب لگائیں
+
+    # اگر مارکیٹ خطرناک ہے تو فوراً باہر نکل جائیں
+    if market_regime == "Kill Zone":
+        return {"status": "no-signal", "reason": "مارکیٹ کا نظام 'Kill Zone' ہے۔ ٹریڈنگ معطل۔"}
+
+    # مارکیٹ کے نظام کی بنیاد پر صحیح تجزیاتی فنکشن کو کال کریں
+    if market_regime in ["Calm Trend", "Volatile Trend"]:
+        logger.info(f"حکمت عملی منتخب: ٹرینڈ فالوونگ (نظام: {market_regime})")
+        return _analyze_trend_following(df, symbol_personality)
+    elif market_regime == "Calm Range":
+        logger.info(f"حکمت عملی منتخب: رینج ریورسل (نظام: {market_regime})")
+        return _analyze_range_reversal(df, symbol_personality)
+    else:
+        return {"status": "no-signal", "reason": f"نامعلوم مارکیٹ نظام: {market_regime}"}
+
+# --- ٹرینڈ فالوونگ حکمت عملی ---
+def _analyze_trend_following(df: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
+    """ٹرینڈ والی مارکیٹ کے لیے تکنیکی تجزیہ کرتا ہے۔"""
     close = df['close']
     WEIGHTS = _load_weights()
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
@@ -99,61 +115,82 @@ def generate_scalping_analysis(df: pd.DataFrame, symbol_personality: Dict, marke
     last_close, prev_close = close.iloc[-1], close.iloc[-2]
     in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
     
-    if any(pd.isna(v) for v in [last_ema_fast, last_ema_slow, last_rsi]):
-        return {"status": "no-signal", "reason": "انڈیکیٹر کیلکولیشن میں خرابی"}
-        
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
-    rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
+    rsi_score = 1 if last_rsi > 55 else (-1 if last_rsi < 45 else 0) # ٹرینڈ کے لیے سخت شرائط
     price_action_score = 1 if last_close > prev_close else -1
     supertrend_score = 1 if in_uptrend else -1
     
     total_score = (
-        (ema_score * WEIGHTS.get("ema_cross", 0.40)) +
-        (rsi_score * WEIGHTS.get("rsi_position", 0.30)) +
+        (ema_score * WEIGHTS.get("ema_cross", 0.25)) +
+        (rsi_score * WEIGHTS.get("rsi_position", 0.15)) +
         (price_action_score * WEIGHTS.get("price_action", 0.10)) +
-        (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.20))
+        (supertrend_score * WEIGHTS.get("supertrend_confirm", 0.25))
     ) * 100
     
-    # 2. بنیادی سگنل بنائیں
     core_signal = "wait"
-    score_threshold = 40
-
-    if total_score > score_threshold: core_signal = "buy"
-    elif total_score < -score_threshold: core_signal = "sell"
+    if total_score > 40: core_signal = "buy"
+    elif total_score < -40: core_signal = "sell"
 
     if core_signal == "wait":
-        return {"status": "no-signal", "reason": f"تکنیکی اسکور ({total_score:.2f}) مطلوبہ حد ({score_threshold}) سے کم ہے۔"}
+        return {"status": "no-signal", "reason": f"ٹرینڈ اسکور ({total_score:.2f}) تھریشولڈ سے کم ہے۔"}
 
-    # ★★★ تبدیلی یہاں ہے ★★★
-    # نئے، ذہین "فورٹریس" TP/SL فنکشن کو کال کریں
-    tp_sl_data = find_fortress_tp_sl(df, core_signal, symbol_personality)
+    # ٹرینڈ کے لیے صحیح TP/SL فنکشن کو کال کریں
+    tp_sl_data = find_trend_tp_sl(df, core_signal, symbol_personality)
     if not tp_sl_data:
-        return {"status": "no-signal", "reason": "کوئی محفوظ اور منطقی ٹریڈ سیٹ اپ نہیں ملا۔"}
-
+        return {"status": "no-signal", "reason": "بہترین ٹرینڈ TP/SL کا حساب نہیں لگایا جا سکا"}
     tp, sl = tp_sl_data
     
-    # 4. حتمی نتیجہ تیار کریں
-    indicators_data = {
-        "ema_fast": round(last_ema_fast, 5),
-        "ema_slow": round(last_ema_slow, 5),
-        "rsi": round(last_rsi, 2),
-        "supertrend_direction": "Up" if in_uptrend else "Down",
-        "technical_score": round(total_score, 2),
-        "component_scores": {
-            "ema_cross": ema_score,
-            "rsi_position": rsi_score,
-            "price_action": price_action_score,
-            "supertrend_confirm": supertrend_score
-        }
-    }
-    
     return {
-        "status": "ok",
-        "signal": core_signal,
-        "score": total_score,
-        "price": last_close,
-        "tp": tp,
-        "sl": sl,
-        "indicators": indicators_data
-            }
+        "status": "ok", "signal": core_signal, "price": last_close, "tp": tp, "sl": sl,
+        "score": total_score, "strategy_type": "Trend-Following"
+    }
+
+# --- رینج ریورسل حکمت عملی ---
+def _analyze_range_reversal(df: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
+    """رینج والی مارکیٹ کے لیے ریورسل تجزیہ کرتا ہے۔"""
+    close = df['close']
+    WEIGHTS = _load_weights()
+    
+    # بولنگر بینڈز
+    bb_window = 20
+    bb_std = 2
+    rolling_mean = close.rolling(window=bb_window).mean()
+    rolling_std = close.rolling(window=bb_window).std()
+    upper_band = rolling_mean + (rolling_std * bb_std)
+    lower_band = rolling_mean - (rolling_std * bb_std)
+    
+    # Stochastic
+    stoch = calculate_stoch(df['high'], df['low'], close, STOCH_K, STOCH_D)
+    
+    last_close = close.iloc[-1]
+    last_upper_band = upper_band.iloc[-1]
+    last_lower_band = lower_band.iloc[-1]
+    last_stoch_k = stoch['STOCHk'].iloc[-1]
+
+    if any(pd.isna(v) for v in [last_upper_band, last_lower_band, last_stoch_k]):
+        return {"status": "no-signal", "reason": "ریورسل انڈیکیٹرز میں خرابی"}
+
+    buy_signal = last_close <= last_lower_band and last_stoch_k < 20
+    sell_signal = last_close >= last_upper_band and last_stoch_k > 80
+    
+    core_signal = "wait"
+    if buy_signal: core_signal = "buy"
+    elif sell_signal: core_signal = "sell"
+
+    if core_signal == "wait":
+        return {"status": "no-signal", "reason": "کوئی ریورسل سیٹ اپ نہیں ملا۔"}
+
+    # ریورسل کے لیے صحیح TP/SL فنکشن کو کال کریں
+    tp_sl_data = find_reversal_tp_sl(df, core_signal, symbol_personality, bb_window, bb_std)
+    if not tp_sl_data:
+        return {"status": "no-signal", "reason": "بہترین ریورسل TP/SL کا حساب نہیں لگایا جا سکا"}
+    tp, sl = tp_sl_data
+
+    # ریورسل کے لیے اسکور کا حساب
+    score = 70 + (abs(50 - last_stoch_k) / 50 * 30) # بنیادی اسکور 70، اسٹاکسٹک کی شدت پر منحصر
+
+    return {
+        "status": "ok", "signal": core_signal, "price": last_close, "tp": tp, "sl": sl,
+        "score": score, "strategy_type": "Range-Reversal"
+    }
     
