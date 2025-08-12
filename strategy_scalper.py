@@ -12,7 +12,17 @@ from config import tech_settings
 logger = logging.getLogger(__name__)
 WEIGHTS_FILE = "strategy_weights.json"
 
-# ... (بقیہ تمام فنکشنز میں کوئی تبدیلی نہیں) ...
+# === حتمی حل: گمشدہ مستقل اقدار کو دوبارہ شامل کیا گیا ===
+# کنفیگریشن سے تمام ضروری پیرامیٹرز درآمد کریں
+EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
+EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
+RSI_PERIOD = tech_settings.RSI_PERIOD
+STOCH_K = tech_settings.STOCH_K
+STOCH_D = tech_settings.STOCH_D
+SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
+SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
+
+# --- وزن لوڈ کرنے کا فنکشن ---
 def _load_weights() -> Dict[str, float]:
     try:
         with open(WEIGHTS_FILE, 'r') as f:
@@ -24,6 +34,7 @@ def _load_weights() -> Dict[str, float]:
             "supertrend_confirm": 0.25, "bollinger_touch": 0.15, "stoch_reversal": 0.10
         }
 
+# --- انڈیکیٹر کیلکولیشن فنکشنز ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
     gain = delta.where(delta > 0, 0).fillna(0)
@@ -65,6 +76,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
     return df
 
+# --- مرکزی انکولی فنکشن ---
 def generate_adaptive_analysis(df: pd.DataFrame, market_regime: str, symbol_personality: Dict) -> Dict[str, Any]:
     if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
         return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
@@ -81,6 +93,7 @@ def generate_adaptive_analysis(df: pd.DataFrame, market_regime: str, symbol_pers
     else:
         return {"status": "no-signal", "reason": f"نامعلوم مارکیٹ نظام: {market_regime}"}
 
+# --- ٹرینڈ فالوونگ حکمت عملی ---
 def _analyze_trend_following(df: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
     close = df['close']
     WEIGHTS = _load_weights()
@@ -95,11 +108,7 @@ def _analyze_trend_following(df: pd.DataFrame, symbol_personality: Dict) -> Dict
     in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
     
     ema_score = 1 if last_ema_fast > last_ema_slow else -1
-    
-    # === پروجیکٹ ویلوسیٹی اپ ڈیٹ ===
-    # RSI کی شرط کو تھوڑا نرم کیا گیا ہے تاکہ زیادہ مواقع مل سکیں
     rsi_score = 1 if last_rsi > 52 else (-1 if last_rsi < 48 else 0)
-    
     price_action_score = 1 if last_close > prev_close else -1
     supertrend_score = 1 if in_uptrend else -1
     
@@ -111,7 +120,6 @@ def _analyze_trend_following(df: pd.DataFrame, symbol_personality: Dict) -> Dict
     ) * 100
     
     core_signal = "wait"
-    # بنیادی تھریشولڈ کو تھوڑا کم کیا گیا ہے تاکہ B-Grade سگنل بھی پکڑے جا سکیں
     if total_score > 35: core_signal = "buy"
     elif total_score < -35: core_signal = "sell"
 
@@ -128,6 +136,7 @@ def _analyze_trend_following(df: pd.DataFrame, symbol_personality: Dict) -> Dict
         "strategy_type": "Trend-Following"
     }
 
+# --- رینج ریورسل حکمت عملی ---
 def _analyze_range_reversal(df: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
     close = df['close']
     bb_window = 20
