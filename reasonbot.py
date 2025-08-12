@@ -8,37 +8,34 @@ def generate_reason(
     news_data: Dict[str, Any],
     confidence: float,
     strategy_type: str,
-    market_regime: str
+    market_regime: str,
+    signal_grade: str # نیا پیرامیٹر
 ) -> str:
     """
-    تمام تجزیاتی ماڈیولز سے حاصل کردہ ڈیٹا کی بنیاد پر ایک جامع اور انسانی فہم وجہ تیار کرتا ہے۔
-    یہ اب حکمت عملی کی قسم اور مارکیٹ کے نظام کو بھی شامل کرتا ہے۔
+    تمام تجزیاتی ماڈیولز سے حاصل کردہ ڈیٹا کی بنیاد پر ایک جامع وجہ تیار کرتا ہے۔
+    یہ اب سگنل کے گریڈ کو بھی شامل کرتا ہے۔
     """
     reason_parts: List[str] = []
     signal_action = "خریداری" if core_signal == "buy" else "فروخت"
     
-    # 1. بنیادی حکمت عملی کی وجہ
+    # === پروجیکٹ ویلوسیٹی اپ ڈیٹ ===
+    # وجہ کا آغاز سگنل کے گریڈ اور حکمت عملی سے کریں
+    reason_parts.append(f"**{signal_grade} سگنل:** مارکیٹ کا نظام '{market_regime}' ہے۔")
+    
     if strategy_type == "Trend-Following":
-        reason_parts.append(f"مارکیٹ کا نظام '{market_regime}' ایک مضبوط رجحان کی نشاندہی کرتا ہے۔")
         reason_parts.append(f"ہماری ٹرینڈ فالوونگ حکمت عملی نے ایک {signal_action} کا موقع شناخت کیا ہے۔")
     elif strategy_type == "Range-Reversal":
-        reason_parts.append(f"مارکیٹ کا نظام '{market_regime}' ہے۔ قیمت بولنگر بینڈ کی حد تک پہنچ گئی ہے۔")
         reason_parts.append(f"ہماری ریورسل حکمت عملی نے ایک ممکنہ {signal_action} کا موقع شناخت کیا ہے۔")
 
-    # 2. اضافی تصدیق (کینڈل اسٹک پیٹرن)
-    pattern_name = pattern_data.get("pattern", "کوئی خاص پیٹرن نہیں")
-    pattern_type = pattern_data.get("type", "neutral")
-    if (core_signal == "buy" and pattern_type == "bullish") or \
-       (core_signal == "sell" and pattern_type == "bearish"):
-        reason_parts.append(f"ایک موافق کینڈل اسٹک پیٹرن ({pattern_name}) نے اس سگنل کی مزید تصدیق کی ہے۔")
+    # اضافی تصدیق کی تفصیلات
+    if signal_grade == "A-Grade":
+        reason_parts.append("اس سگنل کی একাধিক ذرائع سے تصدیق ہوئی ہے، جس سے اس کا اعتماد بڑھ گیا ہے۔")
+    else: # B-Grade
+        reason_parts.append("یہ ایک بنیادی رفتار کا سگنل ہے۔ تیز منافع کے لیے 1:1.5 کا RR استعمال کیا جا رہا ہے۔")
 
-    # 3. خبروں کا انتباہ
+    # خبروں کا انتباہ
     if news_data.get("impact") == "High":
         reason_parts.append("**انتباہ: ایک اعلیٰ اثر والی خبر قریب ہے، جس سے رسک بڑھ سکتا ہے۔**")
 
-    # 4. اعتماد کا خلاصہ
-    if confidence < 75:
-        reason_parts.append(f"کم اعتماد ({confidence:.1f}%) کی وجہ سے احتیاط کی سفارش کی جاتی ہے۔")
-
     return " ".join(reason_parts)
-        
+    
