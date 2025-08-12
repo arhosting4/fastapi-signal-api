@@ -12,10 +12,7 @@ from patternai import detect_patterns
 from reasonbot import generate_reason
 from schemas import Candle
 from sentinel import get_news_analysis_for_symbol
-from trainerai import get_confidence_score # اب ہم ایک نیا فنکشن استعمال کریں گے
 from utils import convert_candles_to_dataframe, fetch_twelve_data_ohlc
-
-# اب ہم strategy_scalper سے مرکزی انکولی فنکشن درآمد کریں گے
 from strategy_scalper import generate_adaptive_analysis
 
 logger = logging.getLogger(__name__)
@@ -24,12 +21,12 @@ async def generate_final_signal(
     db: Session, 
     symbol: str, 
     candles: List[Candle], 
-    market_regime: str, # اب ہم مارکیٹ کا نظام براہ راست حاصل کریں گے
+    market_regime: str,
     symbol_personality: Dict
 ) -> Dict[str, Any]:
     """
-    تمام تجزیاتی ماڈیولز سے حاصل کردہ معلومات کو ملا کر ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
-    یہ مارکیٹ کے نظام کے مطابق حکمت عملی کا انتخاب کرتا ہے اور متحرک رسک مینجمنٹ کرتا ہے۔
+    ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
+    یہ سگنل کو A-Grade اور B-Grade میں تقسیم کرتا ہے اور متحرک رسک مینجمنٹ کرتا ہے۔
     """
     try:
         df = convert_candles_to_dataframe(candles)
@@ -37,21 +34,18 @@ async def generate_final_signal(
             return {"status": "no-signal", "reason": f"تجزیے کے لیے ناکافی ڈیٹا ({len(df)} کینڈلز)۔"}
 
         # مرحلہ 1: انکولی حکمت عملی کا تجزیہ چلائیں
-        # یہ فنکشن خود صحیح حکمت عملی (ٹرینڈ/ریورسل) کا انتخاب کرے گا
         analysis = await asyncio.to_thread(generate_adaptive_analysis, df, market_regime, symbol_personality)
 
         if analysis.get("status") != "ok":
-            return analysis # اگر کوئی سگنل نہیں ہے تو واپس جائیں
+            return analysis
 
         core_signal = analysis.get("signal")
-        technical_score = analysis.get("score", 0)
         strategy_type = analysis.get("strategy_type", "Unknown")
         
-        # مرحلہ 2: اضافی فلٹرز اور سیاق و سباق کا تجزیہ
+        # مرحلہ 2: اضافی تصدیق کے لیے ڈیٹا حاصل کریں
         pattern_task = asyncio.to_thread(detect_patterns, df)
         news_task = get_news_analysis_for_symbol(symbol)
         
-        # کثیر ٹائم فریم کی تصدیق (صرف ٹرینڈ فالوونگ کے لیے)
         h1_trend_ok = True
         if strategy_type == "Trend-Following":
             h1_candles = await fetch_twelve_data_ohlc(symbol, "1h", 50)
@@ -64,46 +58,81 @@ async def generate_final_signal(
                 if (core_signal == "buy" and last_h1_close < last_h1_ema) or \
                    (core_signal == "sell" and last_h1_close > last_h1_ema):
                     h1_trend_ok = False
-            
-        if not h1_trend_ok:
-            return {"status": "no-signal", "reason": "H1 رجحان کے خلاف سگنل، مسترد کر دیا گیا۔"}
-
-        pattern_data, news_data = await asyncio.gather(
-            pattern_task, news_task
-        )
-
-        # مرحلہ 3: اعتماد کا اسکور اور متحرک رسک مینجمنٹ
-        confidence = get_confidence_score(
-            technical_score, pattern_data.get("type", "neutral"),
-            news_data.get("impact"), symbol_personality, core_signal
-        )
         
-        # اگر اعتماد کا اسکور حتمی حد سے کم ہے تو سگنل کو مسترد کر دیں
+        pattern_data, news_data = await asyncio.gather(pattern_task, news_task)
+
+        # === پروجیکٹ ویلوسیٹی: سگنل گریڈنگ سسٹم ===
+        # مرحلہ 3: سگنل کا گریڈ اور اعتماد کا اسکور متعین کریں
+        
+        confirmations = 0
+        base_score = 70 # B-Grade سگنل کا بنیادی اسکور
+
+        # بنیادی شرط: H1 ٹرینڈ (صرف ٹرینڈ فالوونگ کے لیے)
+        if strategy_type == "Trend-Following" and h1_trend_ok:
+            confirmations += 1
+        
+        # اضافی شرط: کینڈل اسٹک پیٹرن
+        pattern_type = pattern_data.get("type", "neutral")
+        if (core_signal == "buy" and pattern_type == "bullish") or \
+           (core_signal == "sell" and pattern_type == "bearish"):
+            confirmations += 1
+
+        # اضافی شرط: کوئی اعلیٰ اثر والی خبر نہیں
+        if news_data.get("impact") != "High":
+            confirmations += 1
+
+        # گریڈ اور اعتماد کا اسکور متعین کریں
+        signal_grade = "B-Grade"
+        if confirmations >= 2: # کم از کم 2 اضافی تصدیقیں
+            signal_grade = "A-Grade"
+            base_score = 85 # A-Grade سگنل کا بنیادی اسکور
+
+        # حتمی اعتماد کا اسکور
+        confidence = base_score + (confirmations * 3) # ہر تصدیق کے لیے 3 پوائنٹس
+        confidence = min(99.0, confidence)
+
+        # اگر اعتماد کا اسکور حتمی حد سے کم ہے تو مسترد کر دیں
         if confidence < strategy_settings.FINAL_CONFIDENCE_THRESHOLD:
             return {"status": "no-signal", "reason": f"اعتماد ({confidence:.2f}%) تھریشولڈ سے کم ہے۔"}
 
-        # مرحلہ 4: حتمی سگنل تیار کریں
+        # === پروجیکٹ ویلوسیٹی: متحرک رسک/ریوارڈ ===
+        # مرحلہ 4: گریڈ کی بنیاد پر TP/SL کو ایڈجسٹ کریں
+        
+        tp = analysis.get("tp")
+        sl = analysis.get("sl")
+        price = analysis.get("price")
+        risk = abs(price - sl)
+
+        # B-Grade سگنل کے لیے چھوٹا اور تیز منافع
+        if signal_grade == "B-Grade":
+            # RR کو 1:1.5 پر سیٹ کریں
+            if core_signal == "buy":
+                tp = price + (risk * 1.5)
+            else:
+                tp = price - (risk * 1.5)
+            logger.info(f"B-Grade سگنل: RR کو 1:1.5 پر ایڈجسٹ کیا گیا۔ نیا TP: {tp:.5f}")
+
+        # مرحلہ 5: حتمی سگنل تیار کریں
         reason = generate_reason(
             core_signal, pattern_data, news_data, confidence, 
-            strategy_type, market_regime
+            strategy_type, market_regime, signal_grade
         )
 
         return {
             "status": "ok",
             "symbol": symbol,
             "signal": core_signal,
-            "pattern": pattern_data.get("pattern"),
-            "news": news_data.get("impact"),
             "reason": reason,
             "confidence": round(confidence, 2),
-            "timeframe": "15min", # ہم فی الحال 15 منٹ پر توجہ مرکوز کر رہے ہیں
-            "price": analysis.get("price"),
-            "tp": round(analysis.get("tp"), 5),
-            "sl": round(analysis.get("sl"), 5),
-            "strategy_type": strategy_type
+            "timeframe": "15min",
+            "price": price,
+            "tp": round(tp, 5),
+            "sl": round(sl, 5),
+            "strategy_type": strategy_type,
+            "signal_grade": signal_grade # ڈیبگنگ اور تجزیے کے لیے
         }
 
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے فیوژن انجن میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
         return {"status": "error", "reason": f"AI فیوژن میں ایک غیر متوقع خرابی۔"}
-            
+        
