@@ -109,5 +109,5 @@ def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_per
         "sl": sl,
         "indicators": indicators_data,
         "strategy_type": strategy_type
-    }
+            }
     
