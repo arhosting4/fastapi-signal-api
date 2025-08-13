@@ -7,22 +7,16 @@ from typing import List, Dict, Any, Generator
 
 from sqlalchemy.orm import Session
 
-# مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_real_time_quotes, fetch_twelve_data_ohlc, convert_candles_to_dataframe
+from utils import get_real_time_quotes
 from websocket_manager import manager
-from roster_manager import get_split_monitoring_roster
 from trainerai import learn_from_outcome
-from config import api_settings # api_settings کو درآمد کریں
 
 logger = logging.getLogger(__name__)
 
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
-    """
-    ایک ڈیٹا بیس سیشن فراہم کرنے کے لیے ایک کانٹیکسٹ مینیجر۔
-    """
     db = SessionLocal()
     try:
         yield db
@@ -30,10 +24,7 @@ def get_db_session() -> Generator[Session, None, None]:
         db.close()
 
 async def check_active_signals_job():
-    """
-    فعال سگنلز کی نگرانی کرتا ہے، TP/SL ہٹس کو چیک کرتا ہے، اور گریس پیریڈ کو منظم کرتا ہے۔
-    """
-    logger.info("🛡️ نگران انجن: فعال سگنلز کی نگرانی کا دور شروع...")
+    logger.info("🛡️ نگران انجن (اسنائپر): فعال سگنلز کی نگرانی کا دور شروع...")
     
     try:
         with get_db_session() as db:
@@ -48,26 +39,26 @@ async def check_active_signals_job():
                 db.commit()
             
             if not signals_to_check_now:
-                logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں ہو سکتے ہیں)۔")
+                logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں ہیں)۔")
                 return
             
-            latest_quotes_memory = await _fetch_market_data(db, signals_to_check_now)
-            if not latest_quotes_memory:
+            symbols_to_check = list({s.symbol for s in signals_to_check_now})
+            logger.info(f"🛡️ نگران: {len(symbols_to_check)} علامتوں کے لیے حقیقی وقت کی قیمتیں حاصل کی جا رہی ہیں...")
+            latest_quotes = await get_real_time_quotes(symbols_to_check)
+
+            if not latest_quotes:
                 logger.warning("🛡️ نگران انجن: TP/SL چیک کرنے کے لیے کوئی مارکیٹ ڈیٹا حاصل نہیں ہوا۔")
                 return
 
             logger.info(f"🛡️ نگران انجن: {len(signals_to_check_now)} اہل فعال سگنلز کو چیک کیا جا رہا ہے...")
-            await _process_signal_outcomes(db, signals_to_check_now, latest_quotes_memory)
+            await _process_signal_outcomes(db, signals_to_check_now, latest_quotes)
 
     except Exception as e:
         logger.error(f"🛡️ نگران انجن کے کام میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
     
-    logger.info("🛡️ نگران انجن: نگرانی کا دور مکمل ہوا۔")
+    logger.info("🛡️ نگران انجن (اسنائپر): نگرانی کا دور مکمل ہوا۔")
 
 def _manage_grace_period(signals: List[ActiveSignal]) -> (List[ActiveSignal], bool):
-    """
-    سگنلز کو گریس پیریڈ سے نکالتا ہے اور چیک کرنے کے لیے اہل سگنلز کی فہرست واپس کرتا ہے۔
-    """
     signals_to_check = []
     grace_period_changed = False
     for signal in signals:
@@ -79,77 +70,41 @@ def _manage_grace_period(signals: List[ActiveSignal]) -> (List[ActiveSignal], bo
             signals_to_check.append(signal)
     return signals_to_check, grace_period_changed
 
-async def _fetch_market_data(db: Session, signals_to_check: List[ActiveSignal]) -> Dict[str, Dict[str, Any]]:
-    """
-    نگرانی کے لیے ضروری مارکیٹ ڈیٹا (OHLC یا کوٹس) حاصل کرتا ہے۔
-    """
-    symbols_to_check = {s.symbol for s in signals_to_check}
-    active_symbols_for_ohlc, inactive_symbols_for_quote = get_split_monitoring_roster(db, symbols_to_check)
-    
-    latest_quotes_memory: Dict[str, Dict[str, Any]] = {}
-
-    if active_symbols_for_ohlc:
-        logger.info(f"🛡️ نگران: {len(active_symbols_for_ohlc)} فعال سگنلز کے لیے درست کینڈل ڈیٹا حاصل کیا جا رہا ہے...")
-        
-        # ★★★ خرابی کا حل یہاں ہے ★★★
-        # اب ہم ہر سگنل کا ٹائم فریم استعمال کریں گے
-        tasks = []
-        for signal in signals_to_check:
-            if signal.symbol in active_symbols_for_ohlc:
-                 tasks.append(fetch_twelve_data_ohlc(
-                    signal.symbol, 
-                    signal.timeframe, # سگنل کا اپنا ٹائم فریم
-                    api_settings.CANDLE_COUNT # کنفیگ سے کینڈل کی تعداد
-                ))
-
-        results = await asyncio.gather(*tasks)
-        for candles in results:
-            if candles:
-                df = convert_candles_to_dataframe(candles)
-                if not df.empty:
-                    latest_candle = df.iloc[-1].to_dict()
-                    latest_quotes_memory[candles[0].symbol] = latest_candle
-
-    if inactive_symbols_for_quote:
-        logger.info(f"🛡️ نگران: {len(inactive_symbols_for_quote)} غیر فعال جوڑوں کے لیے فوری قیمت حاصل کی جا رہی ہے...")
-        quotes = await get_real_time_quotes(inactive_symbols_for_quote)
-        if quotes:
-            latest_quotes_memory.update(quotes)
-            
-    return latest_quotes_memory
-
-async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], quotes_memory: Dict[str, Any]):
-    """
-    ہر سگنل کو اس کی تازہ ترین قیمت کے خلاف چیک کرتا ہے اور نتیجہ پر کارروائی کرتا ہے۔
-    """
+async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], quotes: Dict[str, Any]):
     signals_closed_count = 0
     for signal in signals:
-        quote_data = quotes_memory.get(signal.symbol)
-        if not quote_data:
+        quote_data = quotes.get(signal.symbol)
+        if not quote_data or 'price' not in quote_data:
+            logger.warning(f"🛡️ {signal.symbol} کے لیے درست قیمت کا ڈیٹا نہیں ملا۔")
             continue
 
         try:
-            high = float(quote_data.get('high', quote_data.get('price')))
-            low = float(quote_data.get('low', quote_data.get('price')))
-        except (ValueError, TypeError, AttributeError):
-            logger.warning(f"🛡️ {signal.symbol} کے لیے درست قیمت کا ڈیٹا نہیں ملا۔")
+            current_price = float(quote_data['price'])
+        except (ValueError, TypeError):
+            logger.warning(f"🛡️ {signal.symbol} کے لیے قیمت کو فلوٹ میں تبدیل نہیں کیا جا سکا۔")
             continue
         
         outcome, close_price, reason = None, None, None
         
         if signal.signal_type == "buy":
-            if high >= signal.tp_price: 
-                outcome, close_price, reason = "tp_hit", signal.tp_price, "tp_hit_by_high"
-            elif low <= signal.sl_price: 
-                outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit_by_low"
+            # --- "پروجیکٹ اسنائپر" کی منطق یہاں ہے ---
+            if current_price >= signal.tp_price: 
+                # TP کو اصل قیمت پر بند کریں جو TP سے زیادہ یا برابر ہے
+                outcome, close_price, reason = "tp_hit", current_price, "tp_hit_by_price"
+            elif current_price <= signal.sl_price: 
+                # SL کو طے شدہ قیمت پر ہی بند کریں تاکہ نقصان زیادہ نہ ہو
+                outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit_by_price"
         elif signal.signal_type == "sell":
-            if low <= signal.tp_price: 
-                outcome, close_price, reason = "tp_hit", signal.tp_price, "tp_hit_by_low"
-            elif high >= signal.sl_price: 
-                outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit_by_high"
+            # --- "پروجیکٹ اسنائپر" کی منطق یہاں ہے ---
+            if current_price <= signal.tp_price: 
+                # TP کو اصل قیمت پر بند کریں جو TP سے کم یا برابر ہے
+                outcome, close_price, reason = "tp_hit", current_price, "tp_hit_by_price"
+            elif current_price >= signal.sl_price: 
+                # SL کو طے شدہ قیمت پر ہی بند کریں
+                outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit_by_price"
 
         if outcome:
-            logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome.upper()} کے طور پر نشان زد کیا گیا ({reason}) ★★★")
+            logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome.upper()} کے طور پر نشان زد کیا گیا ({reason})۔ بند ہونے کی قیمت: {close_price} ★★★")
             
             asyncio.create_task(learn_from_outcome(db, signal, outcome))
             
