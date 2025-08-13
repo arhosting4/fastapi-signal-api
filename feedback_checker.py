@@ -6,12 +6,16 @@ from contextlib import contextmanager
 from typing import List, Dict, Any, Generator
 
 from sqlalchemy.orm import Session
+import pandas as pd
 
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
-from utils import get_real_time_quotes
+# --- دونوں فنکشنز کو واپس لایا گیا ---
+from utils import get_real_time_quotes, fetch_twelve_data_ohlc, convert_candles_to_dataframe
 from websocket_manager import manager
 from trainerai import learn_from_outcome
+from roster_manager import get_split_monitoring_roster # تقسیم کرنے والی منطق واپس لائی گئی
+from config import api_settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +28,7 @@ def get_db_session() -> Generator[Session, None, None]:
         db.close()
 
 async def check_active_signals_job():
-    logger.info("🛡️ نگران انجن (اسنائپر): فعال سگنلز کی نگرانی کا دور شروع...")
+    logger.info("🛡️ نگران انجن (فینکس): فعال سگنلز کی نگرانی کا دور شروع...")
     
     try:
         with get_db_session() as db:
@@ -42,21 +46,20 @@ async def check_active_signals_job():
                 logger.info("🛡️ نگران انجن: چیک کرنے کے لیے کوئی اہل فعال سگنل نہیں (سب گریس پیریڈ میں ہیں)۔")
                 return
             
-            symbols_to_check = list({s.symbol for s in signals_to_check_now})
-            logger.info(f"🛡️ نگران: {len(symbols_to_check)} علامتوں کے لیے حقیقی وقت کی قیمتیں حاصل کی جا رہی ہیں...")
-            latest_quotes = await get_real_time_quotes(symbols_to_check)
+            # --- ذہین ڈیٹا حاصل کرنے کا عمل واپس لایا گیا ---
+            market_data = await _fetch_intelligent_market_data(db, signals_to_check_now)
 
-            if not latest_quotes:
+            if not market_data:
                 logger.warning("🛡️ نگران انجن: TP/SL چیک کرنے کے لیے کوئی مارکیٹ ڈیٹا حاصل نہیں ہوا۔")
                 return
 
             logger.info(f"🛡️ نگران انجن: {len(signals_to_check_now)} اہل فعال سگنلز کو چیک کیا جا رہا ہے...")
-            await _process_signal_outcomes(db, signals_to_check_now, latest_quotes)
+            await _process_signal_outcomes(db, signals_to_check_now, market_data)
 
     except Exception as e:
         logger.error(f"🛡️ نگران انجن کے کام میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
     
-    logger.info("🛡️ نگران انجن (اسنائپر): نگرانی کا دور مکمل ہوا۔")
+    logger.info("🛡️ نگران انجن (فینکس): نگرانی کا دور مکمل ہوا۔")
 
 def _manage_grace_period(signals: List[ActiveSignal]) -> (List[ActiveSignal], bool):
     signals_to_check = []
@@ -70,10 +73,43 @@ def _manage_grace_period(signals: List[ActiveSignal]) -> (List[ActiveSignal], bo
             signals_to_check.append(signal)
     return signals_to_check, grace_period_changed
 
-async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], quotes: Dict[str, Any]):
+async def _fetch_intelligent_market_data(db: Session, signals: List[ActiveSignal]) -> Dict[str, Dict[str, Any]]:
+    """
+    API کی حد سے بچنے کے لیے ذہانت سے مارکیٹ ڈیٹا حاصل کرتا ہے۔
+    """
+    symbols_to_check = {s.symbol for s in signals}
+    # roster_manager کا استعمال کرتے ہوئے جوڑوں کو تقسیم کریں
+    ohlc_pairs, quote_pairs = get_split_monitoring_roster(db, symbols_to_check)
+    
+    market_data: Dict[str, Dict[str, Any]] = {}
+
+    # OHLC ڈیٹا حاصل کریں
+    if ohlc_pairs:
+        logger.info(f"🛡️ نگران: {len(ohlc_pairs)} جوڑوں کے لیے OHLC ڈیٹا حاصل کیا جا رہا ہے۔")
+        tasks = [fetch_twelve_data_ohlc(pair, "1min", 2) for pair in ohlc_pairs] # 1 منٹ کا ڈیٹا
+        results = await asyncio.gather(*tasks)
+        for candles in results:
+            if candles:
+                # تازہ ترین کینڈل کی قیمت کو استعمال کریں
+                latest_candle = candles[-1]
+                market_data[latest_candle.symbol] = {"price": latest_candle.close}
+
+    # Quote ڈیٹا حاصل کریں
+    if quote_pairs:
+        logger.info(f"🛡️ نگران: {len(quote_pairs)} جوڑوں کے لیے فوری قیمت حاصل کی جا رہی ہے۔")
+        quotes = await get_real_time_quotes(quote_pairs)
+        if quotes:
+            for symbol, data in quotes.items():
+                if 'price' in data:
+                    market_data[symbol] = {"price": float(data['price'])}
+            
+    return market_data
+
+async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], market_data: Dict[str, Any]):
+    # یہ فنکشن اب "پروجیکٹ اسنائپر" والے ورژن جیسا ہی رہے گا
     signals_closed_count = 0
     for signal in signals:
-        quote_data = quotes.get(signal.symbol)
+        quote_data = market_data.get(signal.symbol)
         if not quote_data or 'price' not in quote_data:
             logger.warning(f"🛡️ {signal.symbol} کے لیے درست قیمت کا ڈیٹا نہیں ملا۔")
             continue
@@ -87,20 +123,14 @@ async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], quo
         outcome, close_price, reason = None, None, None
         
         if signal.signal_type == "buy":
-            # --- "پروجیکٹ اسنائپر" کی منطق یہاں ہے ---
             if current_price >= signal.tp_price: 
-                # TP کو اصل قیمت پر بند کریں جو TP سے زیادہ یا برابر ہے
                 outcome, close_price, reason = "tp_hit", current_price, "tp_hit_by_price"
             elif current_price <= signal.sl_price: 
-                # SL کو طے شدہ قیمت پر ہی بند کریں تاکہ نقصان زیادہ نہ ہو
                 outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit_by_price"
         elif signal.signal_type == "sell":
-            # --- "پروجیکٹ اسنائپر" کی منطق یہاں ہے ---
             if current_price <= signal.tp_price: 
-                # TP کو اصل قیمت پر بند کریں جو TP سے کم یا برابر ہے
                 outcome, close_price, reason = "tp_hit", current_price, "tp_hit_by_price"
             elif current_price >= signal.sl_price: 
-                # SL کو طے شدہ قیمت پر ہی بند کریں
                 outcome, close_price, reason = "sl_hit", signal.sl_price, "sl_hit_by_price"
 
         if outcome:
@@ -115,4 +145,4 @@ async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], quo
     
     if signals_closed_count > 0:
         logger.info(f"🛡️ نگران انجن: کل {signals_closed_count} سگنل بند کیے گئے۔")
-            
+    
