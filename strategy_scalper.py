@@ -10,7 +10,7 @@ from level_analyzer import find_realistic_tp_sl
 
 logger = logging.getLogger(__name__)
 
-# === پروجیکٹ فینکس: tech_settings سے پیرامیٹرز درآمد کرنا ===
+# tech_settings سے پیرامیٹرز درآمد کرنا
 EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
 EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
 RSI_PERIOD = tech_settings.RSI_PERIOD
@@ -72,7 +72,6 @@ def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_per
     total_score = 0
     strategy_type = "Unknown"
 
-    # === پروجیکٹ فینکس: درست حکمت عملی کا انتخاب ===
     if regime_type in ["Calm Trend", "Volatile Trend"]:
         strategy_type = "Trend-Following"
         ema_score = 1 if last_ema_fast > last_ema_slow else -1
@@ -82,19 +81,17 @@ def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_per
     
     elif regime_type == "Ranging":
         strategy_type = "Range-Reversal"
-        if last_rsi > 70: total_score = -100 # Overbought
-        elif last_rsi < 30: total_score = 100 # Oversold
+        if last_rsi > 70: total_score = -100
+        elif last_rsi < 30: total_score = 100
     
-    else: # Kill Zone
-        return {"status": "no-signal", "reason": f"مارکیٹ کا نظام 'Kill Zone' ہے۔ ٹریڈنگ معطل۔"}
+    else:
+        return {"status": "no-signal", "reason": f"مارکیٹ کا نظام '{regime_type}' ہے۔ ٹریڈنگ معطل۔"}
 
-    # بنیادی سگنل کی شرط
     if abs(total_score) < 35:
         return {"status": "no-signal", "reason": f"تکنیکی اسکور ({total_score:.1f}) تھریشولڈ سے کم ہے۔"}
 
     core_signal = "buy" if total_score > 0 else "sell"
     
-    # TP/SL کا حساب
     tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality)
     if not tp_sl_data:
         return {"status": "no-signal", "reason": "حقیقت پسندانہ TP/SL کا حساب نہیں لگایا جا سکا"}
