@@ -59,6 +59,11 @@ class TechnicalAnalysisSettings(BaseSettings):
     STOCH_D: int = 3
     SUPERTREND_ATR: int = 10
     SUPERTREND_FACTOR: float = 3.0
+    # --- بریک آؤٹ حکمت عملی کے لیے نئی سیٹنگز ---
+    BBANDS_PERIOD: int = 20
+    BBANDS_STD_DEV: int = 2
+    BBANDS_SQUEEZE_THRESHOLD: float = 0.8 # بولنگر بینڈ کی چوڑائی کا تھریشولڈ
+
 
 # اصلاح: خبروں کے لیے گمشدہ سیٹنگز کلاس شامل کی گئی
 class NewsSettings(BaseSettings):
