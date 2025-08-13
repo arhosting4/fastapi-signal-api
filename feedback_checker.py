@@ -156,4 +156,4 @@ async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], mar
     
     if signals_closed_count > 0:
         logger.info(f"🛡️ نگران انجن: کل {signals_closed_count} سگنل بند کیے گئے۔")
-            
+                
