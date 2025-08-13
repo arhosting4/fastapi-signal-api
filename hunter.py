@@ -1,3 +1,5 @@
+# filename: hunter.py
+
 import asyncio
 import logging
 from contextlib import contextmanager
@@ -143,4 +145,3 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
 
     except Exception as e:
         logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
-        
