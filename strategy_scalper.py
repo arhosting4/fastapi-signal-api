@@ -4,17 +4,22 @@ import logging
 from typing import Any, Dict, Optional
 
 import pandas as pd
+import numpy as np
 
 from config import tech_settings
 from level_analyzer import find_realistic_tp_sl
 
 logger = logging.getLogger(__name__)
 
+# --- تکنیکی انڈیکیٹرز کی سیٹنگز ---
 EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
 EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
 RSI_PERIOD = tech_settings.RSI_PERIOD
 SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
 SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
+BBANDS_PERIOD = tech_settings.BBANDS_PERIOD
+BBANDS_STD_DEV = tech_settings.BBANDS_STD_DEV
+BBANDS_SQUEEZE_THRESHOLD = tech_settings.BBANDS_SQUEEZE_THRESHOLD
 
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
@@ -49,36 +54,97 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
     return df
 
+def calculate_bollinger_bands(data: pd.Series, period: int, std_dev: int) -> pd.DataFrame:
+    """بولنگر بینڈز اور بینڈ کی چوڑائی کا حساب لگاتا ہے۔"""
+    middle_band = data.rolling(window=period).mean()
+    std = data.rolling(window=period).std()
+    upper_band = middle_band + (std * std_dev)
+    lower_band = middle_band - (std * std_dev)
+    
+    # بینڈ کی چوڑائی (Bandwidth) کا حساب لگائیں
+    bandwidth = ((upper_band - lower_band) / middle_band) * 100
+    
+    return pd.DataFrame({
+        'bb_upper': upper_band,
+        'bb_middle': middle_band,
+        'bb_lower': lower_band,
+        'bb_bandwidth': bandwidth
+    })
+
 def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_personality: Dict) -> Dict[str, Any]:
     regime_type = market_regime.get("regime")
     
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
+    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, BBANDS_PERIOD, 34):
         return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
 
     close = df['close']
+    
+    # --- تمام انڈیکیٹرز کا حساب لگائیں ---
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     rsi = calculate_rsi(close, RSI_PERIOD)
     df_supertrend = calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR)
+    df_bbands = calculate_bollinger_bands(close, BBANDS_PERIOD, BBANDS_STD_DEV)
+    df = df.join(df_bbands)
+
+    # آخری کینڈل کا ڈیٹا
+    last_candle = df.iloc[-1]
+    prev_candle = df.iloc[-2]
+
+    # --- حکمت عملی 1: بریک آؤٹ ہنٹر (سب سے زیادہ ترجیح) ---
+    # کیا بولنگر بینڈز "Squeeze" میں ہیں؟ (یعنی بینڈ کی چوڑائی بہت کم ہے)
+    is_squeeze = last_candle['bb_bandwidth'] < BBANDS_SQUEEZE_THRESHOLD
     
-    last_ema_fast, last_ema_slow = ema_fast.iloc[-1], ema_slow.iloc[-1]
-    last_rsi = rsi.iloc[-1]
-    in_uptrend = df_supertrend['in_uptrend'].iloc[-1]
-    
+    if is_squeeze:
+        logger.info(f"[{df['symbol'].iloc[-1]}] بولنگر بینڈ Squeeze میں ہے۔ بریک آؤٹ کا انتظار ہے۔ Bandwidth: {last_candle['bb_bandwidth']:.2f}%")
+        
+        # Buy Breakout: قیمت اوپری بینڈ کے اوپر بند ہوئی
+        if last_candle['close'] > last_candle['bb_upper'] and prev_candle['close'] < prev_candle['bb_upper']:
+            logger.info(f"[{df['symbol'].iloc[-1]}] Bullish Breakout کی تصدیق!")
+            core_signal = "buy"
+            strategy_type = "Breakout-Hunter"
+            total_score = 100 # بریک آؤٹ کو اعلی اسکور دیں
+            
+            tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality)
+            if tp_sl_data:
+                tp, sl = tp_sl_data
+                return {
+                    "status": "ok", "signal": core_signal, "score": total_score,
+                    "price": last_candle['close'], "tp": tp, "sl": sl,
+                    "strategy_type": strategy_type
+                }
+
+        # Sell Breakout: قیمت نچلے بینڈ کے نیچے بند ہوئی
+        elif last_candle['close'] < last_candle['bb_lower'] and prev_candle['close'] > prev_candle['bb_lower']:
+            logger.info(f"[{df['symbol'].iloc[-1]}] Bearish Breakout کی تصدیق!")
+            core_signal = "sell"
+            strategy_type = "Breakout-Hunter"
+            total_score = -100
+            
+            tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality)
+            if tp_sl_data:
+                tp, sl = tp_sl_data
+                return {
+                    "status": "ok", "signal": core_signal, "score": total_score,
+                    "price": last_candle['close'], "tp": tp, "sl": sl,
+                    "strategy_type": strategy_type
+                }
+
+    # --- حکمت عملی 2: ٹرینڈ فالوونگ / رینج ریورسل (اگر بریک آؤٹ نہیں ہے) ---
     total_score = 0
     strategy_type = "Unknown"
 
     if regime_type in ["Calm Trend", "Volatile Trend"]:
         strategy_type = "Trend-Following"
-        ema_score = 1 if last_ema_fast > last_ema_slow else -1
-        supertrend_score = 1 if in_uptrend else -1
+        ema_score = 1 if ema_fast.iloc[-1] > ema_slow.iloc[-1] else -1
+        supertrend_score = 1 if df_supertrend['in_uptrend'].iloc[-1] else -1
         total_score = (ema_score * 0.5) + (supertrend_score * 0.5)
         total_score *= 100
     
     elif regime_type == "Ranging":
         strategy_type = "Range-Reversal"
-        if last_rsi > 70: total_score = -100
-        elif last_rsi < 30: total_score = 100
+        if rsi.iloc[-1] > 70: total_score = -100
+        elif rsi.iloc[-1] < 30: total_score = 100
     
     else:
         return {"status": "no-signal", "reason": f"مارکیٹ کا نظام '{regime_type}' ہے۔ ٹریڈنگ معطل۔"}
@@ -94,20 +160,13 @@ def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_per
 
     tp, sl = tp_sl_data
     
-    indicators_data = {
-        "ema_fast": round(last_ema_fast, 5), "ema_slow": round(last_ema_slow, 5),
-        "rsi": round(last_rsi, 2),
-        "supertrend_direction": "Up" if in_uptrend else "Down",
-    }
-    
     return {
         "status": "ok",
         "signal": core_signal,
         "score": total_score,
-        "price": close.iloc[-1],
+        "price": last_candle['close'],
         "tp": tp,
         "sl": sl,
-        "indicators": indicators_data,
         "strategy_type": strategy_type
             }
-    
+        
