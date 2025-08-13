@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Generator
 
 from sqlalchemy.orm import Session
 
+# مقامی امپورٹس
 import database_crud as crud
 from models import SessionLocal, ActiveSignal
 # --- ہم دونوں فنکشنز کا بہترین استعمال کریں گے ---
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
+    """
+    ایک ڈیٹا بیس سیشن فراہم کرنے کے لیے ایک کانٹیکسٹ مینیجر۔
+    """
     db = SessionLocal()
     try:
         yield db
@@ -25,6 +29,9 @@ def get_db_session() -> Generator[Session, None, None]:
         db.close()
 
 async def check_active_signals_job():
+    """
+    فعال سگنلز کی نگرانی کرتا ہے، حقیقی وقت کی قیمتوں اور پچھلی کینڈل کے ہائی/لو دونوں کی بنیاد پر TP/SL ہٹس کو چیک کرتا ہے۔
+    """
     logger.info("🛡️ نگران انجن (ججمنٹ): فعال سگنلز کی نگرانی کا دور شروع...")
     
     try:
@@ -59,15 +66,16 @@ async def check_active_signals_job():
                     if 'price' in data:
                         market_data[symbol] = {"price": float(data['price'])}
 
-            for candles in ohlc_results:
-                if candles and len(candles) > 0:
-                    # پچھلی مکمل شدہ کینڈل
-                    last_candle = candles[-1]
-                    symbol = last_candle.symbol
-                    if symbol not in market_data:
-                        market_data[symbol] = {}
-                    market_data[symbol]['high'] = last_candle.high
-                    market_data[symbol]['low'] = last_candle.low
+            if ohlc_results:
+                for candles in ohlc_results:
+                    if candles and len(candles) > 0:
+                        # پچھلی مکمل شدہ کینڈل
+                        last_candle = candles[-1]
+                        symbol = last_candle.symbol
+                        if symbol not in market_data:
+                            market_data[symbol] = {}
+                        market_data[symbol]['high'] = last_candle.high
+                        market_data[symbol]['low'] = last_candle.low
 
             if not market_data:
                 logger.warning("🛡️ نگران انجن: TP/SL چیک کرنے کے لیے کوئی مارکیٹ ڈیٹا حاصل نہیں ہوا۔")
@@ -82,7 +90,9 @@ async def check_active_signals_job():
     logger.info("🛡️ نگران انجن (ججمنٹ): نگرانی کا دور مکمل ہوا۔")
 
 def _manage_grace_period(signals: List[ActiveSignal]) -> (List[ActiveSignal], bool):
-    # ... (اس فنکشن میں کوئی تبدیلی نہیں) ...
+    """
+    سگنلز کو گریس پیریڈ سے نکالتا ہے اور چیک کرنے کے لیے اہل سگنلز کی فہرست واپس کرتا ہے۔
+    """
     signals_to_check = []
     grace_period_changed = False
     for signal in signals:
@@ -95,12 +105,14 @@ def _manage_grace_period(signals: List[ActiveSignal]) -> (List[ActiveSignal], bo
     return signals_to_check, grace_period_changed
 
 async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], market_data: Dict[str, Any]):
-    # ... (اس فنکشن میں اب حتمی اور بے عیب منطق ہے) ...
+    """
+    ہر سگنل کو دوہری جانچ (real-time quote + last candle's high/low) کی بنیاد پر چیک کرتا ہے۔
+    """
     signals_closed_count = 0
     for signal in signals:
         data = market_data.get(signal.symbol)
         if not data:
-            logger.warning(f"🛡️ {signal.symbol} کے لیے درست قیمت کا ڈیٹا نہیں ملا۔")
+            logger.warning(f"🛡️ {signal.symbol} کے لیے نگرانی کا ڈیٹا نہیں ملا۔")
             continue
 
         try:
@@ -130,15 +142,18 @@ async def _process_signal_outcomes(db: Session, signals: List[ActiveSignal], mar
                 outcome, close_price, reason = "sl_hit", current_price or signal.sl_price, "sl_hit"
 
         if outcome:
-            logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome.upper()} کے طور پر نشان زد کیا گیا ({reason})۔ بند ہونے کی قیمت: {close_price} ★★★")
+            # اگر قیمت موجود نہیں ہے تو طے شدہ قیمت استعمال کریں
+            final_close_price = close_price if close_price is not None else (signal.tp_price if outcome == 'tp_hit' else signal.sl_price)
+            
+            logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome.upper()} کے طور پر نشان زد کیا گیا ({reason})۔ بند ہونے کی قیمت: {final_close_price} ★★★")
             
             asyncio.create_task(learn_from_outcome(db, signal, outcome))
             
-            success = crud.close_and_archive_signal(db, signal.signal_id, outcome, close_price, reason)
+            success = crud.close_and_archive_signal(db, signal.signal_id, outcome, final_close_price, reason)
             if success:
                 signals_closed_count += 1
                 asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
     
     if signals_closed_count > 0:
         logger.info(f"🛡️ نگران انجن: کل {signals_closed_count} سگنل بند کیے گئے۔")
-
+            
