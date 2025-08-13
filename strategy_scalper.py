@@ -10,7 +10,6 @@ from level_analyzer import find_realistic_tp_sl
 
 logger = logging.getLogger(__name__)
 
-# tech_settings سے پیرامیٹرز درآمد کرنا
 EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
 EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
 RSI_PERIOD = tech_settings.RSI_PERIOD
@@ -51,9 +50,6 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     return df
 
 def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_personality: Dict) -> Dict[str, Any]:
-    """
-    مارکیٹ کے نظام کی بنیاد پر انکولی حکمت عملی کا استعمال کرتے ہوئے تکنیکی تجزیہ کرتا ہے۔
-    """
     regime_type = market_regime.get("regime")
     
     if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, 34):
