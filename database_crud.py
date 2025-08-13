@@ -190,4 +190,4 @@ def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
     except SQLAlchemyError as e:
         logger.error(f"حالیہ SL ہٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
         return []
-                               
+            
