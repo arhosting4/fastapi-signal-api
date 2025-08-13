@@ -12,7 +12,7 @@ from patternai import detect_patterns
 from reasonbot import generate_reason
 from schemas import Candle
 from sentinel import get_news_analysis_for_symbol
-from utils import convert_candles_to_dataframe, fetch_twelve_data_ohlc
+from utils import convert_candles_to_dataframe
 from strategy_scalper import generate_adaptive_analysis
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ async def generate_final_signal(
 ) -> Dict[str, Any]:
     """
     ایک حتمی، قابلِ عمل سگنل تیار کرتا ہے۔
-    یہ سگنل کو A-Grade اور B-Grade میں تقسیم کرتا ہے اور متحرک رسک مینجمنٹ کرتا ہے۔
+    یہ "پروجیکٹ ری ایکٹر" کی منطق کا استعمال کرتا ہے جو رفتار اور معیار میں توازن رکھتی ہے۔
     """
     try:
         df = convert_candles_to_dataframe(candles)
@@ -41,63 +41,46 @@ async def generate_final_signal(
 
         core_signal = analysis.get("signal")
         strategy_type = analysis.get("strategy_type", "Unknown")
+        technical_score = analysis.get("score", 0) # تکنیکی اسکور حاصل کریں
         
         # مرحلہ 2: اضافی تصدیق کے لیے ڈیٹا حاصل کریں
         pattern_task = asyncio.to_thread(detect_patterns, df)
         news_task = get_news_analysis_for_symbol(symbol)
         
-        h1_trend_ok = True
-        if strategy_type == "Trend-Following":
-            h1_candles = await fetch_twelve_data_ohlc(symbol, "1h", 50)
-            if h1_candles:
-                h1_df = convert_candles_to_dataframe(h1_candles)
-                h1_ema_slow = h1_df['close'].ewm(span=50, adjust=False).mean()
-                last_h1_close = h1_df['close'].iloc[-1]
-                last_h1_ema = h1_ema_slow.iloc[-1]
-                
-                if (core_signal == "buy" and last_h1_close < last_h1_ema) or \
-                   (core_signal == "sell" and last_h1_close > last_h1_ema):
-                    h1_trend_ok = False
-        
         pattern_data, news_data = await asyncio.gather(pattern_task, news_task)
 
-        # === پروجیکٹ ویلوسیٹی: سگنل گریڈنگ سسٹم ===
-        # مرحلہ 3: سگنل کا گریڈ اور اعتماد کا اسکور متعین کریں
+        # === پروجیکٹ ری ایکٹر: نیا اعتماد کا نظام ===
+        # مرحلہ 3: اعتماد کا اسکور متعین کریں
         
-        confirmations = 0
-        base_score = 70 # B-Grade سگنل کا بنیادی اسکور
-
-        # بنیادی شرط: H1 ٹرینڈ (صرف ٹرینڈ فالوونگ کے لیے)
-        if strategy_type == "Trend-Following" and h1_trend_ok:
-            confirmations += 1
+        # تکنیکی اسکور کی بنیاد پر بنیادی اعتماد (70% سے 90% تک)
+        base_confidence = 70 + ((abs(technical_score) - 35) / 65 * 20)
         
+        bonus_points = 0
         # اضافی شرط: کینڈل اسٹک پیٹرن
         pattern_type = pattern_data.get("type", "neutral")
         if (core_signal == "buy" and pattern_type == "bullish") or \
            (core_signal == "sell" and pattern_type == "bearish"):
-            confirmations += 1
-
+            bonus_points += 5
+        
         # اضافی شرط: کوئی اعلیٰ اثر والی خبر نہیں
         if news_data.get("impact") != "High":
-            confirmations += 1
-
-        # گریڈ اور اعتماد کا اسکور متعین کریں
-        signal_grade = "B-Grade"
-        if confirmations >= 2: # کم از کم 2 اضافی تصدیقیں
-            signal_grade = "A-Grade"
-            base_score = 85 # A-Grade سگنل کا بنیادی اسکور
+            bonus_points += 5
 
         # حتمی اعتماد کا اسکور
-        confidence = base_score + (confirmations * 3) # ہر تصدیق کے لیے 3 پوائنٹس
+        confidence = base_confidence + bonus_points
         confidence = min(99.0, confidence)
 
         # اگر اعتماد کا اسکور حتمی حد سے کم ہے تو مسترد کر دیں
         if confidence < strategy_settings.FINAL_CONFIDENCE_THRESHOLD:
             return {"status": "no-signal", "reason": f"اعتماد ({confidence:.2f}%) تھریشولڈ سے کم ہے۔"}
 
-        # === پروجیکٹ ویلوسیٹی: متحرک رسک/ریوارڈ ===
-        # مرحلہ 4: گریڈ کی بنیاد پر TP/SL کو ایڈجسٹ کریں
+        # === پروجیکٹ ری ایکٹر: سگنل گریڈنگ اور متحرک رسک ===
+        # مرحلہ 4: گریڈ اور TP/SL کو ایڈجسٹ کریں
         
+        signal_grade = "B-Grade"
+        if confidence >= 85:
+            signal_grade = "A-Grade"
+
         tp = analysis.get("tp")
         sl = analysis.get("sl")
         price = analysis.get("price")
@@ -105,7 +88,6 @@ async def generate_final_signal(
 
         # B-Grade سگنل کے لیے چھوٹا اور تیز منافع
         if signal_grade == "B-Grade":
-            # RR کو 1:1.5 پر سیٹ کریں
             if core_signal == "buy":
                 tp = price + (risk * 1.5)
             else:
@@ -129,7 +111,7 @@ async def generate_final_signal(
             "tp": round(tp, 5),
             "sl": round(sl, 5),
             "strategy_type": strategy_type,
-            "signal_grade": signal_grade # ڈیبگنگ اور تجزیے کے لیے
+            "signal_grade": signal_grade
         }
 
     except Exception as e:
