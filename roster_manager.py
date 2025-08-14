@@ -2,53 +2,44 @@
 
 import logging
 from datetime import datetime
-from typing import List, Tuple
+from typing import List
 
 from sqlalchemy.orm import Session
 
-# مقامی امپورٹس
 import database_crud as crud
 from config import trading_settings
 
 logger = logging.getLogger(__name__)
 
-def _get_current_pair_lists() -> Tuple[List[str], List[str]]:
+def get_active_trading_pairs() -> List[str]:
     """
-    موجودہ دن (ہفتے کا دن یا اختتام ہفتہ) کی بنیاد پر بنیادی اور بیک اپ جوڑوں کی فہرستیں واپس کرتا ہے۔
+    موجودہ دن کی بنیاد پر فعال ٹریڈنگ جوڑوں (فاریکس یا کرپٹو) کی فہرست واپس کرتا ہے۔
     """
-    # 0 = پیر, 6 = اتوار
-    is_weekend = datetime.utcnow().weekday() >= 5
+    # 0 = پیر, 4 = جمعہ, 5 = ہفتہ, 6 = اتوار
+    current_weekday = datetime.utcnow().weekday()
     
-    if is_weekend:
-        primary = trading_settings.WEEKEND_PRIMARY
-        backup = trading_settings.WEEKEND_BACKUP
-        logger.debug("اختتام ہفتہ کے جوڑوں کا انتخاب کیا گیا۔")
+    # ہفتے کے دن (پیر سے جمعہ)
+    if 0 <= current_weekday <= 4:
+        logger.debug("ہفتے کے دن کا روسٹر فعال: فاریکس جوڑے۔")
+        return trading_settings.WEEKDAY_PRIMARY + trading_settings.WEEKDAY_BACKUP
+    # اختتامِ ہفتہ (ہفتہ اور اتوار)
     else:
-        primary = trading_settings.WEEKDAY_PRIMARY
-        backup = trading_settings.WEEKDAY_BACKUP
-        logger.debug("ہفتے کے دن کے جوڑوں کا انتخاب کیا گیا۔")
-        
-    return primary, backup
+        logger.debug("اختتامِ ہفتہ کا روسٹر فعال: کرپٹو جوڑے۔")
+        return trading_settings.WEEKEND_PRIMARY + trading_settings.WEEKEND_BACKUP
 
 def get_hunting_roster(db: Session) -> List[str]:
     """
-    شکاری انجن کے لیے تجزیہ کرنے والے جوڑوں کی متحرک فہرست تیار کرتا ہے۔
-    یہ صرف ان بنیادی جوڑوں کو واپس کرتا ہے جن کا کوئی فعال سگنل نہیں ہے۔
+    شکاری انجن کے لیے صرف ان فعال جوڑوں کی فہرست تیار کرتا ہے جن کا کوئی سگنل لائیو نہیں ہے۔
     """
-    primary_pairs, _ = _get_current_pair_lists()
-    
-    # ڈیٹا بیس سے تمام فعال سگنلز کی علامتیں حاصل کریں
+    todays_pairs = get_active_trading_pairs()
     active_symbols = {s.symbol for s in crud.get_all_active_signals_from_db(db)}
     
-    # بنیادی جوڑوں میں سے صرف وہ جوڑے منتخب کریں جو فعال نہیں ہیں
-    hunting_roster = [p for p in primary_pairs if p not in active_symbols]
+    hunting_roster = [p for p in todays_pairs if p not in active_symbols]
     
     if hunting_roster:
-        logger.info(f"🏹 شکاری روسٹر تیار: {len(hunting_roster)} جوڑے تجزیے کے لیے - {hunting_roster}")
+        logger.info(f"🏹 شکاری روسٹر ({'فاریکس' if datetime.utcnow().weekday() <= 4 else 'کرپٹو'}): {len(hunting_roster)} جوڑے تجزیے کے لیے۔")
     else:
-        logger.info("🏹 شکاری روسٹر: تمام بنیادی جوڑوں کے سگنل فعال ہیں۔ نئے تجزیے کی ضرورت نہیں۔")
+        logger.info("🏹 شکاری روسٹر: تمام فعال جوڑوں کے سگنل لائیو ہیں۔")
         
     return hunting_roster
-
-# نوٹ: get_split_monitoring_roster فنکشن کی اب ضرورت نہیں رہی کیونکہ ہمارا نیا ڈیزائن
-# تمام فعال سگنلز کو ایک ساتھ چیک کرتا ہے۔ اس لیے اسے ہٹا دیا گیا ہے تاکہ کوڈ صاف رہے۔
+    
