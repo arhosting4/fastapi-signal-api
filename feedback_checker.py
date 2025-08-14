@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from typing import List, Dict, Any
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,7 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from models import SessionLocal, ActiveSignal, CompletedTrade
 from utils import get_real_time_quotes
 from websocket_manager import manager
-from trainerai import learn_from_outcome
+# trainerai کو ابھی استعمال نہیں کیا جا رہا، لیکن مستقبل کے لیے رکھا گیا ہے
+# from trainerai import learn_from_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ def process_triggered_signals(signals_to_close: List[Dict[str, Any]]):
                 sl_price=signal_to_delete.sl_price, close_price=close_price,
                 reason_for_closure=reason, outcome=outcome, confidence=signal_to_delete.confidence,
                 reason=signal_to_delete.reason, created_at=signal_to_delete.created_at,
-                closed_at=signal_to_delete.updated_at
+                closed_at=datetime.utcnow() # بند ہونے کا موجودہ وقت
             )
             db.add(completed_trade)
             db.delete(signal_to_delete)
@@ -72,7 +74,6 @@ def process_triggered_signals(signals_to_close: List[Dict[str, Any]]):
                 loop.create_task(do_broadcast())
             except RuntimeError:
                 asyncio.run(do_broadcast())
-
 
     except SQLAlchemyError as e:
         logger.error(f"سگنلز کو بند کرنے میں ڈیٹا بیس کی خرابی: {e}", exc_info=True)
@@ -107,14 +108,16 @@ async def check_active_signals_job():
         for signal in active_signals:
             quote = latest_quotes.get(signal.symbol)
             if not quote or 'price' not in quote:
+                logger.warning(f"🛡️ [{signal.symbol}] کے لیے قیمت کا ڈیٹا نہیں ملا۔")
                 continue
             
             try:
                 current_price = float(quote['price'])
             except (ValueError, TypeError):
+                logger.warning(f"🛡️ [{signal.symbol}] کے لیے قیمت کو فلوٹ میں تبدیل نہیں کیا جا سکا: '{quote['price']}'")
                 continue
 
-            logger.info(f"🛡️ جانچ: [{signal.symbol}] | قسم: {signal.signal_type} | TP: {signal.tp_price} | SL: {signal.sl_price} | موجودہ قیمت: {current_price}")
+            logger.info(f"🛡️ جانچ: [{signal.symbol}] | TP: {signal.tp_price} | SL: {signal.sl_price} | موجودہ قیمت: {current_price}")
 
             outcome, reason = None, None
             tp, sl = float(signal.tp_price), float(signal.sl_price)
@@ -144,4 +147,4 @@ async def check_active_signals_job():
         process_triggered_signals(signals_to_process_later)
     
     logger.info("🛡️ نگران انجن (حتمی ورژن): نگرانی کا دور مکمل ہوا۔")
-            
+        
