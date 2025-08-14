@@ -66,10 +66,17 @@ async def start_background_tasks():
     logger.info(">>> پس منظر کے کام شروع ہو رہے ہیں...")
     scheduler = AsyncIOScheduler(timezone="UTC")
     app.state.scheduler = scheduler
-    # کاموں کو ان کے وقفے کے مطابق شامل کریں
-    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=70), id="guardian_engine_job")
+    
+    # --- اہم تبدیلی: وقفوں کو ہمارے حساب کے مطابق اپ ڈیٹ کیا گیا ---
+    # نگران انجن اب ہر 2 منٹ (120 سیکنڈ) میں چلے گا
+    scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=120), id="guardian_engine_job")
+    
+    # شکاری انجن اب ہر 3 منٹ (180 سیکنڈ) میں چلے گا
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=180), id="hunter_engine_job")
+    
+    # خبروں کا انجن پہلے کی طرح ہر 4 گھنٹے میں چلے گا
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job", next_run_time=datetime.utcnow())
+    
     scheduler.start()
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
 
@@ -134,16 +141,16 @@ async def get_system_status():
     except Exception:
         db_status = "Connection Error"
     
-    # اصلاح: key_manager کی حالت کو بہتر طریقے سے ظاہر کیا گیا ہے
+    # key_manager کی حالت کو بہتر طریقے سے ظاہر کیا گیا ہے
     return {
         "server_status": "Online",
         "timestamp_utc": datetime.utcnow(),
         "scheduler_status": "Running" if scheduler_running else "Stopped",
         "database_status": db_status,
         "key_status": {
-            "total_keys": len(key_manager.keys) + len(key_manager.limited_keys),
-            "available_keys": len(key_manager.keys),
-            "limited_keys_now": len(key_manager.limited_keys)
+            "total_keys": len(key_manager.all_keys),
+            "assigned_keys": len(key_manager.pair_to_key_map),
+            "backup_keys": len(key_manager.key_pool)
         }
     }
 
@@ -154,11 +161,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # کلائنٹ سے آنے والے پیغامات کا انتظار کریں (اگر ضرورت ہو)
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 # --- اسٹیٹک فائلز ---
-# فرنٹ اینڈ فائلوں کو پیش کرنے کے لیے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+        
