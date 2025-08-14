@@ -16,18 +16,19 @@ logger = logging.getLogger(__name__)
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
     ہر علامت کے لیے اس کی مخصوص API کلید استعمال کرتے ہوئے متوازی طور پر قیمتیں حاصل کرتا ہے۔
+    یہ ورژن API کے تمام ممکنہ جوابات کو صحیح طریقے سے سنبھالنے کے لیے بنایا گیا ہے۔
     """
     if not symbols:
         return {}
 
     unique_symbols = sorted(list(set(symbols)))
     
-    async def fetch_single_quote(symbol: str):
+    async def fetch_single_quote(symbol: str) -> Optional[Dict[str, Any]]:
         """ایک انفرادی علامت کے لیے قیمت حاصل کرنے کا اندرونی فنکشن۔"""
         api_key = key_manager.get_key_for_pair(symbol)
         if not api_key:
             logger.warning(f"[{symbol}] کے لیے قیمت حاصل کرنے میں ناکامی: کوئی API کلید نہیں۔")
-            return symbol, None
+            return None
 
         url = f"https://api.twelvedata.com/quote?symbol={symbol}&apikey={api_key}"
         try:
@@ -36,38 +37,43 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
             
             if response.status_code == 429:
                 logger.warning(f"[{symbol}] کی کلید '...{api_key[-4:]}' ریٹ لمیٹڈ ہے۔")
-                return symbol, None
+                return None
 
             response.raise_for_status()
             data = response.json()
             
-            # جواب کی توثیق کریں
-            if isinstance(data, dict) and ("symbol" in data or "code" not in data):
-                 return symbol, data
+            # --- سب سے اہم تبدیلی یہاں ہے ---
+            # اس بات کو یقینی بنائیں کہ جواب ایک درست ڈکشنری ہے اور اس میں 'price' کلید موجود ہے
+            if isinstance(data, dict) and 'price' in data:
+                # علامت کو خود شامل کریں تاکہ مستقل مزاجی رہے
+                data['symbol'] = symbol 
+                return data
             else:
-                 logger.warning(f"[{symbol}] کے لیے غیر متوقع جواب موصول ہوا: {data}")
-                 return symbol, None
+                logger.warning(f"[{symbol}] کے لیے غیر متوقع یا نامکمل جواب موصول ہوا: {data}")
+                return None
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"[{symbol}] کے لیے قیمت حاصل کرنے میں HTTP خرابی: {e.response.status_code}")
-            return symbol, None
         except Exception as e:
             logger.error(f"[{symbol}] کے لیے قیمت حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
-            return symbol, None
+            return None
 
     # تمام علامتوں کے لیے متوازی طور پر ٹاسک بنائیں اور چلائیں
     tasks = [fetch_single_quote(s) for s in unique_symbols]
     results = await asyncio.gather(*tasks)
     
-    # صرف کامیاب نتائج کو ایک ڈکشنری میں جمع کریں
-    all_quotes = {symbol: data for symbol, data in results if data}
+    # صرف کامیاب نتائج (جن میں ڈیٹا موجود ہے) کو ایک ڈکشنری میں جمع کریں
+    # کلید کے طور پر علامت کا نام استعمال کریں
+    all_quotes = {res['symbol']: res for res in results if res}
+    
+    if len(all_quotes) < len(unique_symbols):
+        logger.warning(f"صرف {len(all_quotes)}/{len(unique_symbols)} جوڑوں کے لیے قیمتیں کامیابی سے حاصل کی گئیں۔")
+
     return all_quotes
 
 
+# ... باقی فنکشنز (fetch_twelve_data_ohlc, convert_candles_to_dataframe) پہلے جیسے ہی رہیں گے ...
+# ان میں تبدیلی کی ضرورت نہیں ہے۔
+
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) -> Optional[List[Candle]]:
-    """
-    مخصوص علامت کے لیے اس کی مخصوص API کلید استعمال کرتے ہوئے OHLC ڈیٹا لاتا ہے۔
-    """
     api_key = key_manager.get_key_for_pair(symbol)
     if not api_key:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
@@ -112,7 +118,6 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
         return None
 
 def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
-    """کینڈل آبجیکٹس کی فہرست کو پانڈاس ڈیٹا فریم میں تبدیل کرتا ہے۔"""
     if not candles:
         return pd.DataFrame()
     
@@ -122,3 +127,4 @@ def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
     return df
+    
