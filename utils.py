@@ -1,5 +1,6 @@
 # filename: utils.py
 
+import asyncio
 import logging
 from typing import List, Optional, Dict, Any
 
@@ -13,55 +14,76 @@ from config import api_settings
 
 logger = logging.getLogger(__name__)
 
+# --- ریٹ لمیٹنگ سے بچنے کے لیے نئے پیرامیٹرز ---
+API_CHUNK_SIZE = 8  # فی منٹ کی حد
+API_DELAY_SECONDS = 65  # ہر گروپ کے بعد انتظار کا وقت (تھوڑا اضافی)
+
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
     دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین کوٹس حاصل کرتا ہے۔
+    یہ اب ریٹ لمیٹنگ سے بچنے کے لیے درخواستوں کو چھوٹے گروپس میں تقسیم کرتا ہے۔
     """
     if not symbols:
         return {}
 
-    api_key = key_manager.get_key()
-    if not api_key:
-        logger.warning("کوٹس حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
-        return None
-
-    symbol_str = ",".join(symbols)
-    url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
+    all_quotes = {}
+    unique_symbols = sorted(list(set(symbols)))
     
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=20)
+    # علامتوں کو چھوٹے گروپس میں تقسیم کریں
+    symbol_chunks = [unique_symbols[i:i + API_CHUNK_SIZE] for i in range(0, len(unique_symbols), API_CHUNK_SIZE)]
+    
+    logger.info(f"قیمتیں حاصل کرنے کے لیے علامتوں کو {len(symbol_chunks)} گروپس میں تقسیم کیا گیا ہے۔")
 
-        if response.status_code == 429:
-            data = response.json()
-            is_daily = "day" in data.get("message", "").lower()
-            key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
+    for i, chunk in enumerate(symbol_chunks):
+        api_key = key_manager.get_key()
+        if not api_key:
+            logger.warning("کوٹس حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
             return None
 
-        response.raise_for_status()
-        data = response.json()
-
-        quotes = {}
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict) and "symbol" in item:
-                    quotes[item["symbol"]] = item
-        elif isinstance(data, dict):
-            if "symbol" in data:
-                quotes[data["symbol"]] = data
-            else:
-                for symbol, details in data.items():
-                    if isinstance(details, dict) and details.get("status") != "error":
-                        quotes[symbol] = details
+        symbol_str = ",".join(chunk)
+        url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
         
-        return quotes
+        try:
+            async with httpx.AsyncClient() as client:
+                logger.info(f"گروپ {i+1}/{len(symbol_chunks)} کے لیے قیمتیں حاصل کی جا رہی ہیں: {chunk}")
+                response = await client.get(url, timeout=20)
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"کوٹس حاصل کرنے میں HTTP خرابی: {e.response.status_code} - {e.response.text}")
-        return None
-    except Exception as e:
-        logger.error(f"کوٹس حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
-        return None
+            if response.status_code == 429:
+                data = response.json()
+                logger.warning(f"API ریٹ لمیٹ کا سامنا! پیغام: {data.get('message')}")
+                # اگر فی منٹ کی حد ہے تو اگلے گروپ سے پہلے انتظار کریں
+                if "minute" in data.get("message", "").lower():
+                    await asyncio.sleep(API_DELAY_SECONDS)
+                continue # اس گروپ کو چھوڑ کر اگلا شروع کریں
+
+            response.raise_for_status()
+            data = response.json()
+
+            # جواب کو پروسیس کریں
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "symbol" in item:
+                        all_quotes[item["symbol"]] = item
+            elif isinstance(data, dict) and "symbol" in data:
+                 all_quotes[data["symbol"]] = data
+            elif isinstance(data, dict):
+                 for symbol, details in data.items():
+                    if isinstance(details, dict) and details.get("status") != "error":
+                        all_quotes[symbol] = details
+            
+            # اگر مزید گروپس باقی ہیں تو انتظار کریں
+            if i < len(symbol_chunks) - 1:
+                logger.info(f"ریٹ لمیٹ سے بچنے کے لیے {API_DELAY_SECONDS} سیکنڈ انتظار کیا جا رہا ہے...")
+                await asyncio.sleep(API_DELAY_SECONDS)
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"کوٹس حاصل کرنے میں HTTP خرابی: {e.response.status_code} - {e.response.text}")
+            continue
+        except Exception as e:
+            logger.error(f"کوٹس حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+            continue
+            
+    return all_quotes
 
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) -> Optional[List[Candle]]:
     """
@@ -95,7 +117,6 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
         
         sorted_values = sorted(validated_data.values, key=lambda x: x.datetime, reverse=True)
         
-        # نامکمل کینڈل کو ہٹانے کی منطق کو بہتر بنایا گیا
         completed_candles_raw = sorted_values[1:] if len(sorted_values) > 1 else sorted_values
 
         enriched_candles = []
@@ -126,4 +147,4 @@ def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
     return df
-            
+    
