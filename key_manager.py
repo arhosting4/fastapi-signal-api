@@ -1,99 +1,88 @@
 # filename: key_manager.py
 
 import logging
-import time
-from collections import deque
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
-# مقامی امپورٹس
-from config import api_settings
+from config import api_settings, trading_settings
 
 logger = logging.getLogger(__name__)
 
 class KeyManager:
     """
-    API کیز کو ایک مرکزی پول میں منظم کرتا ہے اور شرح کی حدود (rate limits) کو سنبھالتا ہے۔
-    یہ ورژن اصل ڈیزائن کی سادگی اور مضبوطی پر مبنی ہے۔
+    API کیز کو منظم کرتا ہے اور ہر ٹریڈنگ جوڑے کو ایک مخصوص کلید تفویض کرتا ہے
+    تاکہ API کی فی منٹ کی حدود سے بچا جا سکے۔
     """
     def __init__(self):
-        # تمام کیز کے لیے ایک ہی پول
-        self.keys: deque[str] = deque()
-        # محدود کیز اور ان کی پابندی کے خاتمے کا وقت
-        self.limited_keys: Dict[str, float] = {}
-        self._load_keys()
+        self.all_keys: List[str] = []
+        self.key_pool: List[str] = []
+        self.pair_to_key_map: Dict[str, str] = {}
+        self._initialize_keys()
 
-    def _load_keys(self):
+    def _initialize_keys(self):
         """
-        ماحولیاتی متغیرات سے تمام کیز کو لوڈ کرتا ہے۔
+        کنفیگریشن سے کیز لوڈ کرتا ہے اور انہیں جوڑوں کو تفویض کرتا ہے۔
         """
-        # config.py سے کیز کی فہرست حاصل کریں
-        all_keys = api_settings.twelve_data_keys_list
-        unique_keys = sorted(list(set(all_keys)))
+        self.all_keys = sorted(list(set(api_settings.twelve_data_keys_list)))
         
-        if not unique_keys:
+        if not self.all_keys:
             logger.critical("کوئی بھی Twelve Data API کلید فراہم نہیں کی گئی۔ سسٹم کام نہیں کر سکتا۔")
             return
 
-        self.keys = deque(unique_keys)
-        logger.info(f"KeyManager شروع کیا گیا: کل {len(self.keys)} منفرد کیز کامیابی سے لوڈ ہو گئیں۔")
+        # تمام ممکنہ جوڑوں کی ایک منفرد اور ترتیب شدہ فہرست بنائیں
+        all_pairs = sorted(list(set(
+            trading_settings.WEEKDAY_PRIMARY +
+            trading_settings.WEEKDAY_BACKUP +
+            trading_settings.WEEKEND_PRIMARY +
+            trading_settings.WEEKEND_BACKUP
+        )))
 
-    def get_key(self) -> Optional[str]:
-        """
-        پول سے ایک دستیاب API کلید راؤنڈ روبن طریقے سے فراہم کرتا ہے۔
-        """
-        if not self.keys:
-            logger.error("استعمال کے لیے کوئی API کیز دستیاب نہیں ہیں۔")
-            return None
+        logger.info(f"Key Manager شروع کیا جا رہا ہے: کل {len(self.all_keys)} کیز اور {len(all_pairs)} جوڑے۔")
 
-        # پول میں موجود تمام کیز کو ایک بار چیک کریں
-        for _ in range(len(self.keys)):
-            # قطار میں سب سے پہلی کلید حاصل کریں
-            key = self.keys[0]
-            # اسے قطار کے آخر میں بھیج دیں تاکہ اگلی بار دوسری کلید استعمال ہو
-            self.keys.rotate(-1)
+        if len(self.all_keys) < len(all_pairs):
+            logger.warning(
+                f"API کیز کی تعداد ({len(self.all_keys)}) جوڑوں کی تعداد ({len(all_pairs)}) سے کم ہے۔ "
+                "کچھ جوڑے ایک ہی کلید استعمال کریں گے۔"
+            )
 
-            # چیک کریں کہ آیا یہ کلید محدود ہے
-            if key in self.limited_keys:
-                # اگر پابندی کا وقت ختم ہو گیا ہے تو اسے دوبارہ فعال کریں
-                if time.time() > self.limited_keys[key]:
-                    del self.limited_keys[key]
-                    logger.info(f"کلید {key[:8]}... کی پابندی ختم ہو گئی۔ اسے دوبارہ دستیاب کیا جا رہا ہے۔")
-                    return key # کلید اب دستیاب ہے
-                else:
-                    # یہ کلید ابھی بھی محدود ہے، اگلی چیک کریں
-                    continue
-            else:
-                # یہ کلید محدود نہیں ہے، اسے استعمال کریں
-                return key
+        # ہر جوڑے کو ایک کلید تفویض کریں
+        keys_to_assign = self.all_keys.copy()
+        for pair in all_pairs:
+            if not keys_to_assign:
+                # اگر کیز ختم ہو جائیں تو شروع سے دوبارہ تفویض کریں (چکر)
+                keys_to_assign = self.all_keys.copy()
+            
+            key = keys_to_assign.pop(0)
+            self.pair_to_key_map[pair] = key
+            logger.info(f"جوڑا '{pair}' کو کلید '...{key[-8:]}' تفویض کی گئی۔")
+
+        # باقی بچ جانے والی کیز کو بیک اپ پول میں ڈالیں
+        self.key_pool = keys_to_assign
+        if self.key_pool:
+            logger.info(f"{len(self.key_pool)} اضافی کیز بیک اپ پول میں دستیاب ہیں۔")
+
+    def get_key_for_pair(self, symbol: str) -> Optional[str]:
+        """کسی مخصوص جوڑے کے لیے تفویض کردہ کلید واپس کرتا ہے۔"""
+        key = self.pair_to_key_map.get(symbol)
+        if not key:
+            logger.warning(f"جوڑے '{symbol}' کے لیے کوئی مخصوص کلید نہیں ملی۔ بیک اپ کلید استعمال کی جا رہی ہے۔")
+            return self.get_backup_key()
+        return key
+
+    def get_backup_key(self) -> Optional[str]:
+        """بیک اپ پول سے ایک کلید واپس کرتا ہے یا پہلی کلید اگر پول خالی ہو۔"""
+        if self.key_pool:
+            # راؤنڈ روبن طریقے سے ایک بیک اپ کلید منتخب کریں
+            key = self.key_pool.pop(0)
+            self.key_pool.append(key)
+            return key
         
-        # اگر لوپ مکمل ہو جائے اور کوئی بھی کلید دستیاب نہ ہو
-        logger.warning("تمام API کیز فی الحال عارضی طور پر محدود ہیں۔")
+        if self.all_keys:
+            # اگر کوئی بیک اپ کلید نہیں ہے، تو پہلی کلید واپس کریں
+            logger.warning("بیک اپ پول خالی ہے۔ پہلی دستیاب کلید استعمال کی جا رہی ہے۔")
+            return self.all_keys[0]
+            
         return None
-
-    def report_key_issue(self, key: str, is_daily_limit: bool):
-        """
-        ایک کلید کو اس کی خرابی کی بنیاد پر محدود کے طور پر نشان زد کرتا ہے۔
-        """
-        if key in self.limited_keys:
-            return # یہ کلید پہلے ہی محدود ہے
-
-        if is_daily_limit:
-            # اگر یومیہ حد ختم ہوئی ہے، تو اگلے دن UTC آدھی رات تک محدود کریں
-            now_utc = datetime.now(timezone.utc)
-            tomorrow_utc = now_utc + timedelta(days=1)
-            midnight_utc = tomorrow_utc.replace(hour=0, minute=0, second=1, microsecond=0)
-            expiry_timestamp = midnight_utc.timestamp()
-            self.limited_keys[key] = expiry_timestamp
-            logger.warning(f"کلید {key[:8]}... کی یومیہ حد ختم! اسے اگلے دن UTC کے آغاز تک محدود کیا جا رہا ہے۔")
-        else:
-            # اگر فی منٹ کی حد ختم ہوئی ہے، تو 65 سیکنڈ کے لیے محدود کریں
-            duration_seconds = 65
-            expiry_time = time.time() + duration_seconds
-            self.limited_keys[key] = expiry_time
-            expiry_dt = datetime.fromtimestamp(expiry_time)
-            logger.warning(f"کلید {key[:8]}... کی فی منٹ حد ختم! اسے {duration_seconds} سیکنڈ ({expiry_dt.isoformat()}) کے لیے محدود کیا جا رہا ہے۔")
 
 # سنگلٹن مثال تاکہ پوری ایپلیکیشن میں ایک ہی مینیجر استعمال ہو
 key_manager = KeyManager()
-    
+            
