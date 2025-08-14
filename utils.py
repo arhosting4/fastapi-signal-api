@@ -14,82 +14,65 @@ from config import api_settings
 
 logger = logging.getLogger(__name__)
 
-# --- ریٹ لمیٹنگ سے بچنے کے لیے نئے پیرامیٹرز ---
-API_CHUNK_SIZE = 8  # فی منٹ کی حد
-API_DELAY_SECONDS = 65  # ہر گروپ کے بعد انتظار کا وقت (تھوڑا اضافی)
-
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
-    دی گئی علامتوں کی فہرست کے لیے TwelveData API سے تازہ ترین کوٹس حاصل کرتا ہے۔
-    یہ اب ریٹ لمیٹنگ سے بچنے کے لیے درخواستوں کو چھوٹے گروپس میں تقسیم کرتا ہے۔
+    ہر علامت کے لیے اس کی مخصوص API کلید استعمال کرتے ہوئے متوازی طور پر قیمتیں حاصل کرتا ہے۔
     """
     if not symbols:
         return {}
 
-    all_quotes = {}
     unique_symbols = sorted(list(set(symbols)))
     
-    # علامتوں کو چھوٹے گروپس میں تقسیم کریں
-    symbol_chunks = [unique_symbols[i:i + API_CHUNK_SIZE] for i in range(0, len(unique_symbols), API_CHUNK_SIZE)]
-    
-    logger.info(f"قیمتیں حاصل کرنے کے لیے علامتوں کو {len(symbol_chunks)} گروپس میں تقسیم کیا گیا ہے۔")
-
-    for i, chunk in enumerate(symbol_chunks):
-        api_key = key_manager.get_key()
+    async def fetch_single_quote(symbol: str):
+        """ایک انفرادی علامت کے لیے قیمت حاصل کرنے کا اندرونی فنکشن۔"""
+        api_key = key_manager.get_key_for_pair(symbol)
         if not api_key:
-            logger.warning("کوٹس حاصل کرنے کے لیے کوئی API کلید دستیاب نہیں۔")
-            return None
+            logger.warning(f"[{symbol}] کے لیے قیمت حاصل کرنے میں ناکامی: کوئی API کلید نہیں۔")
+            return symbol, None
 
-        symbol_str = ",".join(chunk)
-        url = f"https://api.twelvedata.com/quote?symbol={symbol_str}&apikey={api_key}"
-        
+        url = f"https://api.twelvedata.com/quote?symbol={symbol}&apikey={api_key}"
         try:
             async with httpx.AsyncClient() as client:
-                logger.info(f"گروپ {i+1}/{len(symbol_chunks)} کے لیے قیمتیں حاصل کی جا رہی ہیں: {chunk}")
-                response = await client.get(url, timeout=20)
-
+                response = await client.get(url, timeout=15)
+            
             if response.status_code == 429:
-                data = response.json()
-                logger.warning(f"API ریٹ لمیٹ کا سامنا! پیغام: {data.get('message')}")
-                # اگر فی منٹ کی حد ہے تو اگلے گروپ سے پہلے انتظار کریں
-                if "minute" in data.get("message", "").lower():
-                    await asyncio.sleep(API_DELAY_SECONDS)
-                continue # اس گروپ کو چھوڑ کر اگلا شروع کریں
+                logger.warning(f"[{symbol}] کی کلید '...{api_key[-4:]}' ریٹ لمیٹڈ ہے۔")
+                return symbol, None
 
             response.raise_for_status()
             data = response.json()
-
-            # جواب کو پروسیس کریں
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict) and "symbol" in item:
-                        all_quotes[item["symbol"]] = item
-            elif isinstance(data, dict) and "symbol" in data:
-                 all_quotes[data["symbol"]] = data
-            elif isinstance(data, dict):
-                 for symbol, details in data.items():
-                    if isinstance(details, dict) and details.get("status") != "error":
-                        all_quotes[symbol] = details
             
-            # اگر مزید گروپس باقی ہیں تو انتظار کریں
-            if i < len(symbol_chunks) - 1:
-                logger.info(f"ریٹ لمیٹ سے بچنے کے لیے {API_DELAY_SECONDS} سیکنڈ انتظار کیا جا رہا ہے...")
-                await asyncio.sleep(API_DELAY_SECONDS)
+            # اس بات کو یقینی بنائیں کہ جواب ایک درست ڈکشنری ہے
+            if isinstance(data, dict) and data.get("status") != "error":
+                 return symbol, data
+            # بعض اوقات API صرف علامت کی ڈکشنری واپس کرتا ہے
+            elif isinstance(data, dict) and "symbol" in data:
+                 return symbol, data
+            else:
+                 logger.warning(f"[{symbol}] کے لیے غیر متوقع جواب موصول ہوا: {data}")
+                 return symbol, None
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"کوٹس حاصل کرنے میں HTTP خرابی: {e.response.status_code} - {e.response.text}")
-            continue
+            logger.error(f"[{symbol}] کے لیے قیمت حاصل کرنے میں HTTP خرابی: {e.response.status_code}")
+            return symbol, None
         except Exception as e:
-            logger.error(f"کوٹس حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
-            continue
-            
+            logger.error(f"[{symbol}] کے لیے قیمت حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+            return symbol, None
+
+    # تمام علامتوں کے لیے متوازی طور پر ٹاسک بنائیں اور چلائیں
+    tasks = [fetch_single_quote(s) for s in unique_symbols]
+    results = await asyncio.gather(*tasks)
+    
+    # صرف کامیاب نتائج کو ایک ڈکشنری میں جمع کریں
+    all_quotes = {symbol: data for symbol, data in results if data}
     return all_quotes
+
 
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) -> Optional[List[Candle]]:
     """
-    مخصوص ٹائم فریم اور سائز کے لیے TwelveData API سے OHLC کینڈلز لاتا ہے۔
+    مخصوص علامت کے لیے اس کی مخصوص API کلید استعمال کرتے ہوئے OHLC ڈیٹا لاتا ہے۔
     """
-    api_key = key_manager.get_key()
+    api_key = key_manager.get_key_for_pair(symbol)
     if not api_key:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
         return None
@@ -101,9 +84,7 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
             response = await client.get(url, timeout=20)
         
         if response.status_code == 429:
-            data = response.json()
-            is_daily = "day" in data.get("message", "").lower()
-            key_manager.report_key_issue(api_key, is_daily_limit=is_daily)
+            logger.warning(f"[{symbol}] کی کلید '...{api_key[-4:]}' OHLC کے لیے ریٹ لمیٹڈ ہے۔")
             return None
 
         response.raise_for_status()
@@ -116,13 +97,12 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
         validated_data = TwelveDataTimeSeries.model_validate(data)
         
         sorted_values = sorted(validated_data.values, key=lambda x: x.datetime, reverse=True)
-        
         completed_candles_raw = sorted_values[1:] if len(sorted_values) > 1 else sorted_values
-
+        
         enriched_candles = []
         for candle_data in completed_candles_raw:
-            candle_data.symbol = symbol
-            enriched_candles.append(candle_data)
+            # Pydantic v2 میں ماڈل ناقابل تغیر (immutable) ہوتے ہیں، اس لیے کاپی بنائیں
+            enriched_candles.append(candle_data.copy(update={"symbol": symbol}))
 
         return enriched_candles[::-1]
 
