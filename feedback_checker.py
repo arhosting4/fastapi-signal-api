@@ -27,7 +27,8 @@ def process_triggered_signals(signals_to_close: List[Dict[str, Any]]):
 
     db: Session = SessionLocal()
     try:
-        closed_signal_ids = []
+        closed_signal_ids_for_broadcast = []
+        
         for signal_data in signals_to_close:
             signal_id = signal_data["signal_id"]
             outcome = signal_data["outcome"]
@@ -54,14 +55,24 @@ def process_triggered_signals(signals_to_close: List[Dict[str, Any]]):
             db.add(completed_trade)
             db.delete(signal_to_delete)
             
-            closed_signal_ids.append(signal_id)
+            closed_signal_ids_for_broadcast.append(signal_id)
         
-        if closed_signal_ids:
+        if closed_signal_ids_for_broadcast:
             db.commit()
-            logger.info(f"{len(closed_signal_ids)} سگنلز کامیابی سے ہسٹری میں منتقل ہو گئے۔")
+            logger.info(f"{len(closed_signal_ids_for_broadcast)} سگنلز کامیابی سے ہسٹری میں منتقل ہو گئے۔")
+            
             # اب براڈکاسٹ کریں
-            for sid in closed_signal_ids:
-                asyncio.run(manager.broadcast({"type": "signal_closed", "data": {"signal_id": sid}}))
+            async def do_broadcast():
+                for sid in closed_signal_ids_for_broadcast:
+                    await manager.broadcast({"type": "signal_closed", "data": {"signal_id": sid}})
+            
+            # ایک نیا ایونٹ لوپ بنائیں اور اس میں براڈکاسٹ چلائیں
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(do_broadcast())
+            except RuntimeError:
+                asyncio.run(do_broadcast())
+
 
     except SQLAlchemyError as e:
         logger.error(f"سگنلز کو بند کرنے میں ڈیٹا بیس کی خرابی: {e}", exc_info=True)
@@ -73,7 +84,7 @@ def process_triggered_signals(signals_to_close: List[Dict[str, Any]]):
 #  مرحلہ 1: مرکزی async فنکشن جو صرف سگنلز کی شناخت کرے گا
 # ==============================================================================
 async def check_active_signals_job():
-    logger.info("🛡️ نگران انجن (ورژن 6.0 - آرکیٹیکچرل فکس): نگرانی کا دور شروع...")
+    logger.info("🛡️ نگران انجن (حتمی ورژن): نگرانی کا دور شروع...")
     
     db: Session = SessionLocal()
     signals_to_process_later = []
@@ -81,7 +92,7 @@ async def check_active_signals_job():
         active_signals = db.query(ActiveSignal).all()
         
         if not active_signals:
-            logger.info("🛡️ نگران: کوئی فعال سگنل موجود نہیں۔")
+            logger.info("🛡️ نگران: کوئی فعال سگنل موجود نہیں، نگرانی کا دور ختم۔")
             return
 
         logger.info(f"🛡️ نگران: {len(active_signals)} فعال سگنلز ملے، جانچ شروع کی جا رہی ہے...")
@@ -132,5 +143,5 @@ async def check_active_signals_job():
     if signals_to_process_later:
         process_triggered_signals(signals_to_process_later)
     
-    logger.info("🛡️ نگران انجن (ورژن 6.0): نگرانی کا دور مکمل ہوا۔")
-        
+    logger.info("🛡️ نگران انجن (حتمی ورژن): نگرانی کا دور مکمل ہوا۔")
+            
