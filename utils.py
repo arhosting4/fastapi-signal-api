@@ -42,11 +42,13 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
             response.raise_for_status()
             data = response.json()
             
-            # --- سب سے اہم تبدیلی یہاں ہے ---
-            # اس بات کو یقینی بنائیں کہ جواب ایک درست ڈکشنری ہے اور اس میں 'price' کلید موجود ہے
-            if isinstance(data, dict) and 'price' in data:
+            # --- سب سے اہم اور حتمی تبدیلی یہاں ہے ---
+            # 'price' کی جگہ 'close' کلید کو چیک کریں
+            if isinstance(data, dict) and 'close' in data:
                 # علامت کو خود شامل کریں تاکہ مستقل مزاجی رہے
-                data['symbol'] = symbol 
+                data['symbol'] = symbol
+                # 'close' کی قدر کو 'price' میں کاپی کریں تاکہ باقی سسٹم کام کرتا رہے
+                data['price'] = data['close']
                 return data
             else:
                 logger.warning(f"[{symbol}] کے لیے غیر متوقع یا نامکمل جواب موصول ہوا: {data}")
@@ -61,17 +63,17 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     results = await asyncio.gather(*tasks)
     
     # صرف کامیاب نتائج (جن میں ڈیٹا موجود ہے) کو ایک ڈکشنری میں جمع کریں
-    # کلید کے طور پر علامت کا نام استعمال کریں
     all_quotes = {res['symbol']: res for res in results if res}
     
     if len(all_quotes) < len(unique_symbols):
         logger.warning(f"صرف {len(all_quotes)}/{len(unique_symbols)} جوڑوں کے لیے قیمتیں کامیابی سے حاصل کی گئیں۔")
+    else:
+        logger.info(f"تمام {len(all_quotes)} جوڑوں کے لیے قیمتیں کامیابی سے حاصل کی گئیں۔")
 
     return all_quotes
 
 
 # ... باقی فنکشنز (fetch_twelve_data_ohlc, convert_candles_to_dataframe) پہلے جیسے ہی رہیں گے ...
-# ان میں تبدیلی کی ضرورت نہیں ہے۔
 
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) -> Optional[List[Candle]]:
     api_key = key_manager.get_key_for_pair(symbol)
@@ -127,4 +129,4 @@ def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
     return df
-    
+        
