@@ -6,6 +6,7 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
+# مقامی امپورٹس
 import database_crud as crud
 from config import trading_settings
 
@@ -20,11 +21,11 @@ def get_active_trading_pairs() -> List[str]:
     
     # ہفتے کے دن (پیر سے جمعہ)
     if 0 <= current_weekday <= 4:
-        logger.debug("ہفتے کے دن کا روسٹر فعال: فاریکس جوڑے۔")
+        # logger.debug("ہفتے کے دن کا روسٹر فعال: فاریکس جوڑے۔")
         return trading_settings.WEEKDAY_PRIMARY + trading_settings.WEEKDAY_BACKUP
     # اختتامِ ہفتہ (ہفتہ اور اتوار)
     else:
-        logger.debug("اختتامِ ہفتہ کا روسٹر فعال: کرپٹو جوڑے۔")
+        # logger.debug("اختتامِ ہفتہ کا روسٹر فعال: کرپٹو جوڑے۔")
         return trading_settings.WEEKEND_PRIMARY + trading_settings.WEEKEND_BACKUP
 
 def get_hunting_roster(db: Session) -> List[str]:
@@ -34,12 +35,15 @@ def get_hunting_roster(db: Session) -> List[str]:
     todays_pairs = get_active_trading_pairs()
     active_symbols = {s.symbol for s in crud.get_all_active_signals_from_db(db)}
     
+    # صرف ان جوڑوں کو منتخب کریں جو آج کے فعال جوڑوں میں سے ہیں اور جن کا سگنل لائیو نہیں ہے
     hunting_roster = [p for p in todays_pairs if p not in active_symbols]
     
+    market_type = 'فاریکس' if datetime.utcnow().weekday() <= 4 else 'کرپٹو'
+    
     if hunting_roster:
-        logger.info(f"🏹 شکاری روسٹر ({'فاریکس' if datetime.utcnow().weekday() <= 4 else 'کرپٹو'}): {len(hunting_roster)} جوڑے تجزیے کے لیے۔")
+        logger.info(f"🏹 شکاری روسٹر ({market_type}): {len(hunting_roster)} جوڑے تجزیے کے لیے۔")
     else:
-        logger.info("🏹 شکاری روسٹر: تمام فعال جوڑوں کے سگنل لائیو ہیں۔")
+        logger.info(f"🏹 شکاری روسٹر ({market_type}): تمام فعال جوڑوں کے سگنل لائیو ہیں۔")
         
     return hunting_roster
     
