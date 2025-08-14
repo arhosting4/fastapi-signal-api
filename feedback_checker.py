@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from typing import List, Dict, Any
+
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -13,10 +15,68 @@ from trainerai import learn_from_outcome
 
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+#  مرحلہ 2: غیر-ایسنک فنکشن جو صرف ڈیٹا بیس کا کام کرے گا
+# ==============================================================================
+def process_triggered_signals(signals_to_close: List[Dict[str, Any]]):
+    """
+    یہ فنکشن صرف ڈیٹا بیس کی کارروائیوں کو سنبھالتا ہے۔ یہ async نہیں ہے۔
+    """
+    if not signals_to_close:
+        return
+
+    db: Session = SessionLocal()
+    try:
+        closed_signal_ids = []
+        for signal_data in signals_to_close:
+            signal_id = signal_data["signal_id"]
+            outcome = signal_data["outcome"]
+            close_price = signal_data["close_price"]
+            reason = signal_data["reason"]
+
+            signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
+            if not signal_to_delete:
+                logger.warning(f"سگنل {signal_id} پہلے ہی بند ہو چکا ہے، نظر انداز کیا جا رہا ہے۔")
+                continue
+
+            logger.info(f"★★★ سگنل {signal_id} کو {outcome.upper()} کے طور پر بند کیا جا رہا ہے ★★★")
+
+            # ڈیٹا بیس میں اندراجات کریں
+            completed_trade = CompletedTrade(
+                signal_id=signal_to_delete.signal_id, symbol=signal_to_delete.symbol,
+                timeframe=signal_to_delete.timeframe, signal_type=signal_to_delete.signal_type,
+                entry_price=signal_to_delete.entry_price, tp_price=signal_to_delete.tp_price,
+                sl_price=signal_to_delete.sl_price, close_price=close_price,
+                reason_for_closure=reason, outcome=outcome, confidence=signal_to_delete.confidence,
+                reason=signal_to_delete.reason, created_at=signal_to_delete.created_at,
+                closed_at=signal_to_delete.updated_at
+            )
+            db.add(completed_trade)
+            db.delete(signal_to_delete)
+            
+            closed_signal_ids.append(signal_id)
+        
+        if closed_signal_ids:
+            db.commit()
+            logger.info(f"{len(closed_signal_ids)} سگنلز کامیابی سے ہسٹری میں منتقل ہو گئے۔")
+            # اب براڈکاسٹ کریں
+            for sid in closed_signal_ids:
+                asyncio.run(manager.broadcast({"type": "signal_closed", "data": {"signal_id": sid}}))
+
+    except SQLAlchemyError as e:
+        logger.error(f"سگنلز کو بند کرنے میں ڈیٹا بیس کی خرابی: {e}", exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
+
+# ==============================================================================
+#  مرحلہ 1: مرکزی async فنکشن جو صرف سگنلز کی شناخت کرے گا
+# ==============================================================================
 async def check_active_signals_job():
-    logger.info("🛡️ نگران انجن (ورژن 5.0 - فول پروف): نگرانی کا دور شروع...")
+    logger.info("🛡️ نگران انجن (ورژن 6.0 - آرکیٹیکچرل فکس): نگرانی کا دور شروع...")
     
     db: Session = SessionLocal()
+    signals_to_process_later = []
     try:
         active_signals = db.query(ActiveSignal).all()
         
@@ -33,7 +93,6 @@ async def check_active_signals_job():
             logger.warning("🛡️ نگران: کوئی مارکیٹ قیمتیں حاصل نہیں ہوئیں۔")
             return
 
-        # --- تمام منطق کو ایک ہی سیشن کے اندر، ایک ہی لوپ میں چلائیں ---
         for signal in active_signals:
             quote = latest_quotes.get(signal.symbol)
             if not quote or 'price' not in quote:
@@ -42,7 +101,6 @@ async def check_active_signals_job():
             try:
                 current_price = float(quote['price'])
             except (ValueError, TypeError):
-                logger.warning(f"🛡️ [{signal.symbol}] کے لیے قیمت کو فلوٹ میں تبدیل نہیں کیا جا سکا: '{quote['price']}'")
                 continue
 
             logger.info(f"🛡️ جانچ: [{signal.symbol}] | قسم: {signal.signal_type} | TP: {signal.tp_price} | SL: {signal.sl_price} | موجودہ قیمت: {current_price}")
@@ -58,46 +116,21 @@ async def check_active_signals_job():
                 elif current_price >= sl: outcome, reason = "sl_hit", "SL Hit"
 
             if outcome:
-                logger.info(f"★★★ سگنل کا نتیجہ: {signal.signal_id} کو {outcome.upper()} کے طور پر نشان زد کیا گیا۔ بند ہونے کی قیمت: {current_price} ★★★")
-                
-                # سگنل کو بند کرنے سے پہلے اس کی ایک کاپی بنائیں
-                signal_copy_for_learning = {
-                    "signal_id": signal.signal_id, "symbol": signal.symbol, "confidence": signal.confidence,
-                    "reason": signal.reason, "component_scores": signal.component_scores,
-                    "created_at": signal.created_at
-                }
-
-                # ڈیٹا بیس میں تبدیلیاں کریں
-                try:
-                    completed_trade = CompletedTrade(
-                        signal_id=signal.signal_id, symbol=signal.symbol, timeframe=signal.timeframe,
-                        signal_type=signal.signal_type, entry_price=signal.entry_price,
-                        tp_price=signal.tp_price, sl_price=signal.sl_price, close_price=current_price,
-                        reason_for_closure=reason, outcome=outcome, confidence=signal.confidence,
-                        reason=signal.reason, created_at=signal.created_at, closed_at=signal.updated_at
-                    )
-                    db.add(completed_trade)
-                    db.delete(signal)
-                    db.commit()
-                    logger.info(f"سگنل {signal.signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔")
-
-                    # براڈکاسٹ اور لرننگ کے لیے ٹاسک بنائیں
-                    asyncio.create_task(manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal.signal_id}}))
-                    
-                    # learn_from_outcome کو ایک سادہ ڈکشنری بھیجیں
-                    # یہ ایک عارضی حل ہے، ہمیں ActiveSignal آبجیکٹ بھیجنا چاہیے
-                    # لیکن ابھی کے لیے یہ کام کرے گا
-                    # asyncio.create_task(learn_from_outcome(db, signal_copy_for_learning, outcome))
-
-
-                except SQLAlchemyError as e:
-                    logger.error(f"سگنل {signal.signal_id} کو بند کرنے میں خرابی: {e}", exc_info=True)
-                    db.rollback()
+                signals_to_process_later.append({
+                    "signal_id": signal.signal_id,
+                    "outcome": outcome,
+                    "close_price": current_price,
+                    "reason": reason
+                })
 
     except Exception as e:
         logger.error(f"🛡️ نگران انجن کے کام میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
     finally:
         db.close()
     
-    logger.info("🛡️ نگران انجن (ورژن 5.0): نگرانی کا دور مکمل ہوا۔")
-
+    # تمام شناخت شدہ سگنلز کو پروسیسنگ کے لیے بھیجیں
+    if signals_to_process_later:
+        process_triggered_signals(signals_to_process_later)
+    
+    logger.info("🛡️ نگران انجن (ورژن 6.0): نگرانی کا دور مکمل ہوا۔")
+        
