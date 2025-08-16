@@ -190,7 +190,7 @@ async def get_system_status():
         "timestamp_utc": datetime.utcnow(),
         "scheduler_status": "Running" if scheduler_running else "Stopped",
         "database_status": db_status,
-        "key_status": key_manager.get_key_status() # key_manager سے اسٹیٹس حاصل کریں
+        "key_status": key_manager.get_key_status()
     }
 
 # --- WebSocket ---
@@ -207,3 +207,4 @@ async def websocket_endpoint(websocket: WebSocket):
 # --- اسٹیٹک فائلز ---
 # فرنٹ اینڈ فائلوں کو پیش کرنے کے لیے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+        
