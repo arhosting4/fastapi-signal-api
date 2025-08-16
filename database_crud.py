@@ -1,5 +1,3 @@
-# filename: database_crud.py
-
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, NamedTuple
@@ -19,6 +17,7 @@ class SignalUpdateResult(NamedTuple):
     is_new: bool
 
 def get_all_active_signals_from_db(db: Session) -> List[ActiveSignal]:
+    """ڈیٹا بیس سے تمام فعال سگنلز حاصل کرتا ہے۔"""
     try:
         return db.query(ActiveSignal).all()
     except SQLAlchemyError as e:
@@ -26,6 +25,7 @@ def get_all_active_signals_from_db(db: Session) -> List[ActiveSignal]:
         return []
 
 def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSignal]:
+    """علامت کی بنیاد پر ایک فعال سگنل حاصل کرتا ہے۔"""
     try:
         return db.query(ActiveSignal).filter(ActiveSignal.symbol == symbol).first()
     except SQLAlchemyError as e:
@@ -33,6 +33,7 @@ def get_active_signal_by_symbol(db: Session, symbol: str) -> Optional[ActiveSign
         return None
 
 def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Optional[SignalUpdateResult]:
+    """ڈیٹا بیس میں ایک فعال سگنل کو شامل یا اپ ڈیٹ کرتا ہے۔"""
     symbol = signal_data.get("symbol")
     if not symbol:
         logger.error("سگنل ڈیٹا میں 'symbol' غائب ہے۔ سگنل شامل نہیں کیا جا سکتا۔")
@@ -42,19 +43,17 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         existing_signal = get_active_signal_by_symbol(db, symbol)
 
         if existing_signal:
+            # موجودہ سگنل کو اپ ڈیٹ کریں
             logger.info(f"موجودہ سگنل {symbol} کو اپ ڈیٹ کیا جا رہا ہے۔")
-            existing_signal.signal_type = signal_data.get('signal', existing_signal.signal_type)
-            existing_signal.tp_price = signal_data.get('tp', existing_signal.tp_price)
-            existing_signal.sl_price = signal_data.get('sl', existing_signal.sl_price)
-            existing_signal.confidence = signal_data.get('confidence', existing_signal.confidence)
-            existing_signal.reason = signal_data.get('reason', existing_signal.reason)
-            existing_signal.component_scores = signal_data.get('component_scores', existing_signal.component_scores)
-            existing_signal.is_new = True
+            for key, value in signal_data.items():
+                setattr(existing_signal, key, value)
+            existing_signal.is_new = True # ہر اپ ڈیٹ پر اسے نیا سمجھیں تاکہ گریس پیریڈ ملے
             
             db.commit()
             db.refresh(existing_signal)
             return SignalUpdateResult(signal=existing_signal, is_new=False)
         else:
+            # نیا سگنل بنائیں
             logger.info(f"نیا سگنل {symbol} بنایا جا رہا ہے۔")
             signal_id = f"{symbol.replace('/', '')}_{signal_data.get('timeframe', '15min')}_{int(datetime.utcnow().timestamp())}"
             
@@ -85,47 +84,58 @@ def add_or_update_active_signal(db: Session, signal_data: Dict[str, Any]) -> Opt
         db.rollback()
         return None
 
+# ★★★ یہ ہے ہمارا حتمی اور فول پروف حل ★★★
 def close_and_archive_signal(db: Session, signal_id: str, outcome: str, close_price: float, reason_for_closure: str) -> bool:
-    signal_to_delete = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
+    """
+    ایک سگنل کو ایک محفوظ، اٹامک ٹرانزیکشن میں بند اور آرکائیو کرتا ہے۔
+    """
+    signal_to_archive = db.query(ActiveSignal).filter(ActiveSignal.signal_id == signal_id).first()
     
-    if not signal_to_delete:
-        logger.warning(f"بند کرنے کے لیے فعال سگنل {signal_id} نہیں ملا۔")
-        return False
+    if not signal_to_archive:
+        logger.warning(f"بند کرنے کے لیے فعال سگنل {signal_id} نہیں ملا۔ شاید یہ پہلے ہی بند ہو چکا ہے۔")
+        return True # اگر سگنل موجود نہیں، تو ہم اسے کامیاب مانیں گے
 
-    logger.info(f"فعال سگنل {signal_id} کو بند اور آرکائیو کیا جا رہا ہے۔ نتیجہ: {outcome}")
+    logger.info(f"سگنل {signal_id} کو بند اور آرکائیو کیا جا رہا ہے۔ نتیجہ: {outcome}")
     
     try:
+        # مرحلہ 1: ایک نیا مکمل شدہ ٹریڈ آبجیکٹ بنائیں
         completed_trade = CompletedTrade(
-            signal_id=signal_to_delete.signal_id,
-            symbol=signal_to_delete.symbol,
-            timeframe=signal_to_delete.timeframe,
-            signal_type=signal_to_delete.signal_type,
-            entry_price=signal_to_delete.entry_price,
-            tp_price=signal_to_delete.tp_price,
-            sl_price=signal_to_delete.sl_price,
+            signal_id=signal_to_archive.signal_id,
+            symbol=signal_to_archive.symbol,
+            timeframe=signal_to_archive.timeframe,
+            signal_type=signal_to_archive.signal_type,
+            entry_price=signal_to_archive.entry_price,
+            tp_price=signal_to_archive.tp_price,
+            sl_price=signal_to_archive.sl_price,
             close_price=close_price,
             reason_for_closure=reason_for_closure,
             outcome=outcome,
-            confidence=signal_to_delete.confidence,
-            reason=signal_to_delete.reason,
-            # ★★★ خرابی کا حل یہاں ہے ★★★
-            created_at=signal_to_delete.created_at, # یہ لائن یقینی بناتی ہے کہ صحیح ویلیو پاس ہو
+            confidence=signal_to_archive.confidence,
+            reason=signal_to_archive.reason,
+            created_at=signal_to_archive.created_at,
             closed_at=datetime.utcnow()
         )
+        
+        # مرحلہ 2: اسے سیشن میں شامل کریں
         db.add(completed_trade)
         
-        db.delete(signal_to_delete)
+        # مرحلہ 3: پرانے فعال سگنل کو ڈیلیٹ کریں
+        db.delete(signal_to_archive)
         
+        # مرحلہ 4: تمام تبدیلیوں کو ایک ساتھ محفوظ کریں (اٹامک کمٹ)
         db.commit()
+        
         logger.info(f"سگنل {signal_id} کامیابی سے ہسٹری میں منتقل ہو گیا۔")
         return True
 
     except SQLAlchemyError as e:
-        logger.error(f"فعال سگنل {signal_id} کو بند کرنے میں ڈیٹا بیس کی خرابی: {e}", exc_info=True)
+        logger.error(f"سگنل {signal_id} کو آرکائیو کرنے میں ڈیٹا بیس کی سنگین خرابی: {e}", exc_info=True)
+        # اگر کوئی بھی خرابی ہو تو تمام تبدیلیوں کو واپس لے لیں
         db.rollback()
         return False
 
 def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
+    """مکمل شدہ ٹریڈز کی تاریخ حاصل کرتا ہے۔"""
     try:
         trades = db.query(CompletedTrade).order_by(desc(CompletedTrade.closed_at)).limit(limit).all()
         return [trade.as_dict() for trade in trades]
@@ -134,6 +144,7 @@ def get_completed_trades(db: Session, limit: int = 100) -> List[Dict[str, Any]]:
         return []
 
 def get_daily_stats(db: Session) -> DailyStatsResponse:
+    """روزانہ کے اعداد و شمار حاصل کرتا ہے۔"""
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     try:
@@ -163,6 +174,7 @@ def get_daily_stats(db: Session) -> DailyStatsResponse:
         return DailyStatsResponse(tp_hits_today=0, sl_hits_today=0, live_signals=0, win_rate_today=0)
 
 def update_news_cache_in_db(db: Session, news_data: Dict[str, Any]) -> None:
+    """نیوز کیش کو ڈیٹا بیس میں اپ ڈیٹ کرتا ہے۔"""
     try:
         db.query(CachedNews).delete()
         new_news = CachedNews(content=news_data, updated_at=datetime.utcnow())
@@ -173,6 +185,7 @@ def update_news_cache_in_db(db: Session, news_data: Dict[str, Any]) -> None:
         db.rollback()
 
 def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
+    """کیش شدہ خبریں ڈیٹا بیس سے حاصل کرتا ہے۔"""
     try:
         news = db.query(CachedNews).order_by(desc(CachedNews.updated_at)).first()
         return news.content if news else None
@@ -181,6 +194,7 @@ def get_cached_news(db: Session) -> Optional[Dict[str, Any]]:
         return None
 
 def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
+    """حالیہ SL ہٹس حاصل کرتا ہے۔"""
     try:
         time_filter = datetime.utcnow() - timedelta(minutes=minutes_ago)
         return db.query(CompletedTrade).filter(
@@ -190,4 +204,4 @@ def get_recent_sl_hits(db: Session, minutes_ago: int) -> List[CompletedTrade]:
     except SQLAlchemyError as e:
         logger.error(f"حالیہ SL ہٹس حاصل کرنے میں خرابی: {e}", exc_info=True)
         return []
-            
+                        
