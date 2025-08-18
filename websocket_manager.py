@@ -1,5 +1,3 @@
-# filename: websocket_manager.py
-
 import asyncio
 import json
 import logging
@@ -38,7 +36,7 @@ class ConnectionManager:
         # پیغام کو JSON سٹرنگ میں تبدیل کریں
         message_str = json.dumps(message)
         
-        logger.info(f"📡 {len(self.active_connections)} فعال کنکشنز کو پیغام نشر کیا جا رہا ہے...")
+        logger.info(f"📡 {len(self.active_connections)} فعال کنککشنز کو پیغام نشر کیا جا رہا ہے...")
         
         # اصلاح: تمام کنکشنز کو ایک ساتھ پیغام بھیجنے کے لیے ٹاسک بنائیں
         tasks = [connection.send_text(message_str) for connection in self.active_connections]
