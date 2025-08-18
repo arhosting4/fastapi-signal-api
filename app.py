@@ -136,6 +136,13 @@ async def startup_event():
     logger.info(f"{app_settings.PROJECT_NAME} سرور شروع ہو رہا ہے...")
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
+    
+    # ★★★ فوری حل یہاں ہے ★★★
+    # ایپلیکیشن شروع ہوتے ہی خبروں کو فوری طور پر ایک بار لوڈ کریں
+    logger.info("ایپلیکیشن کے آغاز پر خبروں کا کیش فوری طور پر اپ ڈیٹ کیا جا رہا ہے...")
+    asyncio.create_task(update_economic_calendar_cache())
+    
+    # باقی پس منظر کے کاموں کو معمول کے مطابق شروع کریں
     asyncio.create_task(start_background_tasks())
 
 @app.on_event("shutdown")
@@ -215,4 +222,4 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # --- اسٹیٹک فائلز ---
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-        
+    
