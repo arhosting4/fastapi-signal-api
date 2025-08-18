@@ -1,5 +1,3 @@
-# filename: utils.py
-
 import asyncio
 import logging
 from typing import List, Optional, Dict, Any
@@ -129,4 +127,3 @@ def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
     return df
-        
