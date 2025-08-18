@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 import pandas as pd
 
 import database_crud as crud
-from utils import fetch_twelve_data_ohlc
+# ★★★ نیا امپورٹ ★★★
+from utils import fetch_polygon_ohlcv
 from fusion_engine import generate_final_signal
 from messenger import send_telegram_alert, send_signal_update_alert
 from models import SessionLocal
@@ -54,12 +55,13 @@ async def hunt_for_signals_job():
             return
 
         # مرحلہ 1: مارکیٹ کے نظام کا تعین کریں
-        h1_tasks = [fetch_twelve_data_ohlc(pair, "1h", 50) for pair in pairs_to_analyze]
+        # ★★★ تبدیلی: اب ہم H1 ڈیٹا بھی Polygon سے حاصل کریں گے ★★★
+        h1_tasks = [fetch_polygon_ohlcv(pair, "1h", 50) for pair in pairs_to_analyze]
         h1_results = await asyncio.gather(*h1_tasks)
         
         ohlc_data_map = {
-            pair: pd.DataFrame([c.dict() for c in candles])
-            for pair, candles in zip(pairs_to_analyze, h1_results) if candles
+            pair: df
+            for pair, df in zip(pairs_to_analyze, h1_results) if df is not None and not df.empty
         }
         
         market_regime_data = get_market_regime(ohlc_data_map)
@@ -98,15 +100,16 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
                 logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
                 return
 
-            timeframe = "15min"
-            candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
+            timeframe = api_settings.PRIMARY_TIMEFRAME
+            # ★★★ تبدیلی: اب ہم براہ راست Polygon سے DataFrame حاصل کرتے ہیں ★★★
+            df_candles = await fetch_polygon_ohlcv(pair, timeframe, api_settings.CANDLE_COUNT)
             
-            if not candles or len(candles) < 34:
-                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
+            if df_candles is None or df_candles.empty or len(df_candles) < 34:
+                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(df_candles) if df_candles is not None else 0})۔")
                 return
 
             # فیوژن انجن سے حتمی تجزیہ حاصل کریں
-            analysis_result = await generate_final_signal(db, pair, candles, market_regime, symbol_personality)
+            analysis_result = await generate_final_signal(db, pair, df_candles, market_regime, symbol_personality)
         
         if not analysis_result:
             logger.error(f"🔬 [{pair}] تجزیہ ناکام: فیوژن انجن نے کوئی نتیجہ واپس نہیں کیا۔")
@@ -118,7 +121,6 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
                            f"اعتماد = {confidence:.2f}%")
             logger.info(log_message)
             
-            # غیر مستحکم مارکیٹ میں زیادہ اعتماد کی ضرورت ہوگی
             required_confidence = FINAL_CONFIDENCE_THRESHOLD + 10 if market_regime['regime'] == 'Volatile' else FINAL_CONFIDENCE_THRESHOLD
 
             if confidence >= required_confidence:
@@ -143,4 +145,4 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
 
     except Exception as e:
         logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
-            
+        
