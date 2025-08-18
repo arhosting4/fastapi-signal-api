@@ -56,17 +56,15 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
 
     return all_quotes
 
-# ★★★ نیا، واحد، اور قابل اعتماد ڈیٹا فنکشن ★★★
+# ★★★ حتمی اور لچکدار ڈیٹا فنکشن ★★★
 async def fetch_polygon_ohlcv(symbol: str, timeframe: str, candle_count: int) -> Optional[pd.DataFrame]:
     """
-    Polygon.io سے مکمل OHLCV ڈیٹا حاصل کرتا ہے اور ایک صاف DataFrame واپس کرتا ہے۔
-    یہ اب ہمارے تاریخی ڈیٹا کا واحد ذریعہ ہے۔
+    Polygon.io سے OHLCV ڈیٹا حاصل کرتا ہے۔ یہ اب کم ڈیٹا کو بھی قبول کرتا ہے۔
     """
     if not api_settings.POLYGON_API_KEY:
         logger.error("Polygon API کلید دستیاب نہیں، تاریخی ڈیٹا حاصل نہیں کیا جا سکتا۔")
         return None
 
-    # Polygon.io کے لیے ٹائم فریم اور تاریخ کی حد تیار کریں
     multiplier, timespan = 1, "minute"
     if "min" in timeframe:
         multiplier = int(timeframe.replace("min", ""))
@@ -74,14 +72,14 @@ async def fetch_polygon_ohlcv(symbol: str, timeframe: str, candle_count: int) ->
         multiplier = int(timeframe.replace("hour", ""))
         timespan = "hour"
 
+    # 45 دن کی معیاری حد
     end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=45) # زیادہ ڈیٹا حاصل کریں تاکہ یقینی ہو
+    start_date = end_date - timedelta(days=45)
 
-    # فاریکس جوڑوں کے لیے "C:" پریفکس شامل کریں
     polygon_symbol = f"C:{symbol.replace('/', '')}" if "/" in symbol else symbol
     url = (f"https://api.polygon.io/v2/aggs/ticker/{polygon_symbol}/range/{multiplier}/{timespan}/"
            f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}")
-    params = {"apiKey": api_settings.POLYGON_API_KEY, "limit": candle_count + 5, "sort": "desc"}
+    params = {"apiKey": api_settings.POLYGON_API_KEY, "limit": 5000, "sort": "desc"}
 
     try:
         async with httpx.AsyncClient() as client:
@@ -97,22 +95,19 @@ async def fetch_polygon_ohlcv(symbol: str, timeframe: str, candle_count: int) ->
             results = data.get('results', [])
             df = pd.DataFrame(results)
             
-            # DataFrame کو صاف اور معیاری بنائیں
             df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume', 't': 'datetime'}, inplace=True)
             df['datetime'] = pd.to_datetime(df['datetime'], unit='ms', utc=True)
             df['symbol'] = symbol
-            
-            # صرف ضروری کالمز رکھیں اور ترتیب درست کریں
             df = df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'symbol']]
-            df.sort_values(by='datetime', inplace=True) # یقینی بنائیں کہ ڈیٹا وقت کے مطابق ترتیب میں ہے
+            df.sort_values(by='datetime', inplace=True)
             
-            # ڈیٹا کی صحت کی جانچ
             if not (df['high'] >= df['low']).all():
                 logger.error(f"[{symbol}] Polygon سے ناقص ڈیٹا: 'high' قیمت 'low' سے کم ہے۔")
                 return None
 
             logger.info(f"[{symbol}] Polygon.io سے {len(df)} کینڈلز کامیابی سے حاصل کی گئیں۔")
-            return df.tail(candle_count) # صرف مطلوبہ تعداد میں کینڈلز واپس کریں
+            # جو بھی ڈیٹا ملا ہے، اس کا آخری حصہ واپس کریں
+            return df.tail(candle_count)
         else:
             logger.warning(f"[{symbol}] کے لیے Polygon.io سے کوئی ڈیٹا نہیں ملا۔")
             return None
@@ -123,4 +118,4 @@ async def fetch_polygon_ohlcv(symbol: str, timeframe: str, candle_count: int) ->
     except Exception as e:
         logger.error(f"[{symbol}] کے لیے Polygon سے OHLCV حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
-        
+                            
