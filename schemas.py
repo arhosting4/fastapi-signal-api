@@ -1,5 +1,3 @@
-# filename: schemas.py
-
 """
 Pydantic اسکیمیں API کی درخواستوں، جوابات، اور اندرونی ڈیٹا کی ساختوں کی توثیق کے لیے۔
 """
@@ -102,8 +100,8 @@ class NewsResponse(BaseModel):
 class KeyStatusResponse(BaseModel):
     """API کیز کی حالت کی تفصیلات۔"""
     total_keys: int
-    available_keys: int
-    limited_keys_now: int
+    assigned_keys: int
+    backup_keys: int
 
 class SystemStatusResponse(BaseModel):
     """/api/system-status اینڈ پوائنٹ کے لیے رسپانس ماڈل۔"""
