@@ -1,5 +1,3 @@
-# filename: reasonbot.py
-
 from typing import Dict, Any, List
 
 def generate_reason(
@@ -63,4 +61,4 @@ def generate_reason(
         )
     
     return " ".join(reason_parts)
-
+    
