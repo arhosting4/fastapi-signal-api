@@ -1,5 +1,3 @@
-# filename: sentinel.py
-
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -174,4 +172,4 @@ async def check_news_at_time_of_trade(symbol: str, trade_start_time: datetime, t
             return True
             
     return False
-                                         
+                       
