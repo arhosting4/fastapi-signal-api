@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import pandas as pd
 import numpy as np
@@ -18,7 +18,7 @@ SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
 BBANDS_PERIOD = tech_settings.BBANDS_PERIOD
 BBANDS_STD_DEV = tech_settings.BBANDS_STD_DEV
 BBANDS_SQUEEZE_THRESHOLD = tech_settings.BBANDS_SQUEEZE_THRESHOLD
-ADX_PERIOD = 14 # ADX کے لیے پیریڈ
+ADX_PERIOD = 14
 
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
@@ -30,16 +30,22 @@ def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50)
 
-def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
+# ★★★ خرابی کا حل یہاں ہے ★★★
+def calculate_supertrend(df_in: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
+    """Supertrend کا حساب لگاتا ہے اور صرف نئے کالمز واپس کرتا ہے۔"""
+    df = df_in.copy()
     high, low, close = df['high'], df['low'], df['close']
+    
     tr1 = pd.DataFrame(high - low)
     tr2 = pd.DataFrame(abs(high - close.shift(1)))
     tr3 = pd.DataFrame(abs(low - close.shift(1)))
     tr = pd.concat([tr1, tr2, tr3], axis=1, join='inner').max(axis=1)
     atr = tr.ewm(alpha=1/atr_period, adjust=False).mean()
+    
     df['upperband'] = (high + low) / 2 + (multiplier * atr)
     df['lowerband'] = (high + low) / 2 - (multiplier * atr)
     df['in_uptrend'] = True
+    
     for i in range(1, len(df)):
         if close.iloc[i] > df['upperband'].iloc[i-1]:
             df.loc[df.index[i], 'in_uptrend'] = True
@@ -47,11 +53,14 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
             df.loc[df.index[i], 'in_uptrend'] = False
         else:
             df.loc[df.index[i], 'in_uptrend'] = df['in_uptrend'].iloc[i-1]
+        
         if df['in_uptrend'].iloc[i] and df['lowerband'].iloc[i] < df['lowerband'].iloc[i-1]:
             df.loc[df.index[i], 'lowerband'] = df['lowerband'].iloc[i-1]
         if not df['in_uptrend'].iloc[i] and df['upperband'].iloc[i] > df['upperband'].iloc[i-1]:
             df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
-    return df
+            
+    # صرف نئے، حساب شدہ کالمز واپس کریں
+    return df[['upperband', 'lowerband', 'in_uptrend']]
 
 def calculate_bollinger_bands(data: pd.Series, period: int, std_dev: int) -> pd.DataFrame:
     middle_band = data.rolling(window=period).mean()
@@ -64,10 +73,11 @@ def calculate_bollinger_bands(data: pd.Series, period: int, std_dev: int) -> pd.
         'bb_lower': lower_band, 'bb_bandwidth': bandwidth
     })
 
-# ★★★ نیا، بہتر ADX فنکشن ★★★
-def calculate_adx(df: pd.DataFrame, period: int) -> pd.DataFrame:
-    """ADX, +DI, اور -DI کا حساب لگاتا ہے۔"""
-    df_adx = pd.DataFrame()
+def calculate_adx(df_in: pd.DataFrame, period: int) -> pd.DataFrame:
+    """ADX, +DI, اور -DI کا حساب لگاتا ہے اور صرف نئے کالمز واپس کرتا ہے۔"""
+    df = df_in.copy()
+    df_adx = pd.DataFrame(index=df.index)
+    
     df_adx['H-L'] = df['high'] - df['low']
     df_adx['H-pC'] = abs(df['high'] - df['close'].shift(1))
     df_adx['L-pC'] = abs(df['low'] - df['close'].shift(1))
@@ -88,8 +98,6 @@ def calculate_adx(df: pd.DataFrame, period: int) -> pd.DataFrame:
     return pd.DataFrame({'adx': ADX, 'plus_di': df_adx['+DI'], 'minus_di': df_adx['-DI']})
 
 def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_personality: Dict) -> Dict[str, Any]:
-    regime_type = market_regime.get("regime")
-    
     if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, BBANDS_PERIOD, ADX_PERIOD, 34):
         return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
 
@@ -99,50 +107,41 @@ def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_per
     ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
     ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
     rsi = calculate_rsi(close, RSI_PERIOD)
-    df = df.join(calculate_supertrend(df.copy(), SUPERTREND_ATR, SUPERTREND_FACTOR))
+    
+    # ★★★ خرابی کا حل یہاں ہے: join کا صحیح استعمال ★★★
+    df = df.join(calculate_supertrend(df, SUPERTREND_ATR, SUPERTREND_FACTOR))
     df = df.join(calculate_bollinger_bands(close, BBANDS_PERIOD, BBANDS_STD_DEV))
-    df = df.join(calculate_adx(df.copy(), ADX_PERIOD)) # ★★★ ADX کو شامل کیا گیا
+    df = df.join(calculate_adx(df, ADX_PERIOD))
 
-    # آخری کینڈل کا ڈیٹا
     last = df.iloc[-1]
     
-    # --- حکمت عملی 1: بریک آؤٹ ہنٹر (اسے ابھی تبدیل نہیں کیا گیا) ---
-    # (یہاں بریک آؤٹ کی منطق پہلے کی طرح رہے گی)
-
-    # --- حکمت عملی 2: ٹرینڈ فالوونگ (ADX کی نئی منطق کے ساتھ) ---
+    # (باقی کا کوڈ پہلے جیسا ہی ہے، کیونکہ منطق درست تھی)
+    regime_type = market_regime.get("regime")
     total_score = 0
     strategy_type = "Unknown"
+    core_signal = ""
 
     if regime_type in ["Calm Trend", "Volatile Trend"]:
         strategy_type = "Trend-Following"
-        
-        # ★★★ ADX سمت کی نئی شرط ★★★
         is_bullish_adx = last['plus_di'] > last['minus_di']
         is_bearish_adx = last['minus_di'] > last['plus_di']
-        
         is_bullish_ema = ema_fast.iloc[-1] > ema_slow.iloc[-1]
         is_bullish_supertrend = last['in_uptrend']
 
-        # BUY سگنل کی شرائط
         if is_bullish_ema and is_bullish_supertrend and is_bullish_adx:
             total_score = 100
             core_signal = "buy"
             logger.info(f"[{df['symbol'].iloc[-1]}] Bullish Trend کی تصدیق (EMA, Supertrend, ADX+)")
-        
-        # SELL سگنل کی شرائط
         elif not is_bullish_ema and not is_bullish_supertrend and is_bearish_adx:
             total_score = -100
             core_signal = "sell"
             logger.info(f"[{df['symbol'].iloc[-1]}] Bearish Trend کی تصدیق (EMA, Supertrend, ADX-)")
-        
         else:
-            # اگر تمام شرائط پوری نہ ہوں تو کوئی سگنل نہیں
             reason = f"ADX سمت کی تصدیق نہیں ہوئی۔ +DI: {last['plus_di']:.1f}, -DI: {last['minus_di']:.1f}"
             logger.info(f"[{df['symbol'].iloc[-1]}] ٹرینڈ سگنل مسترد: {reason}")
             return {"status": "no-signal", "reason": reason}
 
     elif regime_type == "Ranging":
-        # (رینجنگ مارکیٹ کی منطق پہلے کی طرح رہے گی)
         strategy_type = "Range-Reversal"
         if rsi.iloc[-1] > 75: total_score = -100
         elif rsi.iloc[-1] < 25: total_score = 100
