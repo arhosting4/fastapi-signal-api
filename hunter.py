@@ -1,14 +1,13 @@
 import asyncio
 import logging
 from contextlib import contextmanager
-from typing import Generator, Dict, Any
+from typing import Generator, Dict, Any, List
 import json
 
 from sqlalchemy.orm import Session
 import pandas as pd
 
 import database_crud as crud
-# ★★★ نیا امپورٹ ★★★
 from utils import fetch_polygon_ohlcv
 from fusion_engine import generate_final_signal
 from messenger import send_telegram_alert, send_signal_update_alert
@@ -20,9 +19,11 @@ from riskguardian import get_market_regime
 
 logger = logging.getLogger(__name__)
 
-# --- کنفیگریشن سے مستقل اقدار ---
+# --- کنفیگریشن اور عالمی متغیرات ---
 FINAL_CONFIDENCE_THRESHOLD = strategy_settings.FINAL_CONFIDENCE_THRESHOLD
 PERSONALITIES_FILE = "asset_personalities.json"
+# ★★★ نیا: مسلسل تجزیے کے لیے عالمی قطار ★★★
+hunting_queue: List[str] = []
 
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
@@ -40,75 +41,75 @@ def load_asset_personalities() -> Dict:
         logger.error(f"{PERSONALITIES_FILE} نہیں ملی یا خراب ہے۔ ڈیفالٹ شخصیت استعمال کی جائے گی۔")
         return {}
 
+# ★★★ نیا، مسلسل تجزیہ والا ہنٹر انجن ★★★
 async def hunt_for_signals_job():
     """
-    یہ جاب وقفے وقفے سے چلتی ہے، مارکیٹ کے نظام کا تعین کرتی ہے اور ایک انکولی اسکیلپنگ حکمت عملی چلاتی ہے۔
+    یہ جاب ہر منٹ چلتی ہے، قطار سے چند جوڑوں کو اٹھاتی ہے اور ان کا تجزیہ کرتی ہے۔
     """
-    logger.info("🏹 شکاری انجن: نئے مواقع کی تلاش کا نیا دور شروع...")
+    global hunting_queue
+    
+    # اگر قطار خالی ہے، تو اسے دوبارہ بھریں
+    if not hunting_queue:
+        logger.info("🏹 شکار کی قطار خالی ہے۔ نئے روسٹر سے بھری جا رہی ہے...")
+        with get_db_session() as db:
+            hunting_queue = get_hunting_roster(db)
+        
+        if not hunting_queue:
+            logger.info("🏹 تجزیے کے لیے کوئی اہل جوڑا نہیں۔ اگلی بار دوبارہ کوشش کی جائے گی۔")
+            return
+        logger.info(f"🏹 شکار کی قطار کامیابی سے بھری گئی۔ کل {len(hunting_queue)} جوڑے۔")
+
+    # قطار سے اگلے 4 جوڑے نکالیں
+    pairs_to_process = hunting_queue[:4]
+    hunting_queue = hunting_queue[4:] # قطار سے ان جوڑوں کو ہٹا دیں
+
+    if not pairs_to_process:
+        logger.info("🏹 اس چکر میں تجزیہ کرنے کے لیے کوئی جوڑا نہیں۔")
+        return
+
+    logger.info(f"🏹 مسلسل تجزیہ کا چکر: {len(pairs_to_process)} جوڑوں ({', '.join(pairs_to_process)}) کا تجزیہ کیا جا رہا ہے۔")
     
     try:
-        with get_db_session() as db:
-            pairs_to_analyze = get_hunting_roster(db)
+        # مارکیٹ کے نظام کا تعین (صرف ایک بار، پہلے جوڑے پر)
+        df_regime = await fetch_polygon_ohlcv(pairs_to_process[0], "1h", 50)
+        market_regime_data = get_market_regime({pairs_to_process[0]: df_regime} if df_regime is not None else {})
         
-        if not pairs_to_analyze:
-            logger.info("🏹 شکاری انجن: تجزیے کے لیے کوئی اہل جوڑا نہیں۔ تلاش کا دور ختم۔")
-            return
-
-        # مرحلہ 1: مارکیٹ کے نظام کا تعین کریں
-        # ★★★ تبدیلی: اب ہم H1 ڈیٹا بھی Polygon سے حاصل کریں گے ★★★
-        h1_tasks = [fetch_polygon_ohlcv(pair, "1h", 50) for pair in pairs_to_analyze]
-        h1_results = await asyncio.gather(*h1_tasks)
-        
-        ohlc_data_map = {
-            pair: df
-            for pair, df in zip(pairs_to_analyze, h1_results) if df is not None and not df.empty
-        }
-        
-        market_regime_data = get_market_regime(ohlc_data_map)
-        
-        logger.info(f"♟️ ماسٹر مائنڈ فیصلہ: مارکیٹ کا نظام = {market_regime_data['regime']} (VIX: {market_regime_data['vix_score']})۔ انکولی اسکیلپنگ فعال۔")
-
         if market_regime_data["regime"] == "Stormy":
-            logger.info("🛑 ٹریڈنگ معطل: انتہائی غیر مستحکم مارکیٹ (Stormy Regime)۔")
+            logger.warning("🛑 ٹریڈنگ معطل: انتہائی غیر مستحکم مارکیٹ۔ قطار صاف کی جا رہی ہے۔")
+            hunting_queue = [] # طوفانی مارکیٹ میں قطار کو صاف کر دیں
             return
 
-        # مرحلہ 2: انکولی اسکیلپنگ حکمت عملی کے مطابق تجزیہ کریں
         personalities = load_asset_personalities()
         
         tasks = [
             analyze_single_pair(pair, market_regime_data, personalities) 
-            for pair in pairs_to_analyze
+            for pair in pairs_to_process
         ]
         await asyncio.gather(*tasks)
 
     except Exception as e:
         logger.error(f"شکاری انجن کے کام میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
     
-    logger.info("🏹 شکاری انجن: تلاش کا دور مکمل ہوا۔")
+    logger.info(f"🏹 مسلسل تجزیہ کا چکر مکمل۔ قطار میں باقی: {len(hunting_queue)} جوڑے۔")
 
 async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dict):
     """
-    ایک انفرادی جوڑے کا گہرا تجزیہ کرتا ہے اور اگر معیار پر پورا اترے تو سگنل بناتا ہے۔
+    ایک انفرادی جوڑے کا گہرا تجزیہ کرتا ہے۔
     """
-    logger.info(f"🔬 [{pair}] کا انکولی اسکیلپنگ تجزیہ شروع کیا جا رہا ہے...")
+    logger.info(f"🔬 [{pair}] کا تجزیہ شروع کیا جا رہا ہے...")
     
     try:
         symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
+        timeframe = api_settings.PRIMARY_TIMEFRAME
+        
+        df_candles = await fetch_polygon_ohlcv(pair, timeframe, api_settings.CANDLE_COUNT)
+        
+        # ★★★ تبدیلی: اب ہم صرف یہ چیک کرتے ہیں کہ ڈیٹا خالی تو نہیں ★★★
+        if df_candles is None or df_candles.empty:
+            logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: Polygon سے کوئی ڈیٹا نہیں ملا۔")
+            return
 
         with get_db_session() as db:
-            if crud.get_active_signal_by_symbol(db, pair):
-                logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
-                return
-
-            timeframe = api_settings.PRIMARY_TIMEFRAME
-            # ★★★ تبدیلی: اب ہم براہ راست Polygon سے DataFrame حاصل کرتے ہیں ★★★
-            df_candles = await fetch_polygon_ohlcv(pair, timeframe, api_settings.CANDLE_COUNT)
-            
-            if df_candles is None or df_candles.empty or len(df_candles) < 34:
-                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(df_candles) if df_candles is not None else 0})۔")
-                return
-
-            # فیوژن انجن سے حتمی تجزیہ حاصل کریں
             analysis_result = await generate_final_signal(db, pair, df_candles, market_regime, symbol_personality)
         
         if not analysis_result:
@@ -117,9 +118,7 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
 
         if analysis_result.get("status") == "ok":
             confidence = analysis_result.get('confidence', 0)
-            log_message = (f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, "
-                           f"اعتماد = {confidence:.2f}%")
-            logger.info(log_message)
+            logger.info(f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, اعتماد = {confidence:.2f}%")
             
             required_confidence = FINAL_CONFIDENCE_THRESHOLD + 10 if market_regime['regime'] == 'Volatile' else FINAL_CONFIDENCE_THRESHOLD
 
@@ -130,12 +129,9 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
                 if update_result:
                     signal_obj = update_result.signal.as_dict()
                     task_type = "new_signal" if update_result.is_new else "signal_updated"
-                    
-                    alert_task = send_telegram_alert if update_result.is_new else send_signal_update_alert
-                    
                     logger.info(f"🎯 ★★★ سگنل پروسیس ہوا: {signal_obj['symbol']} ({task_type}) ★★★")
                     
-                    asyncio.create_task(alert_task(signal_obj))
+                    asyncio.create_task(send_telegram_alert(signal_obj))
                     asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
             else:
                 logger.info(f"📉 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) مطلوبہ حد ({required_confidence}%) سے کم ہے۔")
@@ -145,4 +141,3 @@ async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dic
 
     except Exception as e:
         logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
-        
