@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,14 +13,13 @@ from sqlalchemy.orm import Session
 
 # مقامی امپورٹس
 import database_crud as crud
-from config import app_settings
+from config import app_settings, trading_settings
 from models import SessionLocal, create_db_and_tables, engine
 from hunter import hunt_for_signals_job
 from feedback_checker import check_active_signals_job
 from sentinel import update_economic_calendar_cache
 from websocket_manager import manager
 from schemas import DailyStatsResponse, SystemStatusResponse, HistoryResponse, NewsResponse, ActiveSignalResponse
-from roster_manager import get_forex_pairs
 
 # لاگنگ کی ترتیب
 logging.basicConfig(
@@ -47,6 +46,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- نیا کلین اپ فنکشن ---
+def cleanup_weekend_signals():
+    """
+    ہفتے کے آخر میں تمام پرانے سگنلز کو بند کرتا ہے تاکہ نیا ہفتہ صاف شروع ہو۔
+    """
+    logger.info("🧹 ہفتہ وار کلین اپ کا کام شروع کیا جا رہا ہے...")
+    db = SessionLocal()
+    try:
+        # 0 = پیر, 4 = جمعہ, 6 = اتوار
+        current_weekday = datetime.utcnow().weekday()
+        market_type_to_close = None
+        
+        # جمعہ کی رات (UTC) فاریکس مارکیٹ بند ہونے کے بعد
+        if current_weekday == 4: 
+            market_type_to_close = "forex"
+            logger.info("🧹 آج جمعہ ہے۔ فاریکس سگنلز کو بند کرنے کے لیے چیک کیا جا رہا ہے۔")
+        # اتوار کی رات (UTC) کرپٹو مارکیٹ کے بعد
+        elif current_weekday == 6: 
+            market_type_to_close = "crypto"
+            logger.info("🧹 آج اتوار ہے۔ کرپٹو سگنلز کو بند کرنے کے لیے چیک کیا جا رہا ہے۔")
+
+        if not market_type_to_close:
+            logger.info("🧹 آج کلین اپ کا دن نہیں ہے۔ کام ختم۔")
+            return
+
+        all_signals = crud.get_all_active_signals_from_db(db)
+        signals_to_close = []
+        
+        if market_type_to_close == "forex":
+            forex_pairs = set(trading_settings.WEEKDAY_PRIMARY + trading_settings.WEEKDAY_BACKUP)
+            signals_to_close = [s for s in all_signals if s.symbol in forex_pairs]
+        elif market_type_to_close == "crypto":
+            crypto_pairs = set(trading_settings.WEEKEND_PRIMARY + trading_settings.WEEKEND_BACKUP)
+            signals_to_close = [s for s in all_signals if s.symbol in crypto_pairs]
+        
+        if not signals_to_close:
+            logger.info(f"🧹 بند کرنے کے لیے کوئی فعال {market_type_to_close} سگنل نہیں ملا۔")
+            return
+
+        for signal in signals_to_close:
+            logger.info(f"🧹 ہفتے کے آخر کا کلین اپ: سگنل {signal.symbol} کو بند کیا جا رہا ہے۔")
+            # قیمت کے لیے انٹری قیمت استعمال کریں کیونکہ اصل قیمت دستیاب نہیں ہوگی
+            crud.close_and_archive_signal(
+                db, signal.signal_id, "weekend_close", 
+                signal.entry_price, "Automated weekend/market closure"
+            )
+        logger.info(f"🧹 کل {len(signals_to_close)} سگنلز کامیابی سے بند کر دیے گئے۔")
+
+    except Exception as e:
+        logger.error(f"🧹 ہفتہ وار کلین اپ میں خرابی: {e}", exc_info=True)
+    finally:
+        db.close()
+
 # --- انحصار ---
 def get_db():
     """ڈیٹا بیس سیشن فراہم کرنے والا انحصار۔"""
@@ -57,57 +109,9 @@ def get_db():
         db.close()
 
 # --- پس منظر کے کام ---
-
-async def cleanup_weekend_signals():
-    """
-    صرف فاریکس سگنلز کو ہفتے کے آخر میں بند کرتا ہے اور فرنٹ اینڈ کو مطلع کرتا ہے۔
-    """
-    logger.info("🧹 ہفتے کے آخر کی صفائی کا کام شروع ہو رہا ہے...")
-    db = SessionLocal()
-    try:
-        forex_pairs = get_forex_pairs()
-        if not forex_pairs:
-            logger.warning("🧹 صفائی کا کام روکا گیا: فاریکس جوڑوں کی فہرست نہیں ملی۔")
-            return
-
-        # ڈیٹا بیس سے صرف فاریکس کے فعال سگنلز حاصل کریں
-        signals_to_close = db.query(crud.ActiveSignal).filter(
-            crud.ActiveSignal.symbol.in_(forex_pairs)
-        ).all()
-
-        if not signals_to_close:
-            logger.info("🧹 کوئی فعال فاریکس سگنل بند کرنے کے لیے نہیں ملا۔")
-            return
-
-        logger.info(f"🧹 {len(signals_to_close)} فعال فاریکس سگنلز کو بند کیا جا رہا ہے...")
-        closed_count = 0
-        for signal in signals_to_close:
-            signal_id_to_broadcast = signal.signal_id # ID کو پہلے محفوظ کریں
-            
-            success = crud.close_and_archive_signal(
-                db=db,
-                signal_id=signal.signal_id,
-                outcome="weekend_close",
-                close_price=signal.entry_price,
-                reason_for_closure="Market closed for the weekend"
-            )
-            if success:
-                closed_count += 1
-                # فرنٹ اینڈ کو اطلاع دیں
-                logger.info(f"📡 کلائنٹس کو سگنل {signal_id_to_broadcast} کے بند ہونے کی اطلاع دی جا رہی ہے...")
-                await manager.broadcast({"type": "signal_closed", "data": {"signal_id": signal_id_to_broadcast}})
-        
-        logger.info(f"🧹 {closed_count} فاریکس سگنلز کامیابی سے بند ہو گئے۔")
-
-    except Exception as e:
-        logger.error(f"🧹 ہفتے کے آخر کی صفائی میں خرابی: {e}", exc_info=True)
-    finally:
-        db.close()
-
 async def start_background_tasks():
     """شیڈیولر کو شروع کرتا ہے جو پس منظر کے کاموں کو چلاتا ہے۔"""
     if hasattr(app.state, "scheduler") and app.state.scheduler.running:
-        logger.info("شیڈیولر پہلے سے چل رہا ہے۔")
         return
 
     logger.info(">>> پس منظر کے کام شروع ہو رہے ہیں...")
@@ -116,10 +120,11 @@ async def start_background_tasks():
     
     scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=120), id="guardian_engine_job")
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=180), id="hunter_engine_job")
-    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job", next_run_time=datetime.utcnow())
+    scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
-    # ہر جمعہ کو 21:05 UTC پر چلے گا
-    scheduler.add_job(cleanup_weekend_signals, CronTrigger(day_of_week='fri', hour=21, minute=5, timezone='UTC'), id="cleanup_weekend_signals")
+    # --- نیا شیڈول کام ---
+    # یہ کام ہر روز رات 10:05 بجے UTC میں چلے گا تاکہ جمعہ اور اتوار کو کلین اپ کر سکے
+    scheduler.add_job(cleanup_weekend_signals, CronTrigger(hour=22, minute=5, timezone='UTC'), id='cleanup_job')
     
     scheduler.start()
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
@@ -190,7 +195,11 @@ async def get_system_status():
         "timestamp_utc": datetime.utcnow(),
         "scheduler_status": "Running" if scheduler_running else "Stopped",
         "database_status": db_status,
-        "key_status": key_manager.get_key_status()
+        "key_status": {
+            "total_keys": len(key_manager.all_keys),
+            "assigned_keys": len(key_manager.pair_to_key_map),
+            "backup_keys": len(key_manager.key_pool)
+        }
     }
 
 # --- WebSocket ---
@@ -205,6 +214,5 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 # --- اسٹیٹک فائلز ---
-# فرنٹ اینڈ فائلوں کو پیش کرنے کے لیے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
         
