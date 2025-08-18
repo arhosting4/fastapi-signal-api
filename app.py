@@ -114,7 +114,7 @@ async def start_background_tasks():
     app.state.scheduler = scheduler
     
     scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=120), id="guardian_engine_job")
-    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=120), id="hunter_engine_job")
+    scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=60), id="hunter_engine_job")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     scheduler.add_job(cleanup_weekend_signals, CronTrigger(hour=22, minute=5, timezone='UTC'), id='cleanup_job')
     
