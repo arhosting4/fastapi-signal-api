@@ -1,3 +1,5 @@
+# filename: schemas.py
+
 """
 Pydantic اسکیمیں API کی درخواستوں، جوابات، اور اندرونی ڈیٹا کی ساختوں کی توثیق کے لیے۔
 """
@@ -20,16 +22,20 @@ class Candle(BaseModel):
     volume: Optional[float] = None
     symbol: Optional[str] = None
 
-    # اصلاح: یہ ویلیڈیٹر یقینی بنائے گا کہ API سے آنے والی سٹرنگ ویلیوز فلوٹ میں تبدیل ہو جائیں
+    # --- حتمی اور فول پروف حل یہاں ہے ---
+    # یہ ویلیڈیٹر یقینی بنائے گا کہ API سے آنے والی کسی بھی قسم کی ویلیو (سٹرنگ، انٹیجر)
+    # ڈیٹا فریم میں جانے سے پہلے ہی فلوٹ میں تبدیل ہو جائے۔
     @field_validator('open', 'high', 'low', 'close', 'volume', mode='before')
     @classmethod
     def clean_float(cls, v: Any) -> Optional[float]:
         if v is None:
             return None
         try:
+            # کسی بھی قسم کی قیمت کو فلوٹ میں تبدیل کرنے کی کوشش کریں
             return float(v)
         except (ValueError, TypeError):
-            # اگر قیمت کو فلوٹ میں تبدیل نہیں کیا جا سکتا تو اسے نظر انداز کریں
+            # اگر قیمت کو فلوٹ میں تبدیل نہیں کیا جا سکتا تو اسے None سیٹ کریں
+            # تاکہ بعد میں dropna() اسے ہٹا سکے
             return None
 
 class TwelveDataTimeSeries(BaseModel):
