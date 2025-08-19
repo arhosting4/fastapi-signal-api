@@ -1,6 +1,7 @@
-import logging
-from typing import Any, Dict
+# filename: strategy_scalper.py
 
+import logging
+from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
 
@@ -9,16 +10,8 @@ from level_analyzer import find_realistic_tp_sl
 
 logger = logging.getLogger(__name__)
 
-# --- تکنیکی انڈیکیٹرز کی سیٹنگز ---
-EMA_SHORT_PERIOD = tech_settings.EMA_SHORT_PERIOD
-EMA_LONG_PERIOD = tech_settings.EMA_LONG_PERIOD
-RSI_PERIOD = tech_settings.RSI_PERIOD
-SUPERTREND_ATR = tech_settings.SUPERTREND_ATR
-SUPERTREND_FACTOR = tech_settings.SUPERTREND_FACTOR
-BBANDS_PERIOD = tech_settings.BBANDS_PERIOD
-BBANDS_STD_DEV = tech_settings.BBANDS_STD_DEV
-BBANDS_SQUEEZE_THRESHOLD = tech_settings.BBANDS_SQUEEZE_THRESHOLD
-ADX_PERIOD = 14
+# --- تکنیکی انڈیکیٹرز کے حساب کتاب کے فنکشنز ---
+# (یہ فنکشنز پہلے سے موجود ہو سکتے ہیں، لیکن انہیں یہاں رکھنا کوڈ کو مکمل بناتا ہے)
 
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
@@ -27,15 +20,18 @@ def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     avg_gain = gain.ewm(com=period - 1, adjust=False).mean()
     avg_loss = loss.ewm(com=period - 1, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, 1e-9)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50)
+    return 100 - (100 / (1 + rs))
 
-# ★★★ خرابی کا حل یہاں ہے ★★★
-def calculate_supertrend(df_in: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
-    """Supertrend کا حساب لگاتا ہے اور صرف نئے کالمز واپس کرتا ہے۔"""
+def calculate_bollinger_bands(data: pd.Series, period: int, std_dev: int) -> pd.DataFrame:
+    middle_band = data.rolling(window=period).mean()
+    std = data.rolling(window=period).std()
+    upper_band = middle_band + (std * std_dev)
+    lower_band = middle_band - (std * std_dev)
+    return pd.DataFrame({'bb_upper': upper_band, 'bb_lower': lower_band})
+
+def calculate_supertrend(df_in: pd.DataFrame, atr_period: int, multiplier: float) -> pd.Series:
     df = df_in.copy()
     high, low, close = df['high'], df['low'], df['close']
-    
     tr1 = pd.DataFrame(high - low)
     tr2 = pd.DataFrame(abs(high - close.shift(1)))
     tr3 = pd.DataFrame(abs(low - close.shift(1)))
@@ -59,108 +55,98 @@ def calculate_supertrend(df_in: pd.DataFrame, atr_period: int, multiplier: float
         if not df['in_uptrend'].iloc[i] and df['upperband'].iloc[i] > df['upperband'].iloc[i-1]:
             df.loc[df.index[i], 'upperband'] = df['upperband'].iloc[i-1]
             
-    # صرف نئے، حساب شدہ کالمز واپس کریں
-    return df[['upperband', 'lowerband', 'in_uptrend']]
+    return df['in_uptrend']
 
-def calculate_bollinger_bands(data: pd.Series, period: int, std_dev: int) -> pd.DataFrame:
-    middle_band = data.rolling(window=period).mean()
-    std = data.rolling(window=period).std()
-    upper_band = middle_band + (std * std_dev)
-    lower_band = middle_band - (std * std_dev)
-    bandwidth = ((upper_band - lower_band) / middle_band) * 100
-    return pd.DataFrame({
-        'bb_upper': upper_band, 'bb_middle': middle_band,
-        'bb_lower': lower_band, 'bb_bandwidth': bandwidth
-    })
+# --- حکمت عملی 1: پرسکون ٹرینڈ کے لیے ---
+def run_trend_following_strategy(df_in: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
+    """یہ حکمت عملی مستحکم ٹرینڈز میں EMA کراس اور Supertrend کی بنیاد پر کام کرتی ہے۔"""
+    symbol = df_in['symbol'].iloc[-1]
+    logger.info(f"[{symbol}] حکمت عملی فعال: ٹرینڈ فالوونگ")
+    
+    if len(df_in) < tech_settings.EMA_LONG_PERIOD:
+        return {"status": "no-signal", "reason": "ٹرینڈ فالوونگ کے لیے ناکافی ڈیٹا"}
 
-def calculate_adx(df_in: pd.DataFrame, period: int) -> pd.DataFrame:
-    """ADX, +DI, اور -DI کا حساب لگاتا ہے اور صرف نئے کالمز واپس کرتا ہے۔"""
     df = df_in.copy()
-    df_adx = pd.DataFrame(index=df.index)
-    
-    df_adx['H-L'] = df['high'] - df['low']
-    df_adx['H-pC'] = abs(df['high'] - df['close'].shift(1))
-    df_adx['L-pC'] = abs(df['low'] - df['close'].shift(1))
-    df_adx['TR'] = df_adx[['H-L', 'H-pC', 'L-pC']].max(axis=1)
-    
-    df_adx['+DM'] = np.where((df['high'] - df['high'].shift(1)) > (df['low'].shift(1) - df['low']), df['high'] - df['high'].shift(1), 0)
-    df_adx['+DM'] = np.where(df_adx['+DM'] < 0, 0, df_adx['+DM'])
-    df_adx['-DM'] = np.where((df['low'].shift(1) - df['low']) > (df['high'] - df['high'].shift(1)), df['low'].shift(1) - df['low'], 0)
-    df_adx['-DM'] = np.where(df_adx['-DM'] < 0, 0, df_adx['-DM'])
-    
-    ATR = df_adx['TR'].ewm(span=period, adjust=False).mean()
-    df_adx['+DI'] = (df_adx['+DM'].ewm(span=period, adjust=False).mean() / ATR) * 100
-    df_adx['-DI'] = (df_adx['-DM'].ewm(span=period, adjust=False).mean() / ATR) * 100
-    
-    DX = (abs(df_adx['+DI'] - df_adx['-DI']) / (df_adx['+DI'] + df_adx['-DI']).replace(0, 1)) * 100
-    ADX = DX.ewm(span=period, adjust=False).mean()
-    
-    return pd.DataFrame({'adx': ADX, 'plus_di': df_adx['+DI'], 'minus_di': df_adx['-DI']})
-
-def generate_adaptive_analysis(df: pd.DataFrame, market_regime: Dict, symbol_personality: Dict) -> Dict[str, Any]:
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, BBANDS_PERIOD, ADX_PERIOD, 34):
-        return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
-
     close = df['close']
+    df['ema_fast'] = close.ewm(span=tech_settings.EMA_SHORT_PERIOD, adjust=False).mean()
+    df['ema_slow'] = close.ewm(span=tech_settings.EMA_LONG_PERIOD, adjust=False).mean()
+    df['in_uptrend'] = calculate_supertrend(df, tech_settings.SUPERTREND_ATR, tech_settings.SUPERTREND_FACTOR)
     
-    # --- تمام انڈیکیٹرز کا حساب لگائیں ---
-    ema_fast = close.ewm(span=EMA_SHORT_PERIOD, adjust=False).mean()
-    ema_slow = close.ewm(span=EMA_LONG_PERIOD, adjust=False).mean()
-    rsi = calculate_rsi(close, RSI_PERIOD)
-    
-    # ★★★ خرابی کا حل یہاں ہے: join کا صحیح استعمال ★★★
-    df = df.join(calculate_supertrend(df, SUPERTREND_ATR, SUPERTREND_FACTOR))
-    df = df.join(calculate_bollinger_bands(close, BBANDS_PERIOD, BBANDS_STD_DEV))
-    df = df.join(calculate_adx(df, ADX_PERIOD))
-
     last = df.iloc[-1]
-    
-    # (باقی کا کوڈ پہلے جیسا ہی ہے، کیونکہ منطق درست تھی)
-    regime_type = market_regime.get("regime")
-    total_score = 0
-    strategy_type = "Unknown"
     core_signal = ""
 
-    if regime_type in ["Calm Trend", "Volatile Trend"]:
-        strategy_type = "Trend-Following"
-        is_bullish_adx = last['plus_di'] > last['minus_di']
-        is_bearish_adx = last['minus_di'] > last['plus_di']
-        is_bullish_ema = ema_fast.iloc[-1] > ema_slow.iloc[-1]
-        is_bullish_supertrend = last['in_uptrend']
-
-        if is_bullish_ema and is_bullish_supertrend and is_bullish_adx:
-            total_score = 100
-            core_signal = "buy"
-            logger.info(f"[{df['symbol'].iloc[-1]}] Bullish Trend کی تصدیق (EMA, Supertrend, ADX+)")
-        elif not is_bullish_ema and not is_bullish_supertrend and is_bearish_adx:
-            total_score = -100
-            core_signal = "sell"
-            logger.info(f"[{df['symbol'].iloc[-1]}] Bearish Trend کی تصدیق (EMA, Supertrend, ADX-)")
-        else:
-            reason = f"ADX سمت کی تصدیق نہیں ہوئی۔ +DI: {last['plus_di']:.1f}, -DI: {last['minus_di']:.1f}"
-            logger.info(f"[{df['symbol'].iloc[-1]}] ٹرینڈ سگنل مسترد: {reason}")
-            return {"status": "no-signal", "reason": reason}
-
-    elif regime_type == "Ranging":
-        strategy_type = "Range-Reversal"
-        if rsi.iloc[-1] > 75: total_score = -100
-        elif rsi.iloc[-1] < 25: total_score = 100
-        core_signal = "buy" if total_score > 0 else "sell"
-    
+    if last['ema_fast'] > last['ema_slow'] and last['in_uptrend']:
+        core_signal = "buy"
+    elif last['ema_fast'] < last['ema_slow'] and not last['in_uptrend']:
+        core_signal = "sell"
     else:
-        return {"status": "no-signal", "reason": f"مارکیٹ کا نظام '{regime_type}' ہے۔ ٹریڈنگ معطل۔"}
+        return {"status": "no-signal", "reason": "ٹرینڈ کی واضح سمت نہیں"}
 
-    if abs(total_score) == 0:
-        return {"status": "no-signal", "reason": "کوئی واضح ٹریڈنگ سیٹ اپ نہیں ملا۔"}
-
-    tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality)
+    tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality, "trending")
     if not tp_sl_data:
-        return {"status": "no-signal", "reason": "حقیقت پسندانہ TP/SL کا حساب نہیں لگایا جا سکا"}
-
-    tp, sl = tp_sl_data
+        return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
     
-    return {
-        "status": "ok", "signal": core_signal, "score": total_score,
-        "price": last['close'], "tp": tp, "sl": sl, "strategy_type": strategy_type
-    }
+    tp, sl = tp_sl_data
+    return {"status": "ok", "signal": core_signal, "price": last['close'], "tp": tp, "sl": sl, "strategy": "Trend_Following"}
+
+# --- حکمت عملی 2: تنگ رینج کے لیے ---
+def run_mean_reversion_strategy(df_in: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
+    """یہ حکمت عملی رینج کی بیرونی حدود سے قیمت کے واپس پلٹنے پر ٹریڈ کرتی ہے۔"""
+    symbol = df_in['symbol'].iloc[-1]
+    logger.info(f"[{symbol}] حکمت عملی فعال: مین ریورژن")
+    
+    if len(df_in) < tech_settings.BBANDS_PERIOD:
+        return {"status": "no-signal", "reason": "مین ریورژن کے لیے ناکافی ڈیٹا"}
+
+    df = df_in.copy()
+    close = df['close']
+    df = df.join(calculate_bollinger_bands(close, tech_settings.BBANDS_PERIOD, tech_settings.BBANDS_STD_DEV))
+    df['rsi'] = calculate_rsi(close, tech_settings.RSI_PERIOD)
+    
+    last = df.iloc[-1]
+    core_signal = ""
+
+    if last['rsi'] < 30 and last['close'] <= last['bb_lower']:
+        core_signal = "buy"
+    elif last['rsi'] > 70 and last['close'] >= last['bb_upper']:
+        core_signal = "sell"
+    else:
+        return {"status": "no-signal", "reason": "کوئی اوور سولڈ/اوور باٹ حالت نہیں"}
+
+    tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality, "ranging")
+    if not tp_sl_data:
+        return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
+    
+    tp, sl = tp_sl_data
+    return {"status": "ok", "signal": core_signal, "price": last['close'], "tp": tp, "sl": sl, "strategy": "Mean_Reversion"}
+
+# --- حکمت عملی 3: دھماکہ خیز ٹرینڈ کے لیے ---
+def run_breakout_strategy(df_in: pd.DataFrame, symbol_personality: Dict) -> Dict[str, Any]:
+    """یہ حکمت عملی قیمت کے ایک اہم سطح (Donchian Channel) کو توڑنے پر ٹریڈ کرتی ہے۔"""
+    symbol = df_in['symbol'].iloc[-1]
+    logger.info(f"[{symbol}] حکمت عملی فعال: بریک آؤٹ")
+    
+    df = df_in.copy()
+    df['donchian_high'] = df['high'].rolling(tech_settings.BBANDS_PERIOD).max().shift(1)
+    df['donchian_low'] = df['low'].rolling(tech_settings.BBANDS_PERIOD).min().shift(1)
+    
+    last = df.iloc[-1]
+    core_signal = ""
+
+    if pd.isna(last['donchian_high']) or pd.isna(last['donchian_low']):
+        return {"status": "no-signal", "reason": "بریک آؤٹ سطحوں کا حساب لگانے کے لیے ناکافی ڈیٹا"}
+
+    if last['close'] > last['donchian_high']:
+        core_signal = "buy"
+    elif last['close'] < last['donchian_low']:
+        core_signal = "sell"
+    else:
+        return {"status": "no-signal", "reason": "کوئی بریک آؤٹ نہیں"}
+
+    tp_sl_data = find_realistic_tp_sl(df, core_signal, symbol_personality, "trending")
+    if not tp_sl_data:
+        return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
+    
+    tp, sl = tp_sl_data
+    return {"status": "ok", "signal": core_signal, "price": last['close'], "tp": tp, "sl": sl, "strategy": "Breakout"}
     
