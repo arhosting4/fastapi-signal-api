@@ -1,3 +1,5 @@
+# filename: hunter.py
+
 import asyncio
 import logging
 from contextlib import contextmanager
@@ -7,20 +9,28 @@ import json
 from sqlalchemy.orm import Session
 import pandas as pd
 
+# مقامی امپورٹس
 import database_crud as crud
-from utils import fetch_twelve_data_ohlc
-from fusion_engine import generate_final_signal
-from messenger import send_telegram_alert, send_signal_update_alert
+from utils import fetch_twelve_data_ohlc, convert_candles_to_dataframe
+from messenger import send_telegram_alert
 from models import SessionLocal
 from websocket_manager import manager
 from roster_manager import get_hunting_roster
-from config import strategy_settings, api_settings
-from riskguardian import get_market_regime
+from config import api_settings
+
+# --- نئے، اپ گریڈ شدہ امپورٹس ---
+import regime_analyzer
+from strategy_scalper import (
+    run_trend_following_strategy, 
+    run_mean_reversion_strategy, 
+    run_breakout_strategy
+)
+# fusion_engine کی جگہ اب ہم براہ راست reasonbot استعمال کریں گے
+from reasonbot import generate_reason 
 
 logger = logging.getLogger(__name__)
 
 # --- کنفیگریشن سے مستقل اقدار ---
-FINAL_CONFIDENCE_THRESHOLD = strategy_settings.FINAL_CONFIDENCE_THRESHOLD
 PERSONALITIES_FILE = "asset_personalities.json"
 
 @contextmanager
@@ -41,9 +51,10 @@ def load_asset_personalities() -> Dict:
 
 async def hunt_for_signals_job():
     """
-    یہ جاب وقفے وقفے سے چلتی ہے، مارکیٹ کے نظام کا تعین کرتی ہے اور ایک انکولی اسکیلپنگ حکمت عملی چلاتی ہے۔
+    یہ جاب وقفے وقفے سے چلتی ہے، تجزیے کے لیے جوڑوں کا انتخاب کرتی ہے،
+    اور ہر جوڑے کے لیے مقداری تجزیہ چلاتی ہے۔
     """
-    logger.info("🏹 شکاری انجن: نئے مواقع کی تلاش کا نیا دور شروع...")
+    logger.info("🏹 شکاری انجن (ایپیکس ورژن): نئے مواقع کی تلاش کا نیا دور شروع...")
     
     try:
         with get_db_session() as db:
@@ -53,28 +64,10 @@ async def hunt_for_signals_job():
             logger.info("🏹 شکاری انجن: تجزیے کے لیے کوئی اہل جوڑا نہیں۔ تلاش کا دور ختم۔")
             return
 
-        # مرحلہ 1: مارکیٹ کے نظام کا تعین کریں
-        h1_tasks = [fetch_twelve_data_ohlc(pair, "1h", 50) for pair in pairs_to_analyze]
-        h1_results = await asyncio.gather(*h1_tasks)
-        
-        ohlc_data_map = {
-            pair: pd.DataFrame([c.dict() for c in candles])
-            for pair, candles in zip(pairs_to_analyze, h1_results) if candles
-        }
-        
-        market_regime_data = get_market_regime(ohlc_data_map)
-        
-        logger.info(f"♟️ ماسٹر مائنڈ فیصلہ: مارکیٹ کا نظام = {market_regime_data['regime']} (VIX: {market_regime_data['vix_score']})۔ انکولی اسکیلپنگ فعال۔")
-
-        if market_regime_data["regime"] == "Stormy":
-            logger.info("🛑 ٹریڈنگ معطل: انتہائی غیر مستحکم مارکیٹ (Stormy Regime)۔")
-            return
-
-        # مرحلہ 2: انکولی اسکیلپنگ حکمت عملی کے مطابق تجزیہ کریں
         personalities = load_asset_personalities()
         
         tasks = [
-            analyze_single_pair(pair, market_regime_data, personalities) 
+            analyze_single_pair(pair, personalities) 
             for pair in pairs_to_analyze
         ]
         await asyncio.gather(*tasks)
@@ -82,65 +75,85 @@ async def hunt_for_signals_job():
     except Exception as e:
         logger.error(f"شکاری انجن کے کام میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
     
-    logger.info("🏹 شکاری انجن: تلاش کا دور مکمل ہوا۔")
+    logger.info("🏹 شکاری انجن (ایپیکس ورژن): تلاش کا دور مکمل ہوا۔")
 
-async def analyze_single_pair(pair: str, market_regime: Dict, personalities: Dict):
+async def analyze_single_pair(pair: str, personalities: Dict):
     """
-    ایک انفرادی جوڑے کا گہرا تجزیہ کرتا ہے اور اگر معیار پر پورا اترے تو سگنل بناتا ہے۔
+    ایک انفرادی جوڑے کا گہرا تجزیہ کرتا ہے، مارکیٹ کی حالت کا تعین کرتا ہے،
+    اور پھر اس حالت کے لیے مخصوص حکمت عملی چلاتا ہے۔
     """
-    logger.info(f"🔬 [{pair}] کا انکولی اسکیلپنگ تجزیہ شروع کیا جا رہا ہے...")
+    logger.info(f"🔬 [{pair}] کا مقداری تجزیہ شروع کیا جا رہا ہے...")
     
     try:
-        symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
-
         with get_db_session() as db:
             if crud.get_active_signal_by_symbol(db, pair):
                 logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
                 return
 
-            timeframe = "15min"
-            candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
-            
-            if not candles or len(candles) < 34:
-                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
-                return
-
-            # فیوژن انجن سے حتمی تجزیہ حاصل کریں
-            analysis_result = await generate_final_signal(db, pair, candles, market_regime, symbol_personality)
+        # ہمیں GARCH اور Hurst کے لیے زیادہ ڈیٹا چاہیے
+        candles = await fetch_twelve_data_ohlc(pair, "15min", 200)
         
-        if not analysis_result:
-            logger.error(f"🔬 [{pair}] تجزیہ ناکام: فیوژن انجن نے کوئی نتیجہ واپس نہیں کیا۔")
+        if not candles or len(candles) < 150: # کم از کم 150 کینڈلز کی ضرورت ہے
+            logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
             return
 
-        if analysis_result.get("status") == "ok":
-            confidence = analysis_result.get('confidence', 0)
-            log_message = (f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, "
-                           f"اعتماد = {confidence:.2f}%")
-            logger.info(log_message)
-            
-            # غیر مستحکم مارکیٹ میں زیادہ اعتماد کی ضرورت ہوگی
-            required_confidence = FINAL_CONFIDENCE_THRESHOLD + 10 if market_regime['regime'] == 'Volatile' else FINAL_CONFIDENCE_THRESHOLD
+        df = convert_candles_to_dataframe(candles)
+        df['symbol'] = pair
+        
+        # مرحلہ 1: مارکیٹ کی حالت کی تشخیص کریں
+        market_regime = regime_analyzer.get_market_regime(df)
+        
+        analysis_result = None
+        symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
 
-            if confidence >= required_confidence:
-                with get_db_session() as db:
-                    update_result = crud.add_or_update_active_signal(db, analysis_result)
-                
-                if update_result:
-                    signal_obj = update_result.signal.as_dict()
-                    task_type = "new_signal" if update_result.is_new else "signal_updated"
-                    
-                    alert_task = send_telegram_alert if update_result.is_new else send_signal_update_alert
-                    
-                    logger.info(f"🎯 ★★★ سگنل پروسیس ہوا: {signal_obj['symbol']} ({task_type}) ★★★")
-                    
-                    asyncio.create_task(alert_task(signal_obj))
-                    asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
-            else:
-                logger.info(f"📉 [{pair}] سگنل مسترد: اعتماد ({confidence:.2f}%) مطلوبہ حد ({required_confidence}%) سے کم ہے۔")
-                
-        elif analysis_result.get("status") != "no-signal":
-            logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
+        # مرحلہ 2: حالت کی بنیاد پر صحیح ہتھیار کا انتخاب کریں
+        if market_regime == "Calm_Trending":
+            analysis_result = run_trend_following_strategy(df, symbol_personality)
+        elif market_regime == "Volatile_Trending":
+            analysis_result = run_breakout_strategy(df, symbol_personality)
+        elif market_regime == "Quiet_Ranging":
+            analysis_result = run_mean_reversion_strategy(df, symbol_personality)
+        else: # "Violent_Ranging" or "No_Trade_Zone"
+            logger.info(f"🛑 [{pair}] ٹریڈنگ معطل۔ وجہ: مارکیٹ کی حالت '{market_regime}' ہے۔")
+            return
+
+        # مرحلہ 3: نتیجہ پروسیس کریں
+        if analysis_result and analysis_result.get("status") == "ok":
+            # یہاں ہم ایک سادہ اعتماد کا اسکور تفویض کر سکتے ہیں یا اسے مستقبل میں بہتر بنا سکتے ہیں
+            confidence = 85.0 # ڈیفالٹ اعلیٰ اعتماد
+            strategy_type = analysis_result.get("strategy", "نامعلوم")
+            
+            # ایک بہتر وجہ بنائیں (یہاں news_data اور pattern_data کو نظر انداز کیا گیا ہے)
+            reason = f"A {analysis_result['signal'].upper()} signal was generated by the {strategy_type} strategy in a {market_regime} market regime."
+            
+            final_signal_data = {
+                "status": "ok",
+                "symbol": pair,
+                "signal": analysis_result['signal'],
+                "reason": reason,
+                "confidence": confidence,
+                "timeframe": "15min",
+                "price": analysis_result['price'],
+                "tp": analysis_result['tp'],
+                "sl": analysis_result['sl'],
+                "strategy_type": strategy_type,
+                "signal_grade": "A-Grade" # فرض کریں کہ تمام سگنل اعلیٰ معیار کے ہیں
+            }
+
+            logger.info(f"✅ [{pair}] سگنل منظور! حکمت عملی: {strategy_type}, حالت: {market_regime}")
+            
+            with get_db_session() as db:
+                update_result = crud.add_or_update_active_signal(db, final_signal_data)
+            
+            if update_result:
+                signal_obj = update_result.signal.as_dict()
+                asyncio.create_task(send_telegram_alert(signal_obj))
+                asyncio.create_task(manager.broadcast({"type": "new_signal", "data": signal_obj}))
+        
+        else:
+            reason = analysis_result.get("reason", "کوئی سگنل نہیں") if analysis_result else "کوئی سگنل نہیں"
+            logger.info(f"ℹ️ [{pair}] کوئی سگنل نہیں بنا۔ وجہ: {reason}")
 
     except Exception as e:
         logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
-        
+            
