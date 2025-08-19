@@ -8,9 +8,10 @@ from arch import arch_model
 from hurst import compute_Hc
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
-# انتباہات کو فلٹر کریں تاکہ لاگز صاف رہیں
+# --- انتباہات کو خاموش کرنے کا حتمی حل ---
+# یہ لائنیں یقینی بنائیں گی کہ غیر ضروری انتباہات ہمارے لاگز میں نظر نہ آئیں
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
-warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=FutureWarning, module='arch') # خاص طور پر arch لائبریری کے FutureWarning کو خاموش کریں
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def get_market_regime(df: pd.DataFrame) -> str:
     Hurst Exponent اور GARCH ماڈل کا استعمال کرتے ہوئے مارکیٹ کی حالت کا تعین کرتا ہے۔
     """
     if len(df) < 100:
-        return "No_Trade_Zone" # تجزیے کے لیے ناکافی ڈیٹا
+        return "No_Trade_Zone"
 
     close_prices = df['close'].dropna()
     log_returns = np.log(close_prices / close_prices.shift(1)).dropna()
@@ -32,13 +33,12 @@ def get_market_regime(df: pd.DataFrame) -> str:
         hurst_exponent, _, _ = compute_Hc(close_prices, kind='price', simplified=True)
         
         # --- GARCH ماڈل کا حساب ---
-        # انتباہ کو خاموش کرنے کے لیے reindex=False شامل کیا گیا
-        model = arch_model(log_returns * 100, p=1, q=1, reindex=False) 
+        # reindex پیرامیٹر کو ہٹا دیا گیا ہے کیونکہ پرانا ورژن اسے سپورٹ نہیں کرتا
+        model = arch_model(log_returns * 100, p=1, q=1) 
         results = model.fit(disp="off")
         
         forecast = results.forecast(horizon=1)
         predicted_volatility = np.sqrt(forecast.variance.iloc[-1, 0]) / 100
-
         avg_volatility = log_returns.std()
 
         logger.info(f"🔬 تشخیصی نتائج: Hurst = {hurst_exponent:.3f}, GARCH Forecast = {predicted_volatility:.3f}, Avg Vol = {avg_volatility:.3f}")
