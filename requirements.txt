@@ -1,5 +1,3 @@
-# filename: requirements.txt
-
 # FastAPI اور ویب سرور
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
@@ -29,5 +27,11 @@ pydantic==2.8.2
 # WebSocket سپورٹ
 websockets==12.0
 
-# ڈیٹا بیس مائیگریشن (اختیاری لیکن تجویز کردہ)
-alembic==1.13.2
+# --- نیا مقداری تجزیہ انجن ---
+# GARCH ماڈل کے لیے
+arch==5.7.0
+# Hurst Exponent کے لیے
+hurst==0.0.6
+# شماریاتی انحصار
+statsmodels==0.14.2
+scipy==1.14.0
