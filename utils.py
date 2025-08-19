@@ -1,3 +1,5 @@
+# filename: utils.py
+
 import asyncio
 import logging
 from typing import List, Optional, Dict, Any
@@ -14,7 +16,6 @@ logger = logging.getLogger(__name__)
 async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     """
     ہر علامت کے لیے اس کی مخصوص API کلید استعمال کرتے ہوئے متوازی طور پر قیمتیں حاصل کرتا ہے۔
-    یہ ورژن API کے تمام ممکنہ جوابات کو صحیح طریقے سے سنبھالنے کے لیے بنایا گیا ہے۔
     """
     if not symbols:
         return {}
@@ -22,7 +23,6 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
     unique_symbols = sorted(list(set(symbols)))
     
     async def fetch_single_quote(symbol: str) -> Optional[Dict[str, Any]]:
-        """ایک انفرادی علامت کے لیے قیمت حاصل کرنے کا اندرونی فنکشن۔"""
         api_key = key_manager.get_key_for_pair(symbol)
         if not api_key:
             logger.warning(f"[{symbol}] کے لیے قیمت حاصل کرنے میں ناکامی: کوئی API کلید نہیں۔")
@@ -40,12 +40,8 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
             response.raise_for_status()
             data = response.json()
             
-            # --- سب سے اہم اور حتمی تبدیلی یہاں ہے ---
-            # 'price' کی جگہ 'close' کلید کو چیک کریں
             if isinstance(data, dict) and 'close' in data:
-                # علامت کو خود شامل کریں تاکہ مستقل مزاجی رہے
                 data['symbol'] = symbol
-                # 'close' کی قدر کو 'price' میں کاپی کریں تاکہ باقی سسٹم کام کرتا رہے
                 data['price'] = data['close']
                 return data
             else:
@@ -56,11 +52,9 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
             logger.error(f"[{symbol}] کے لیے قیمت حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
             return None
 
-    # تمام علامتوں کے لیے متوازی طور پر ٹاسک بنائیں اور چلائیں
     tasks = [fetch_single_quote(s) for s in unique_symbols]
     results = await asyncio.gather(*tasks)
     
-    # صرف کامیاب نتائج (جن میں ڈیٹا موجود ہے) کو ایک ڈکشنری میں جمع کریں
     all_quotes = {res['symbol']: res for res in results if res}
     
     if len(all_quotes) < len(unique_symbols):
@@ -70,10 +64,10 @@ async def get_real_time_quotes(symbols: List[str]) -> Optional[Dict[str, Any]]:
 
     return all_quotes
 
-
-# ... باقی فنکشنز (fetch_twelve_data_ohlc, convert_candles_to_dataframe) پہلے جیسے ہی رہیں گے ...
-
 async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) -> Optional[List[Candle]]:
+    """
+    Twelve Data API سے OHLCV ڈیٹا حاصل کرتا ہے۔
+    """
     api_key = key_manager.get_key_for_pair(symbol)
     if not api_key:
         logger.warning(f"[{symbol}] OHLC کے لیے کوئی API کلید دستیاب نہیں۔")
@@ -98,13 +92,16 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
 
         validated_data = TwelveDataTimeSeries.model_validate(data)
         
+        # API اکثر نامکمل موجودہ کینڈل بھیجتی ہے، اسے ہٹانے کے لیے ڈیٹا کو ترتیب دیں
         sorted_values = sorted(validated_data.values, key=lambda x: x.datetime, reverse=True)
         completed_candles_raw = sorted_values[1:] if len(sorted_values) > 1 else sorted_values
         
         enriched_candles = []
         for candle_data in completed_candles_raw:
+            # ہر کینڈل میں علامت شامل کریں تاکہ ڈیٹا فریم میں استعمال ہو سکے
             enriched_candles.append(candle_data.copy(update={"symbol": symbol}))
 
+        # ڈیٹا کو پرانے سے نئے کی طرف ترتیب دیں
         return enriched_candles[::-1]
 
     except ValidationError as e:
@@ -114,17 +111,32 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
         logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں HTTP خرابی: {e.response.status_code} - {e.response.text}")
         return None
     except Exception as e:
-        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
+        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرabi: {e}", exc_info=True)
         return None
 
 def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
+    """
+    کینڈلز کی فہرست کو ایک صاف ستھرے پانڈاز ڈیٹا فریم میں تبدیل کرتا ہے،
+    اور یقینی بناتا ہے کہ تمام عددی کالمز کی قسم درست ہے۔
+    """
     if not candles:
         return pd.DataFrame()
     
+    # ڈیٹا فریم بنائیں
     df = pd.DataFrame([c.dict() for c in candles])
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
-    return df
     
+    # --- حتمی حل یہاں ہے ---
+    # تمام ضروری عددی کالمز کی فہرست
+    numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+    
+    for col in numeric_cols:
+        if col in df.columns:
+            # pd.to_numeric کا استعمال کریں جو خود بخود اور محفوظ طریقے سے قسم تبدیل کرتا ہے
+            # errors='coerce' اس بات کو یقینی بنائے گا کہ اگر کوئی غلط قدر ہو تو اسے NaN سے تبدیل کر دیا جائے
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+    # اگر کسی بھی اہم کالم (OHLC) میں کوئی NaN قدر ہو تو اس قطار کو ہٹا دیں
+    df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
+    
+    return df
+                                 
