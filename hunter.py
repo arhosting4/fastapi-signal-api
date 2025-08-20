@@ -39,7 +39,10 @@ def load_asset_personalities() -> Dict:
         return {}
 
 async def hunt_for_signals_job():
-    logger.info("🏹 شکاری انجن (فیوژن 2.0): نئے مواقع کی تلاش کا نیا دور شروع...")
+    """
+    یہ جاب اب ایک ایک کرکے ہر جوڑے کا تجزیہ کرے گی تاکہ وسائل کی ٹکراؤ سے بچا جا سکے۔
+    """
+    logger.info("🏹 شکاری انجن (حتمی ورژن): نئے مواقع کی تلاش کا نیا دور شروع...")
     
     try:
         with get_db_session() as db:
@@ -51,63 +54,68 @@ async def hunt_for_signals_job():
 
         personalities = load_asset_personalities()
         
-        tasks = [
-            analyze_single_pair(pair, personalities) 
-            for pair in pairs_to_analyze
-        ]
-        await asyncio.gather(*tasks)
+        # --- یہ ہے حتمی اور فیصلہ کن تبدیلی ---
+        # اب ہم ایک ساتھ تمام کام شروع نہیں کریں گے، بلکہ ایک ایک کرکے کریں گے
+        for pair in pairs_to_analyze:
+            try:
+                await analyze_single_pair(pair, personalities)
+                # ہر تجزیے کے بعد ایک چھوٹا سا وقفہ دیں تاکہ سسٹم سانس لے سکے
+                await asyncio.sleep(2) 
+            except Exception as e:
+                logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"شکاری انجن کے کام میں ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
+        logger.error(f"شکاری انجن کے کام میں ایک سنگین خرابی پیش آئی: {e}", exc_info=True)
     
-    logger.info("🏹 شکاری انجن (فیوژن 2.0): تلاش کا دور مکمل ہوا۔")
+    logger.info("🏹 شکاری انجن (حتمی ورژن): تلاش کا دور مکمل ہوا۔")
 
 async def analyze_single_pair(pair: str, personalities: Dict):
+    """
+    ایک انفرادی جوڑے کا گہرا تجزیہ کرتا ہے اور اگر معیار پر پورا اترے تو سگنل بناتا ہے۔
+    """
     logger.info(f"🔬 [{pair}] کا تجزیہ شروع کیا جا رہا ہے...")
     
-    try:
-        symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
+    symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
 
-        with get_db_session() as db:
-            if crud.get_active_signal_by_symbol(db, pair):
-                logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
-                return
-
-            timeframe = "15min"
-            candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
-            
-            if not candles or len(candles) < 50:
-                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
-                return
-
-            analysis_result = await generate_final_signal(db, pair, candles, symbol_personality)
-        
-        if not analysis_result:
-            logger.error(f"🔬 [{pair}] تجزیہ ناکام: فیوژن انجن نے کوئی نتیجہ واپس نہیں کیا۔")
+    with get_db_session() as db:
+        if crud.get_active_signal_by_symbol(db, pair):
+            logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
             return
 
-        if analysis_result.get("status") == "ok":
-            confidence = analysis_result.get('confidence', 0)
-            log_message = (f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, "
-                           f"اعتماد = {confidence:.2f}%")
-            logger.info(log_message)
-            
-            with get_db_session() as db:
-                update_result = crud.add_or_update_active_signal(db, analysis_result)
-            
-            if update_result:
-                signal_obj = update_result.signal.as_dict()
-                task_type = "new_signal" if update_result.is_new else "signal_updated"
-                
-                alert_task = send_telegram_alert if update_result.is_new else send_signal_update_alert
-                
-                logger.info(f"🎯 ★★★ سگنل پروسیس ہوا: {signal_obj['symbol']} ({task_type}) ★★★")
-                
-                asyncio.create_task(alert_task(signal_obj))
-                asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
-                
-        elif analysis_result.get("status") != "no-signal":
-            logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
+        timeframe = "15min"
+        candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
+        
+        if not candles or len(candles) < 100: # اسکورنگ انجن کے لیے کم از کم 100 کینڈلز
+            logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
+            return
 
-    except Exception as e:
-        logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
+        # فیوژن انجن کو کال کریں جو اب صرف ایک گیٹ وے ہے
+        analysis_result = await generate_final_signal(db, pair, candles, symbol_personality)
+    
+    if not analysis_result:
+        logger.error(f"🔬 [{pair}] تجزیہ ناکام: فیوژن انجن نے کوئی نتیجہ واپس نہیں کیا۔")
+        return
+
+    if analysis_result.get("status") == "ok":
+        confidence = analysis_result.get('confidence', 0)
+        log_message = (f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, "
+                       f"اعتماد = {confidence:.2f}%")
+        logger.info(log_message)
+        
+        with get_db_session() as db:
+            update_result = crud.add_or_update_active_signal(db, analysis_result)
+        
+        if update_result:
+            signal_obj = update_result.signal.as_dict()
+            task_type = "new_signal" if update_result.is_new else "signal_updated"
+            
+            alert_task = send_telegram_alert if update_result.is_new else send_signal_update_alert
+            
+            logger.info(f"🎯 ★★★ سگنل پروسیس ہوا: {signal_obj['symbol']} ({task_type}) ★★★")
+            
+            asyncio.create_task(alert_task(signal_obj))
+            asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
+            
+    elif analysis_result.get("status") != "no-signal":
+        logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
+        
