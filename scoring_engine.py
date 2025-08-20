@@ -8,9 +8,7 @@ from arch import arch_model
 from hurst import compute_Hc
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
-# --- یہ ہے وہ فیصلہ کن لائن جس کی کمی تھی ---
 from typing import Dict
-
 from config import tech_settings
 from level_analyzer import find_realistic_tp_sl
 
@@ -65,9 +63,9 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 # --- مرکزی اسکورنگ فنکشن ---
 def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -> Dict:
     """
-    ایک متحد اسکورنگ سسٹم کی بنیاد پر سگنل تیار کرتا ہے۔
+    ایک متحد اسکورنگ سسٹم کی بنیاد پر سگنل تیار کرتا ہے جس میں تکنیکی اور مقداری دونوں تجزیے شامل ہیں۔
     """
-    if len(df) < 50:
+    if len(df) < 100:
         return {"status": "no-signal", "reason": "ناکافی ڈیٹا"}
 
     df_indicators = calculate_indicators(df)
@@ -75,62 +73,78 @@ def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -
 
     buy_score = 0
     sell_score = 0
-    
     log_prefix = f"💯 [{symbol}]"
 
-    # 1. EMA کراس اوور اسکور
-    if last['ema_fast'] > last['ema_slow']:
-        buy_score += 25
-    else:
-        sell_score += 25
-    logger.info(f"{log_prefix} EMA Score: Buy={buy_score}, Sell={sell_score}")
-
-    # 2. Supertrend اسکور
-    if last['in_uptrend']:
-        buy_score += 20
-    else:
-        sell_score += 20
-    logger.info(f"{log_prefix} Supertrend Score: Buy={buy_score}, Sell={sell_score}")
-
-    # 3. RSI اسکور
-    if last['rsi'] < 35:
-        buy_score += 15
-    elif last['rsi'] > 65:
-        sell_score += 15
-    logger.info(f"{log_prefix} RSI Score: Buy={buy_score}, Sell={sell_score}")
-
-    # 4. ADX ٹرینڈ کی طاقت کا اسکور
-    if last['adx'] > 25:
-        if last['+DI'] > last['-DI']:
-            buy_score += 15
-        else:
-            sell_score += 15
-    logger.info(f"{log_prefix} ADX Score: Buy={buy_score}, Sell={sell_score}")
-
-    # حتمی فیصلہ
-    final_score = max(buy_score, sell_score)
+    # --- مرحلہ 1: تکنیکی اسکورنگ ---
+    if last['ema_fast'] > last['ema_slow']: buy_score += 25
+    else: sell_score += 25
     
-    if final_score < 70: # سگنل کے لیے کم از کم حد
-        logger.info(f"{log_prefix} ❌ حتمی اسکور ({final_score}) حد (70) سے کم ہے۔ کوئی سگنل نہیں۔")
+    if last['in_uptrend']: buy_score += 20
+    else: sell_score += 20
+    
+    if last['rsi'] < 35: buy_score += 15
+    elif last['rsi'] > 65: sell_score += 15
+    
+    if last['adx'] > 25:
+        if last['+DI'] > last['-DI']: buy_score += 15
+        else: sell_score += 15
+    
+    technical_score = max(buy_score, sell_score)
+    logger.info(f"{log_prefix} تکنیکی اسکور: {technical_score} (Buy: {buy_score}, Sell: {sell_score})")
+
+    # --- مرحلہ 2: مقداری تجزیہ (بونس/پینلٹی) ---
+    quantitative_modifier = 0
+    try:
+        close_prices = df['close']
+        log_returns = np.log(close_prices / close_prices.shift(1)).dropna()
+        
+        # Hurst Exponent
+        hurst_exponent, _, _ = compute_Hc(close_prices, kind='price', simplified=True)
+        if hurst_exponent > 0.55: # مضبوط ٹرینڈ
+            quantitative_modifier += 15
+        elif hurst_exponent < 0.48: # مطلب کی طرف واپسی
+            quantitative_modifier -= 10
+        
+        # GARCH Volatility
+        scaled_returns = log_returns * 100
+        model = arch_model(scaled_returns, p=1, q=1, rescale=False)
+        results = model.fit(disp="off")
+        forecast = results.forecast(horizon=1)
+        predicted_vol = np.sqrt(forecast.variance.iloc[-1, 0]) / 100
+        historical_vol = log_returns.tail(20).std()
+        
+        if predicted_vol < historical_vol: # پرسکون مارکیٹ
+            quantitative_modifier += 10
+        elif predicted_vol > (historical_vol * 1.8): # بہت غیر مستحکم
+            quantitative_modifier -= 15
+
+        logger.info(f"{log_prefix} مقداری موڈیفائر: {quantitative_modifier} (Hurst: {hurst_exponent:.2f})")
+    except Exception as e:
+        logger.warning(f"{log_prefix} مقداری تجزیہ میں خرابی: {e}")
+        quantitative_modifier = 0
+
+    # --- مرحلہ 3: حتمی فیصلہ ---
+    final_score = technical_score + quantitative_modifier
+    
+    if final_score < 75: # سگنل کے لیے نئی، سخت حد
+        logger.info(f"{log_prefix} ❌ حتمی اسکور ({final_score}) حد (75) سے کم ہے۔ کوئی سگنل نہیں۔")
         return {"status": "no-signal", "reason": f"حتمی اسکور ({final_score}) حد سے کم ہے۔"}
 
     signal_type = "buy" if buy_score > sell_score else "sell"
     
-    # TP/SL کا حساب
-    tp_sl_data = find_realistic_tp_sl(df, signal_type, symbol_personality, "Calm_Trending") # ڈیفالٹ حالت
+    tp_sl_data = find_realistic_tp_sl(df, signal_type, symbol_personality, "Calm_Trending")
     if not tp_sl_data:
         return {"status": "no-signal", "reason": "TP/SL کا حساب نہیں لگایا جا سکا"}
     
     tp, sl = tp_sl_data
     price = df['close'].iloc[-1]
     
-    reason = f"A {signal_type.upper()} signal was generated with a confidence score of {final_score} based on a confluence of technical indicators."
-
-    logger.info(f"✅ [{symbol}]: سگنل منظور! قسم: {signal_type.upper()}, اسکور: {final_score}")
+    reason = f"A {signal_type.upper()} signal with score {final_score} was generated. Tech Score: {technical_score}, Quant Modifier: {quantitative_modifier}."
+    logger.info(f"✅ [{symbol}]: سگنل منظور! قسم: {signal_type.upper()}, حتمی اسکور: {final_score}")
 
     return {
         "status": "ok", "symbol": symbol, "signal": signal_type,
         "reason": reason, "confidence": final_score,
         "timeframe": "15min", "price": price, "tp": tp, "sl": sl
-            }
-                
+    }
+    
