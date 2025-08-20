@@ -8,7 +8,6 @@ from arch import arch_model
 from hurst import compute_Hc
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
-# اب ہمیں صرف ان دو انتباہات کو خاموش کرنے کی ضرورت ہے
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=FutureWarning, module='arch')
 
@@ -24,7 +23,6 @@ def get_market_regime(df: pd.DataFrame) -> str:
     close_prices = df['close']
 
     try:
-        # --- مرحلہ 1: لاگ ریٹرنز کا حساب اور صفائی ---
         log_returns = np.log(close_prices / close_prices.shift(1))
         log_returns = log_returns.replace([np.inf, -np.inf], np.nan).dropna()
 
@@ -32,24 +30,14 @@ def get_market_regime(df: pd.DataFrame) -> str:
             logger.warning("صفائی کے بعد GARCH کے لیے ناکافی ڈیٹا۔")
             return "No_Trade_Zone"
 
-        # --- مرحلہ 2: Hurst Exponent کا حساب ---
         hurst_exponent, _, _ = compute_Hc(close_prices, kind='price', simplified=True)
         
-        # --- مرحلہ 3: GARCH ماڈل کا حساب (حتمی حل کے ساتھ) ---
-        # DataScaleWarning کو ختم کرنے کے لیے ڈیٹا کو 100 سے ضرب دیں
         scaled_returns = log_returns * 100
-        
-        # اب ہم rescale=False کو واضح طور پر سیٹ کریں گے تاکہ لائبریری کو بتائیں
-        # کہ ہم نے اسکیلنگ خود کر لی ہے اور اسے دوبارہ کرنے کی ضرورت نہیں
         model = arch_model(scaled_returns, p=1, q=1, rescale=False) 
         results = model.fit(disp="off")
         
-        # --- مرحلہ 4: مستقبل کے اتار چڑھاؤ کی پیشن گوئی ---
         forecast = results.forecast(horizon=1)
-        # پیشن گوئی کو واپس اصل اسکیل پر لانے کے لیے 100 سے تقسیم کریں
         predicted_volatility = np.sqrt(forecast.variance.iloc[-1, 0]) / 100
-        
-        # --- مرحلہ 5: ماضی کے اوسط اتار چڑھاؤ کا حساب ---
         historical_volatility = log_returns.tail(20).std()
 
         if pd.isna(predicted_volatility) or pd.isna(historical_volatility) or historical_volatility == 0:
@@ -58,9 +46,13 @@ def get_market_regime(df: pd.DataFrame) -> str:
 
         logger.info(f"🔬 تشخیصی نتائج: Hurst = {hurst_exponent:.3f}, GARCH Forecast = {predicted_volatility:.4f}, Historical Vol = {historical_volatility:.4f}")
 
-        # --- مرحلہ 6: حالت کی تشخیص ---
-        is_trending = hurst_exponent > 0.55
-        is_mean_reverting = hurst_exponent < 0.45
+        # --- مرحلہ 6: حالت کی تشخیص (نرم کی گئی حدوں کے ساتھ) ---
+        # پہلے: is_trending = hurst_exponent > 0.55
+        is_trending = hurst_exponent > 0.52  # تبدیلی: ٹرینڈ کی شرط کو تھوڑا نرم کیا
+        
+        # پہلے: is_mean_reverting = hurst_exponent < 0.45
+        is_mean_reverting = hurst_exponent < 0.48 # تبدیلی: رینج کی شرط کو تھوڑا نرم کیا
+        
         is_random = not is_trending and not is_mean_reverting
 
         is_volatile = predicted_volatility > (historical_volatility * 1.5)
@@ -83,4 +75,4 @@ def get_market_regime(df: pd.DataFrame) -> str:
     except Exception as e:
         logger.error(f"ریجیم تجزیہ میں سنگین خرابی: {e}", exc_info=True)
         return "No_Trade_Zone"
-        
+    
