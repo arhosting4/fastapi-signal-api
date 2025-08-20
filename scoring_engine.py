@@ -8,6 +8,9 @@ from arch import arch_model
 from hurst import compute_Hc
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
+# --- یہ ہے وہ فیصلہ کن لائن جس کی کمی تھی ---
+from typing import Dict
+
 from config import tech_settings
 from level_analyzer import find_realistic_tp_sl
 
@@ -129,5 +132,5 @@ def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -
         "status": "ok", "symbol": symbol, "signal": signal_type,
         "reason": reason, "confidence": final_score,
         "timeframe": "15min", "price": price, "tp": tp, "sl": sl
-    }
-    
+            }
+                
