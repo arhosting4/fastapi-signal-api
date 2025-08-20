@@ -15,7 +15,6 @@ from level_analyzer import find_realistic_tp_sl
 warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
-# --- یہ فنکشن اب آزاد ہے اور صحیح جگہ پر ہے ---
 def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """تمام ضروری انڈیکیٹرز کا حساب لگاتا ہے اور انہیں DataFrame میں شامل کرتا ہے۔"""
     df_out = df.copy()
@@ -60,7 +59,6 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     return df_out
 
-# --- مرکزی اسکورنگ فنکشن ---
 def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -> Dict:
     """
     ایک متحد اسکورنگ سسٹم کی بنیاد پر سگنل تیار کرتا ہے جس میں تکنیکی اور مقداری دونوں تجزیے شامل ہیں۔
@@ -68,7 +66,6 @@ def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -
     if len(df) < 99:
         return {"status": "no-signal", "reason": f"ناکافی ڈیٹا ({len(df)})"}
 
-    # اب یہ کال صحیح طریقے سے کام کرے گی
     df_indicators = calculate_indicators(df)
     last = df_indicators.iloc[-1]
 
@@ -99,25 +96,35 @@ def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -
         close_prices = df['close']
         log_returns = np.log(close_prices / close_prices.shift(1)).dropna()
         
+        # Hurst Exponent
         hurst_exponent, _, _ = compute_Hc(close_prices, kind='price', simplified=True)
+        hurst_mod = 0
         if hurst_exponent > 0.55:
-            quantitative_modifier += 15
+            hurst_mod = 15
         elif hurst_exponent < 0.48:
-            quantitative_modifier -= 10
+            hurst_mod = -10
+        logger.info(f"{log_prefix} Hurst تجزیہ: قیمت = {hurst_exponent:.2f}, موڈیفائر = {hurst_mod}")
+        quantitative_modifier += hurst_mod
         
-        scaled_returns = log_returns * 100
-        model = arch_model(scaled_returns, p=1, q=1, rescale=False)
-        results = model.fit(disp="off")
-        forecast = results.forecast(horizon=1)
-        predicted_vol = np.sqrt(forecast.variance.iloc[-1, 0]) / 100
-        historical_vol = log_returns.tail(20).std()
-        
-        if predicted_vol < historical_vol:
-            quantitative_modifier += 10
-        elif predicted_vol > (historical_vol * 1.8):
-            quantitative_modifier -= 15
+        # GARCH Volatility
+        garch_mod = 0
+        if not log_returns.empty:
+            scaled_returns = log_returns * 100
+            model = arch_model(scaled_returns, p=1, q=1, rescale=False)
+            results = model.fit(disp="off")
+            forecast = results.forecast(horizon=1)
+            predicted_vol = np.sqrt(forecast.variance.iloc[-1, 0])
+            historical_vol = scaled_returns.tail(20).std()
+            
+            if predicted_vol < historical_vol:
+                garch_mod = 10
+            elif predicted_vol > (historical_vol * 1.8):
+                garch_mod = -15
+            logger.info(f"{log_prefix} GARCH تجزیہ: پیشن گوئی={predicted_vol:.2f}, ماضی={historical_vol:.2f}, موڈیفائر = {garch_mod}")
+            quantitative_modifier += garch_mod
+        else:
+            logger.warning(f"{log_prefix} GARCH تجزیہ روکا گیا: لاگ ریٹرنز خالی ہیں۔")
 
-        logger.info(f"{log_prefix} مقداری موڈیفائر: {quantitative_modifier} (Hurst: {hurst_exponent:.2f})")
     except Exception as e:
         logger.warning(f"{log_prefix} مقداری تجزیہ میں خرابی: {e}")
         quantitative_modifier = 0
