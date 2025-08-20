@@ -21,7 +21,7 @@ BBANDS_PERIOD = tech_settings.BBANDS_PERIOD
 BBANDS_STD_DEV = tech_settings.BBANDS_STD_DEV
 ADX_PERIOD = 14
 
-# --- حساب کتاب کے فنکشنز (پہلے جیسے ہی) ---
+# --- حساب کتاب کے فنکشنز ---
 def calculate_rsi(data: pd.Series, period: int) -> pd.Series:
     delta = data.diff(1)
     gain = delta.where(delta > 0, 0).fillna(0)
@@ -61,21 +61,33 @@ def calculate_bollinger_bands(data: pd.Series, period: int, std_dev: int) -> pd.
     return pd.DataFrame({'bb_upper': upper_band, 'bb_middle': middle_band, 'bb_lower': lower_band, 'bb_bandwidth': bandwidth})
 
 def calculate_adx(df_in: pd.DataFrame, period: int) -> pd.DataFrame:
+    """
+    ADX, +DI, اور -DI کا حساب لگاتا ہے۔
+    یہ ورژن پانڈاز 3.0 کے لیے محفوظ ہے اور ChainedAssignmentError سے بچتا ہے۔
+    """
     df = df_in.copy()
     df_adx = pd.DataFrame(index=df.index)
+    
     df_adx['H-L'] = df['high'] - df['low']
     df_adx['H-pC'] = abs(df['high'] - df['close'].shift(1))
     df_adx['L-pC'] = abs(df['low'] - df['close'].shift(1))
     df_adx['TR'] = df_adx[['H-L', 'H-pC', 'L-pC']].max(axis=1)
-    df_adx['+DM'] = np.where((df['high'] - df['high'].shift(1)) > (df['low'].shift(1) - df['low']), df['high'] - df['high'].shift(1), 0)
-    df_adx['+DM'][df_adx['+DM'] < 0] = 0
-    df_adx['-DM'] = np.where((df['low'].shift(1) - df['low']) > (df['high'] - df['high'].shift(1)), df['low'].shift(1) - df['low'], 0)
-    df_adx['-DM'][df_adx['-DM'] < 0] = 0
+    
+    # --- حتمی اور درست طریقہ ---
+    plus_dm = np.where((df['high'] - df['high'].shift(1)) > (df['low'].shift(1) - df['low']), df['high'] - df['high'].shift(1), 0)
+    minus_dm = np.where((df['low'].shift(1) - df['low']) > (df['high'] - df['high'].shift(1)), df['low'].shift(1) - df['low'], 0)
+    
+    # یقینی بنائیں کہ قدریں صفر سے کم نہ ہوں
+    df_adx['+DM'] = np.where(plus_dm < 0, 0, plus_dm)
+    df_adx['-DM'] = np.where(minus_dm < 0, 0, minus_dm)
+    
     ATR = df_adx['TR'].ewm(span=period, adjust=False).mean()
     df_adx['+DI'] = (df_adx['+DM'].ewm(span=period, adjust=False).mean() / ATR) * 100
     df_adx['-DI'] = (df_adx['-DM'].ewm(span=period, adjust=False).mean() / ATR) * 100
+    
     DX = (abs(df_adx['+DI'] - df_adx['-DI']) / (df_adx['+DI'] + df_adx['-DI']).replace(0, 1)) * 100
     ADX = DX.ewm(span=period, adjust=False).mean()
+    
     return pd.DataFrame({'adx': ADX, 'plus_di': df_adx['+DI'], 'minus_di': df_adx['-DI']})
 
 # --- مرکزی تجزیاتی فنکشن (شفاف لاگنگ کے ساتھ) ---
@@ -84,7 +96,7 @@ def get_technical_analysis(df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     مختلف تکنیکی انڈیکیٹرز کی بنیاد پر ایک بنیادی سگنل اور اس کی وجہ فراہم کرتا ہے۔
     یہ فنکشن اب ہر قدم پر تفصیلی لاگنگ فراہم کرے گا۔
     """
-    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, BBANDS_PERIOD, ADX_PERIOD, 34):
+    if len(df) < max(EMA_LONG_PERIOD, RSI_PERIOD, BBANDS_PERIOD, ADX_PERIOD, 50):
         return {"status": "no-signal", "reason": "تکنیکی تجزیے کے لیے ناکافی ڈیٹا"}
 
     close = df['close']
@@ -136,7 +148,7 @@ def get_technical_analysis(df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
             return {"status": "ok", "signal": "sell", "strategy": "Range-Reversal"}
 
     # --- حکمت عملی 3: بریک آؤٹ (Breakout) ---
-    is_squeezing = prev['bb_bandwidth'] < (df['bb_bandwidth'].rolling(50).mean() * 0.6) # اگر بینڈ کی چوڑائی پچھلے 50 کینڈلز کی اوسط سے 60% کم ہو
+    is_squeezing = prev['bb_bandwidth'] < (df['bb_bandwidth'].rolling(50).mean() * 0.6)
     is_breakout_up = last['close'] > last['bb_upper']
     is_breakout_down = last['close'] < last['bb_lower']
 
