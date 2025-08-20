@@ -15,19 +15,60 @@ from level_analyzer import find_realistic_tp_sl
 warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
-# ... (باقی تمام فنکشنز وہی رہیں گے) ...
+# --- یہ فنکشن اب آزاد ہے اور صحیح جگہ پر ہے ---
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """تمام ضروری انڈیکیٹرز کا حساب لگاتا ہے اور انہیں DataFrame میں شامل کرتا ہے۔"""
+    df_out = df.copy()
+    close = df_out['close']
+    
+    # تکنیکی انڈیکیٹرز
+    df_out['ema_fast'] = close.ewm(span=tech_settings.EMA_SHORT_PERIOD, adjust=False).mean()
+    df_out['ema_slow'] = close.ewm(span=tech_settings.EMA_LONG_PERIOD, adjust=False).mean()
+    
+    delta = close.diff(1)
+    gain = delta.where(delta > 0, 0).fillna(0)
+    loss = -delta.where(delta < 0, 0).fillna(0)
+    avg_gain = gain.ewm(com=tech_settings.RSI_PERIOD - 1, adjust=False).mean()
+    avg_loss = loss.ewm(com=tech_settings.RSI_PERIOD - 1, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, 1e-9)
+    df_out['rsi'] = 100 - (100 / (1 + rs))
+    
+    high, low = df_out['high'], df_out['low']
+    tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/tech_settings.SUPERTREND_ATR, adjust=False).mean()
+    df_out['upperband'] = (high + low) / 2 + (tech_settings.SUPERTREND_FACTOR * atr)
+    df_out['lowerband'] = (high + low) / 2 - (tech_settings.SUPERTREND_FACTOR * atr)
+    df_out['in_uptrend'] = True
+    for i in range(1, len(df_out)):
+        if close.iloc[i] > df_out['upperband'].iloc[i-1]:
+            df_out.loc[df_out.index[i], 'in_uptrend'] = True
+        elif close.iloc[i] < df_out['lowerband'].iloc[i-1]:
+            df_out.loc[df_out.index[i], 'in_uptrend'] = False
+        else:
+            df_out.loc[df_out.index[i], 'in_uptrend'] = df_out['in_uptrend'].iloc[i-1]
+    
+    # ADX
+    plus_dm = np.where((high - high.shift(1)) > (low.shift(1) - low), high - high.shift(1), 0)
+    minus_dm = np.where((low.shift(1) - low) > (high - high.shift(1)), low.shift(1) - low, 0)
+    df_out['+DM'] = np.where(plus_dm < 0, 0, plus_dm)
+    df_out['-DM'] = np.where(minus_dm < 0, 0, minus_dm)
+    ATR = tr.ewm(span=14, adjust=False).mean()
+    df_out['+DI'] = (df_out['+DM'].ewm(span=14, adjust=False).mean() / ATR) * 100
+    df_out['-DI'] = (df_out['-DM'].ewm(span=14, adjust=False).mean() / ATR) * 100
+    DX = (abs(df_out['+DI'] - df_out['-DI']) / (df_out['+DI'] + df_out['-DI']).replace(0, 1)) * 100
+    df_out['adx'] = DX.ewm(span=14, adjust=False).mean()
+
+    return df_out
 
 # --- مرکزی اسکورنگ فنکشن ---
 def get_scored_signal(df: pd.DataFrame, symbol: str, symbol_personality: Dict) -> Dict:
     """
     ایک متحد اسکورنگ سسٹم کی بنیاد پر سگنل تیار کرتا ہے جس میں تکنیکی اور مقداری دونوں تجزیے شامل ہیں۔
     """
-    # --- یہ ہے فیصلہ کن تبدیلی ---
-    if len(df) < 99: # شرط کو 100 سے 99 کر دیا گیا ہے
+    if len(df) < 99:
         return {"status": "no-signal", "reason": f"ناکافی ڈیٹا ({len(df)})"}
 
-    # ... (باقی تمام کوڈ بالکل وہی رہے گا) ...
-    
+    # اب یہ کال صحیح طریقے سے کام کرے گی
     df_indicators = calculate_indicators(df)
     last = df_indicators.iloc[-1]
 
