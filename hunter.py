@@ -9,19 +9,14 @@ import json
 from sqlalchemy.orm import Session
 import pandas as pd
 
-# مقامی امپورٹس
 import database_crud as crud
-from utils import fetch_twelve_data_ohlc, convert_candles_to_dataframe
-from messenger import send_telegram_alert
+from utils import fetch_twelve_data_ohlc
+from fusion_engine import generate_final_signal
+from messenger import send_telegram_alert, send_signal_update_alert
 from models import SessionLocal
 from websocket_manager import manager
 from roster_manager import get_hunting_roster
 from config import api_settings
-
-# --- اپ گریڈ شدہ امپورٹس ---
-import regime_analyzer
-from strategy_scalper import generate_adaptive_analysis # پرانا، قابلِ اعتماد فنکشن
-from fusion_engine import generate_final_signal      # ہمارا مرکزی دماغ
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +39,6 @@ def load_asset_personalities() -> Dict:
         return {}
 
 async def hunt_for_signals_job():
-    """
-    یہ جاب وقفے وقفے سے چلتی ہے، تجزیے کے لیے جوڑوں کا انتخاب کرتی ہے،
-    اور ہر جوڑے کے لیے تجزیاتی پائپ لائن چلاتی ہے۔
-    """
     logger.info("🏹 شکاری انجن (فیوژن 2.0): نئے مواقع کی تلاش کا نیا دور شروع...")
     
     try:
@@ -72,61 +63,51 @@ async def hunt_for_signals_job():
     logger.info("🏹 شکاری انجن (فیوژن 2.0): تلاش کا دور مکمل ہوا۔")
 
 async def analyze_single_pair(pair: str, personalities: Dict):
-    """
-    ایک انفرادی جوڑے کے لیے تمام ضروری تجزیے کرتا ہے اور حتمی فیصلے کے لیے
-    تمام معلومات کو فیوژن انجن کو بھیجتا ہے۔
-    """
     logger.info(f"🔬 [{pair}] کا تجزیہ شروع کیا جا رہا ہے...")
     
     try:
+        symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
+
         with get_db_session() as db:
             if crud.get_active_signal_by_symbol(db, pair):
                 logger.info(f"🔬 [{pair}] تجزیہ روکا گیا: اس جوڑے کا سگنل پہلے سے فعال ہے۔")
                 return
 
-        candles = await fetch_twelve_data_ohlc(pair, "15min", 200)
+            timeframe = "15min"
+            candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
+            
+            if not candles or len(candles) < 50:
+                logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
+                return
+
+            analysis_result = await generate_final_signal(db, pair, candles, symbol_personality)
         
-        if not candles or len(candles) < 150:
-            logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
+        if not analysis_result:
+            logger.error(f"🔬 [{pair}] تجزیہ ناکام: فیوژن انجن نے کوئی نتیجہ واپس نہیں کیا۔")
             return
 
-        df = convert_candles_to_dataframe(candles)
-        
-        # --- تمام تجزیے الگ الگ کریں ---
-        
-        # 1. بنیادی تکنیکی تجزیہ
-        symbol_personality = personalities.get(pair, personalities.get("DEFAULT", {}))
-        technical_analysis = generate_adaptive_analysis(df, symbol_personality)
-        
-        # 2. مارکیٹ کی حالت کا تجزیہ
-        market_regime = regime_analyzer.get_market_regime(df)
-
-        # 3. تمام معلومات کو حتمی فیصلے کے لیے فیوژن انجن کو بھیجیں
-        with get_db_session() as db:
-            final_signal = await generate_final_signal(
-                db, 
-                pair, 
-                df, 
-                technical_analysis, 
-                market_regime,
-                symbol_personality
-            )
-        
-        # --- نتیجہ پروسیس کریں ---
-        if final_signal and final_signal.get("status") == "ok":
-            logger.info(f"✅ [{pair}] فیوژن انجن نے سگنل منظور کیا! اعتماد: {final_signal.get('confidence'):.1f}%")
+        if analysis_result.get("status") == "ok":
+            confidence = analysis_result.get('confidence', 0)
+            log_message = (f"📊 [{pair}] تجزیہ مکمل: سگنل = {analysis_result.get('signal', 'N/A').upper()}, "
+                           f"اعتماد = {confidence:.2f}%")
+            logger.info(log_message)
             
             with get_db_session() as db:
-                update_result = crud.add_or_update_active_signal(db, final_signal)
+                update_result = crud.add_or_update_active_signal(db, analysis_result)
             
             if update_result:
                 signal_obj = update_result.signal.as_dict()
-                asyncio.create_task(send_telegram_alert(signal_obj))
-                asyncio.create_task(manager.broadcast({"type": "new_signal", "data": signal_obj}))
-        else:
-            reason = final_signal.get("reason", "کوئی سگنل نہیں") if final_signal else "کوئی سگنل نہیں"
-            logger.info(f"ℹ️ [{pair}] کوئی سگنل نہیں بنا۔ وجہ: {reason}")
+                task_type = "new_signal" if update_result.is_new else "signal_updated"
+                
+                alert_task = send_telegram_alert if update_result.is_new else send_signal_update_alert
+                
+                logger.info(f"🎯 ★★★ سگنل پروسیس ہوا: {signal_obj['symbol']} ({task_type}) ★★★")
+                
+                asyncio.create_task(alert_task(signal_obj))
+                asyncio.create_task(manager.broadcast({"type": task_type, "data": signal_obj}))
+                
+        elif analysis_result.get("status") != "no-signal":
+            logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
 
     except Exception as e:
         logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
-            
