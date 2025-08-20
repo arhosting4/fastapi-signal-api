@@ -54,12 +54,9 @@ async def hunt_for_signals_job():
 
         personalities = load_asset_personalities()
         
-        # --- یہ ہے حتمی اور فیصلہ کن تبدیلی ---
-        # اب ہم ایک ساتھ تمام کام شروع نہیں کریں گے، بلکہ ایک ایک کرکے کریں گے
         for pair in pairs_to_analyze:
             try:
                 await analyze_single_pair(pair, personalities)
-                # ہر تجزیے کے بعد ایک چھوٹا سا وقفہ دیں تاکہ سسٹم سانس لے سکے
                 await asyncio.sleep(2) 
             except Exception as e:
                 logger.error(f"🔬 [{pair}] کے تجزیے کے دوران ایک غیر متوقع خرابی پیش آئی: {e}", exc_info=True)
@@ -83,13 +80,14 @@ async def analyze_single_pair(pair: str, personalities: Dict):
             return
 
         timeframe = "15min"
-        candles = await fetch_twelve_data_ohlc(pair, timeframe, api_settings.CANDLE_COUNT)
+        # --- یہ ہے پہلی تبدیلی ---
+        candles = await fetch_twelve_data_ohlc(pair, timeframe, 101) # 101 کی درخواست کریں تاکہ 100 ضرور ملیں
         
-        if not candles or len(candles) < 100: # اسکورنگ انجن کے لیے کم از کم 100 کینڈلز
+        # --- یہ ہے دوسری تبدیلی ---
+        if not candles or len(candles) < 99: # کم از کم 99 کینڈلز کی شرط
             logger.warning(f"📊 [{pair}] تجزیہ روکا گیا: ناکافی کینڈل ڈیٹا ({len(candles) if candles else 0})۔")
             return
 
-        # فیوژن انجن کو کال کریں جو اب صرف ایک گیٹ وے ہے
         analysis_result = await generate_final_signal(db, pair, candles, symbol_personality)
     
     if not analysis_result:
@@ -118,4 +116,4 @@ async def analyze_single_pair(pair: str, personalities: Dict):
             
     elif analysis_result.get("status") != "no-signal":
         logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
-        
+            
