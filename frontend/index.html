@@ -149,6 +149,18 @@
 
             let signals = new Map();
 
+            // ★★★ نئی تبدیلی: UTC وقت کو PKT میں تبدیل کرنے کا فنکشن ★★★
+            const formatToPkt = (utcDateString) => {
+                if (!utcDateString) return 'N/A';
+                const date = new Date(utcDateString);
+                const options = {
+                    timeZone: 'Asia/Karachi', // پاکستان کا ٹائم زون
+                    year: 'numeric', month: 'short', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', hour12: true
+                };
+                return new Intl.DateTimeFormat('en-GB', options).format(date) + ' PKT';
+            };
+
             function renderSignals() {
                 liveSignalsCountEl.textContent = signals.size;
                 if (signals.size === 0) {
@@ -178,7 +190,9 @@
                 const slPrice = signal.sl_price || signal.sl;
                 const confidence = parseFloat(signal.confidence);
                 const tagClass = signalType === 'buy' ? 'tag-buy' : 'tag-sell';
-                const timestamp = new Date(signal.updated_at || signal.created_at).toLocaleString();
+                
+                // اپ ڈیٹ شدہ وقت کو PKT میں فارمیٹ کریں
+                const timestampPkt = formatToPkt(signal.updated_at || signal.created_at);
 
                 card.innerHTML = `
                     <div class="signal-card-header">
@@ -203,7 +217,7 @@
                         <p class="ai-reason-text">${signal.reason}</p>
                     </div>
                     <div class="signal-card-footer">
-                        <span class="signal-timestamp">Last update: ${timestamp}</span>
+                        <span class="signal-timestamp">Last update: ${timestampPkt}</span>
                     </div>
                 `;
                 return card;
