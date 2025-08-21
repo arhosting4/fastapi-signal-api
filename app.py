@@ -1,3 +1,5 @@
+# filename: app.py
+
 import asyncio
 import logging
 from datetime import datetime
@@ -46,26 +48,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- نیا کلین اپ فنکشن ---
+# --- نیا اور بہتر کلین اپ فنکشن ---
 def cleanup_weekend_signals():
     """
     ہفتے کے آخر میں تمام پرانے سگنلز کو بند کرتا ہے تاکہ نیا ہفتہ صاف شروع ہو۔
+    یہ فنکشن پاکستان کے مقامی وقت کے مطابق چلتا ہے۔
     """
-    logger.info("🧹 ہفتہ وار کلین اپ کا کام شروع کیا جا رہا ہے...")
+    logger.info("🧹 ہفتہ وار کلین اپ کا کام شروع کیا جا رہا ہے (PKT)...")
     db = SessionLocal()
     try:
-        # 0 = پیر, 4 = جمعہ, 6 = اتوار
-        current_weekday = datetime.utcnow().weekday()
+        # 0 = پیر, 5 = ہفتہ, 6 = اتوار
+        # ہم پاکستان کے ٹائم زون میں ہیں، لیکن weekday() لوکل ٹائم نہیں جانتا، اس لیے UTC استعمال کریں گے
+        # اور شیڈیولر میں ٹائم زون سیٹ کریں گے۔
+        current_weekday_utc = datetime.utcnow().weekday()
         market_type_to_close = None
         
-        # جمعہ کی رات (UTC) فاریکس مارکیٹ بند ہونے کے بعد
-        if current_weekday == 4: 
+        # ہفتہ کی صبح (UTC میں جمعہ کی رات کے بعد) - فاریکس بند کریں
+        if current_weekday_utc == 5: 
             market_type_to_close = "forex"
-            logger.info("🧹 آج جمعہ ہے۔ فاریکس سگنلز کو بند کرنے کے لیے چیک کیا جا رہا ہے۔")
-        # اتوار کی رات (UTC) کرپٹو مارکیٹ کے بعد
-        elif current_weekday == 6: 
+            logger.info("🧹 آج ہفتہ ہے۔ فاریکس سگنلز کو بند کرنے کے لیے چیک کیا جا رہا ہے۔")
+        # پیر کی صبح (UTC میں اتوار کی رات کے بعد) - کرپٹو بند کریں
+        elif current_weekday_utc == 0: 
             market_type_to_close = "crypto"
-            logger.info("🧹 آج اتوار ہے۔ کرپٹو سگنلز کو بند کرنے کے لیے چیک کیا جا رہا ہے۔")
+            logger.info("🧹 آج پیر ہے۔ کرپٹو سگنلز کو بند کرنے کے لیے چیک کیا جا رہا ہے۔")
 
         if not market_type_to_close:
             logger.info("🧹 آج کلین اپ کا دن نہیں ہے۔ کام ختم۔")
@@ -115,16 +120,19 @@ async def start_background_tasks():
         return
 
     logger.info(">>> پس منظر کے کام شروع ہو رہے ہیں...")
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    # ★★★ نئی تبدیلی: شیڈیولر کو پاکستان کا ٹائم زون دیا گیا ★★★
+    scheduler = AsyncIOScheduler(timezone="Asia/Karachi")
     app.state.scheduler = scheduler
     
     scheduler.add_job(check_active_signals_job, IntervalTrigger(seconds=120), id="guardian_engine_job")
     scheduler.add_job(hunt_for_signals_job, IntervalTrigger(seconds=180), id="hunter_engine_job")
     scheduler.add_job(update_economic_calendar_cache, IntervalTrigger(hours=4), id="news_engine_job")
     
-    # --- نیا شیڈول کام ---
-    # یہ کام ہر روز رات 10:05 بجے UTC میں چلے گا تاکہ جمعہ اور اتوار کو کلین اپ کر سکے
-    scheduler.add_job(cleanup_weekend_signals, CronTrigger(hour=22, minute=5, timezone='UTC'), id='cleanup_job')
+    # --- نیا شیڈول کام (پاکستان ٹائم کے مطابق) ---
+    # ہفتہ کی صبح 3:05 پر فاریکس سگنلز بند کرنے کے لیے
+    scheduler.add_job(cleanup_weekend_signals, CronTrigger(day_of_week='sat', hour=3, minute=5), id='forex_cleanup_job')
+    # پیر کی صبح 3:05 پر کرپٹو سگنلز بند کرنے کے لیے
+    scheduler.add_job(cleanup_weekend_signals, CronTrigger(day_of_week='mon', hour=3, minute=5), id='crypto_cleanup_job')
     
     scheduler.start()
     logger.info("★★★ شیڈیولر کامیابی سے شروع ہو گیا۔ ★★★")
@@ -137,7 +145,6 @@ async def startup_event():
     create_db_and_tables()
     logger.info("ڈیٹا بیس کی حالت کی تصدیق ہو گئی۔")
     
-    # ★★★ فوری حل یہاں ہے ★★★
     # ایپلیکیشن شروع ہوتے ہی خبروں کو فوری طور پر ایک بار لوڈ کریں
     logger.info("ایپلیکیشن کے آغاز پر خبروں کا کیش فوری طور پر اپ ڈیٹ کیا جا رہا ہے...")
     asyncio.create_task(update_economic_calendar_cache())
@@ -221,5 +228,5 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 # --- اسٹیٹک فائلز ---
+# اس بات کو یقینی بنائیں کہ 'frontend' نامی فولڈر موجود ہے
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-            
