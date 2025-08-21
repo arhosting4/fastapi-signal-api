@@ -111,7 +111,7 @@ async def fetch_twelve_data_ohlc(symbol: str, timeframe: str, output_size: int) 
         logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں HTTP خرابی: {e.response.status_code} - {e.response.text}")
         return None
     except Exception as e:
-        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرabi: {e}", exc_info=True)
+        logger.error(f"[{symbol}] کے لیے OHLC ڈیٹا حاصل کرنے میں نامعلوم خرابی: {e}", exc_info=True)
         return None
 
 def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
@@ -139,4 +139,4 @@ def convert_candles_to_dataframe(candles: List[Candle]) -> pd.DataFrame:
     df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
     
     return df
-                                 
+    
