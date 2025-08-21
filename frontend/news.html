@@ -101,6 +101,19 @@
                 if (uniqueArticles.length > 0) {
                     noNewsMessage.style.display = 'none';
                     newsGrid.style.display = 'grid';
+                    
+                    // ★★★ نئی تبدیلی: UTC وقت کو PKT میں تبدیل کرنے کا فنکشن ★★★
+                    const formatToPkt = (utcDateString) => {
+                        if (!utcDateString) return 'N/A';
+                        const date = new Date(utcDateString);
+                        const options = {
+                            timeZone: 'Asia/Karachi', // پاکستان کا ٹائم زون
+                            year: 'numeric', month: 'short', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit', hour12: true
+                        };
+                        return new Intl.DateTimeFormat('en-GB', options).format(date) + ' PKT';
+                    };
+
                     uniqueArticles.forEach(item => {
                         const card = document.createElement('div');
                         card.className = 'news-card';
@@ -109,14 +122,12 @@
                         const title = item.title || 'No Title';
                         const source = item.source || 'Unknown Source';
                         const url = item.url || '#';
-                        const publishedTime = item.published_at 
-                            ? new Date(item.published_at).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'
-                            : 'N/A';
+                        const publishedTimePkt = formatToPkt(item.published_at);
 
                         card.innerHTML = `
                             <div class="news-content">
                                 <h3 class="news-title">${title}</h3>
-                                <p class="news-meta"><strong>${source}</strong> - ${publishedTime}</p>
+                                <p class="news-meta"><strong>${source}</strong> - ${publishedTimePkt}</p>
                                 <p class="news-snippet">${snippet.substring(0, 150)}...</p>
                                 <a href="${url}" target="_blank" rel="noopener noreferrer" class="read-more">Read Full Story <i class="fas fa-arrow-right"></i></a>
                             </div>
@@ -138,4 +149,5 @@
         setInterval(fetchNews, 15 * 60 * 1000);
     </script>
 </body>
-</html>
+    </html>
+    
