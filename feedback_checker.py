@@ -9,17 +9,17 @@ from sqlalchemy.orm import Session
 
 import database_crud as crud
 from models import SessionLocal
-from utils import fetch_twelve_data_ohlc # ہم اب صرف اسے استعمال کریں گے
+from utils import fetch_twelve_data_ohlc
 from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
 async def check_active_signals_job():
     """
-    یہ نگران انجن کا حتمی، ذہین، اور درست ورژن ہے۔ یہ صرف سگنل بننے کے بعد کی
-    High/Low قیمتوں کو چیک کرتا ہے تاکہ کوئی بھی تیز رفتار اور متعلقہ TP/SL ہٹ مس نہ ہو۔
+    یہ نگران انجن کا حتمی، مکمل، اور درست ورژن ہے۔ یہ سگنل بننے کے بعد کی High/Low
+    اور موجودہ قیمت، تینوں کو چیک کرتا ہے تاکہ کوئی بھی TP/SL ہٹ مس نہ ہو۔
     """
-    logger.info("🛡️ نگران انجن (حتمی اور درست ورژن): نگرانی کا دور شروع...")
+    logger.info("🛡️ نگران انجن (مکمل ورژن): نگرانی کا دور شروع...")
     
     signals_to_close = []
     
@@ -34,44 +34,58 @@ async def check_active_signals_job():
         
         for signal in active_signals:
             try:
-                # --- مرحلہ 1: سگنل بننے کے بعد کا وقت نکالیں ---
                 now_utc = datetime.now(timezone.utc)
                 signal_created_at_utc = signal.created_at.replace(tzinfo=timezone.utc)
-                
-                # سگنل بنے ہوئے کتنے منٹ ہوئے ہیں؟
                 minutes_since_creation = (now_utc - signal_created_at_utc).total_seconds() / 60
-                
-                # ہم صرف پچھلے 15 منٹ کا ڈیٹا دیکھیں گے، تاکہ API پر زیادہ بوجھ نہ پڑے
                 minutes_to_check = min(int(minutes_since_creation) + 2, 15)
 
-                # --- مرحلہ 2: صرف متعلقہ کینڈل ڈیٹا حاصل کریں ---
                 candles = await fetch_twelve_data_ohlc(signal.symbol, "1min", minutes_to_check)
                 
                 if not candles:
                     logger.warning(f"🛡️ [{signal.symbol}] کے لیے کینڈل ڈیٹا نہیں ملا۔")
                     continue
 
-                # --- مرحلہ 3: صرف سگنل بننے کے بعد کی کینڈلز کو فلٹر کریں ---
                 relevant_candles = [c for c in candles if c.datetime.replace(tzinfo=timezone.utc) > signal_created_at_utc]
 
                 if not relevant_candles:
                     logger.info(f"🛡️ [{signal.symbol}] کے لیے کوئی نئی کینڈل نہیں بنی۔")
                     continue
                 
+                # --- یہ ہے فیصلہ کن تبدیلی ---
+                # ماضی اور حال، دونوں کو حاصل کریں
                 recent_high = max(c.high for c in relevant_candles)
                 recent_low = min(c.low for c in relevant_candles)
+                current_price = relevant_candles[-1].close # سب سے تازہ ترین بند قیمت
 
-                logger.info(f"🛡️ جانچ: [{signal.symbol}] | TP: {signal.tp_price:.5f} | SL: {signal.sl_price:.5f} | سگنل کے بعد High: {recent_high:.5f} | سگنل کے بعد Low: {recent_low:.5f}")
+                logger.info(
+                    f"🛡️ جانچ: [{signal.symbol}] | TP: {signal.tp_price:.5f} | SL: {signal.sl_price:.5f} | "
+                    f"بعد کی High: {recent_high:.5f} | بعد کی Low: {recent_low:.5f} | موجودہ: {current_price:.5f}"
+                )
 
                 outcome, reason, close_price = None, None, None
                 tp, sl = float(signal.tp_price), float(signal.sl_price)
 
                 if signal.signal_type == "buy":
-                    if recent_high >= tp: outcome, reason, close_price = "tp_hit", "TP Hit (High Price)", tp
-                    elif recent_low <= sl: outcome, reason, close_price = "sl_hit", "SL Hit (Low Price)", sl
+                    # تینوں شرائط کو چیک کریں
+                    if recent_high >= tp: 
+                        outcome, reason, close_price = "tp_hit", "TP Hit (High Price)", tp
+                    elif current_price >= tp:
+                        outcome, reason, close_price = "tp_hit", "TP Hit (Current Price)", current_price
+                    elif recent_low <= sl: 
+                        outcome, reason, close_price = "sl_hit", "SL Hit (Low Price)", sl
+                    elif current_price <= sl:
+                        outcome, reason, close_price = "sl_hit", "SL Hit (Current Price)", current_price
+
                 elif signal.signal_type == "sell":
-                    if recent_low <= tp: outcome, reason, close_price = "tp_hit", "TP Hit (Low Price)", tp
-                    elif recent_high >= sl: outcome, reason, close_price = "sl_hit", "SL Hit (High Price)", sl
+                    # تینوں شرائط کو چیک کریں
+                    if recent_low <= tp: 
+                        outcome, reason, close_price = "tp_hit", "TP Hit (Low Price)", tp
+                    elif current_price <= tp:
+                        outcome, reason, close_price = "tp_hit", "TP Hit (Current Price)", current_price
+                    elif recent_high >= sl: 
+                        outcome, reason, close_price = "sl_hit", "SL Hit (High Price)", sl
+                    elif current_price >= sl:
+                        outcome, reason, close_price = "sl_hit", "SL Hit (Current Price)", current_price
 
                 if outcome:
                     signals_to_close.append({
@@ -83,8 +97,6 @@ async def check_active_signals_job():
             except Exception as e:
                 logger.error(f"🛡️ سگنل {signal.symbol} کی جانچ میں خرابی: {e}", exc_info=True)
 
-
-    # --- مرحلہ 4: بند ہونے والے سگنلز کو پروسیس کریں ---
     if signals_to_close:
         with SessionLocal() as db:
             closed_signal_ids_for_broadcast = []
@@ -106,5 +118,5 @@ async def check_active_signals_job():
                 
                 asyncio.create_task(do_broadcast())
 
-    logger.info("🛡️ نگران انجن (حتمی اور درست ورژن): نگرانی کا دور مکمل ہوا۔")
+    logger.info("🛡️ نگران انجن (مکمل ورژن): نگرانی کا دور مکمل ہوا۔")
                 
