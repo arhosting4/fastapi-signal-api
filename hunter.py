@@ -116,4 +116,3 @@ async def analyze_single_pair(pair: str, personalities: Dict):
             
     elif analysis_result.get("status") != "no-signal":
         logger.warning(f"ℹ️ [{pair}] تجزیہ مکمل: کوئی سگنل نہیں بنا۔ وجہ: {analysis_result.get('reason', 'نامعلوم')}")
-            
